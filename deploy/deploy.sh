@@ -58,7 +58,7 @@ cp "caddy_server/Caddyfile.$ACTIVE" caddy_server/Caddyfile
 podman-compose -p ecobuilding-edge -f caddy_server/docker-compose.yml up -d
 podman exec ecobuilding-edge_caddy_1 caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile 2>/dev/null || true
 
-# Upstream (platform) edge: prod host is already routed to 8095 by the
+# Upstream (platform) edge: prod host is already routed to 8020 by the
 # platform Caddyfile; ensure next. is too (idempotent append + reload).
 if ! grep -q "next.ecobuilding.confinia.io" ~/projects/platform/caddy/Caddyfile 2>/dev/null; then
   printf '\n# next.ecobuilding — staging du routeur ecobuilding (ajout auto par le deploy ecobuilding)\nnext.ecobuilding.confinia.io {\n\treverse_proxy 127.0.0.1:8020\n}\n' >> ~/projects/platform/caddy/Caddyfile
