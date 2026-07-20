@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>EcoBuilding — la carte d'identité écologique de chaque bâtiment</title>
+  <meta name="description" content="DPE, interdiction de location, risques naturels, potentiel solaire : toutes les données ouvertes d'un bâtiment français, en 3D.">
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="map"></div>
+
+  <header id="topbar">
+    <div id="brand">🏢 <strong>EcoBuilding</strong><span class="beta">beta</span></div>
+    <div id="searchbox">
+      <input id="search" type="text" placeholder="Adresse en France… (ex: 7 rue Pierre Corneille, Amiens)" autocomplete="off">
+      <ul id="suggestions" hidden></ul>
+    </div>
+    <a id="apilink" href="/api/v1/docs" title="API publique">API</a>
+  </header>
+
+  <aside id="panel" hidden>
+    <button id="close" aria-label="Fermer">×</button>
+    <div id="panel-content"></div>
+    <footer class="attribution">
+      Données : <a href="https://bdnb.io" target="_blank" rel="noopener">BDNB (CSTB)</a>,
+      <a href="https://adresse.data.gouv.fr" target="_blank" rel="noopener">BAN</a>,
+      <a href="https://www.georisques.gouv.fr" target="_blank" rel="noopener">Géorisques</a> — Licence Ouverte
+    </footer>
+  </aside>
+
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

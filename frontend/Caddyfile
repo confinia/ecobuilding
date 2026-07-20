@@ -1,0 +1,8 @@
+# Internal static server for the frontend container. TLS and the public
+# hostname are handled by the VM's shared edge caddy (see deploy/edge/).
+:80 {
+	root * /srv
+	encode zstd gzip
+	file_server
+	try_files {path} /index.html
+}

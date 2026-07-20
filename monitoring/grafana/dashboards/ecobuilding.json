@@ -1,0 +1,50 @@
+{
+  "title": "EcoBuilding — usage & services",
+  "uid": "ecobuilding-main",
+  "schemaVersion": 39,
+  "refresh": "30s",
+  "time": { "from": "now-24h", "to": "now" },
+  "panels": [
+    {
+      "id": 1, "type": "timeseries", "title": "API requests / min (by route)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [{ "expr": "sum by (route) (rate(ecobuilding_api_requests_total[5m])) * 60", "legendFormat": "{{route}}" }]
+    },
+    {
+      "id": 2, "type": "timeseries", "title": "Building lookups / min (by status)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [{ "expr": "sum by (status) (rate(ecobuilding_lookups_total[5m])) * 60", "legendFormat": "{{status}}" }]
+    },
+    {
+      "id": 3, "type": "timeseries", "title": "Frontend events / min (by event)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [{ "expr": "sum by (event) (rate(ecobuilding_frontend_events_total[5m])) * 60", "legendFormat": "{{event}}" }]
+    },
+    {
+      "id": 4, "type": "stat", "title": "Lookups (24h)",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 8 },
+      "targets": [{ "expr": "sum(increase(ecobuilding_lookups_total[24h]))" }]
+    },
+    {
+      "id": 5, "type": "stat", "title": "Page views (24h)",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 8 },
+      "targets": [{ "expr": "sum(increase(ecobuilding_frontend_events_total{event=\"page_view\"}[24h]))" }]
+    },
+    {
+      "id": 6, "type": "stat", "title": "Scrape targets up",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 12 },
+      "targets": [{ "expr": "sum(up)" }]
+    },
+    {
+      "id": 7, "type": "timeseries", "title": "Podman containers — CPU (cores)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "targets": [{ "expr": "sum by (name) (rate(podman_container_cpu_seconds_total[5m]))", "legendFormat": "{{name}}" }]
+    },
+    {
+      "id": 8, "type": "timeseries", "title": "Podman containers — memory",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "fieldConfig": { "defaults": { "unit": "bytes" } },
+      "targets": [{ "expr": "sum by (name) (podman_container_mem_usage_bytes)", "legendFormat": "{{name}}" }]
+    }
+  ]
+}
