@@ -37,16 +37,18 @@ Each stack (ecobuilding-blue, ecobuilding-green) is COMPLETE & independent:
   ns3188074.ip-5-135-143.eu / 5.135.143.93). Podman 5.4 + podman-compose 1.3, rootless.
 - **Deploy dir**: `~/projects/ecobuilding` on the VM (rsync'd copy of this repo).
 - **DNS**: wildcard `*.confinia.io` → VM, so `ecobuilding.confinia.io` already resolves.
-- **Edge**: we do NOT run our own :443. The confinia project's caddy is the VM's
-  shared edge; each project drops a `*.caddy` vhost into
-  `~/projects/confinia/deploy/sites/` and calls
-  `~/projects/confinia/deploy/deploy-edge.sh` (validate + graceful reload).
-  Our vhost source of truth: [deploy/edge/ecobuilding.caddy](deploy/edge/ecobuilding.caddy).
-  ⚠ **Incident 2026-07-20**: the confinia project's own deploy sync owns
-  `deploy/sites/` and DELETES foreign files — our vhost was wiped minutes after
-  installation (before the TLS cert was issued). Fix: the vhost is also copied
-  into the local `confinia-core` checkout (`~/project/confinia/deploy/sites/`),
-  so the owning project's syncs now preserve it. deploy.sh does both copies.
+- **Upstream edge = the `platform` project** (github.com/confinia/platform,
+  `~/projects/platform` on the VM): sole owner of 80/443 and certificates.
+  Its Caddyfile contains our minimal contract block —
+  `ecobuilding.confinia.io, next.ecobuilding.confinia.io { reverse_proxy 127.0.0.1:8020 }` —
+  and nothing else of ours. All app routing lives in THIS repo (router + stack
+  caddies). If the upstream block ever disappears (platform churn), symptom is
+  TLS alert/502 on both hosts while `curl -H "Host: ecobuilding.confinia.io"
+  http://127.0.0.1:8020/api/v1/healthz` works on the VM: re-add the block in
+  the platform repo and reload/restart `platform_caddy_1`.
+  ⚠ History 2026-07-20: before the platform layer existed, our vhost lived in
+  the confinia project's `deploy/sites/` and was repeatedly wiped/broken by
+  that project's own deploys (edge restructuring). The 3-tier split is the fix.
 
 ## Blue/green: two complete independent stacks, manual validation gate
 

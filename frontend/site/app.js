@@ -19,23 +19,76 @@ const map = new maplibregl.Map({
   pitch: 0,
   attributionControl: { compact: true },
 });
+// --- Controls: zoom + compass/pitch, GPS, 3D toggle -----------------------------
 map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "bottom-right");
 
+const geolocate = new maplibregl.GeolocateControl({
+  positionOptions: { enableHighAccuracy: true },
+  trackUserLocation: true,
+  showUserHeading: true,
+  fitBoundsOptions: { maxZoom: 17.5 },
+});
+map.addControl(geolocate, "bottom-right");
+geolocate.on("geolocate", async (pos) => {
+  const { longitude: lon, latitude: lat } = pos.coords;
+  track("geolocate");
+  map.easeTo({ zoom: 17.5, pitch: 55 });
+  showPanel('<p class="hint">Recherche du bâtiment à votre position…</p>');
+  try {
+    const r = await fetch(`${API}/reverse?lon=${lon}&lat=${lat}`);
+    if (!r.ok) throw new Error(r.status);
+    const data = await r.json();
+    renderPanel({ label: data.query.address }, data);
+  } catch {
+    showPanel('<p class="hint">Aucune adresse trouvée à votre position.</p>');
+  }
+});
+
+class PitchToggle {
+  onAdd(m) {
+    this._map = m;
+    this._btn = document.createElement("button");
+    this._btn.className = "maplibregl-ctrl-icon";
+    this._btn.textContent = "3D";
+    this._btn.style.fontWeight = "700";
+    this._btn.title = "Basculer 2D / 3D";
+    this._btn.onclick = () => m.easeTo({ pitch: m.getPitch() > 10 ? 0 : 55 });
+    this._el = document.createElement("div");
+    this._el.className = "maplibregl-ctrl maplibregl-ctrl-group";
+    this._el.appendChild(this._btn);
+    return this._el;
+  }
+  onRemove() { this._el.remove(); }
+}
+map.addControl(new PitchToggle(), "bottom-right");
+
+// --- 3D buildings colored by DPE class (BDNB open data, CSTB) -------------------
+const DPE_COLORS = ["match", ["get", "classe_bilan_dpe"],
+  "A", "#009036", "B", "#52b153", "C", "#a5cc74", "D", "#f4e70f",
+  "E", "#f0b40f", "F", "#eb8235", "G", "#d7221f",
+  "#d5cdc0"];
+
 map.on("load", () => {
-  // 3D buildings from the basemap's OpenMapTiles 'building' layer.
+  map.addSource("bdnb", {
+    type: "vector",
+    tiles: ["https://api.bdnb.io/v1/bdnb/tuiles/batiment_groupe/{z}/{x}/{y}.pbf"],
+    minzoom: 13,
+    maxzoom: 14,
+    attribution: "Bâtiments & DPE : BDNB (CSTB)",
+  });
   map.addLayer({
-    id: "eco-3d-buildings",
-    source: "openmaptiles",
-    "source-layer": "building",
+    id: "bdnb-dpe-3d",
+    source: "bdnb",
+    "source-layer": "sql_statement",
     type: "fill-extrusion",
-    minzoom: 14,
+    minzoom: 13,
     paint: {
-      "fill-extrusion-color": "#d5cdc0",
-      "fill-extrusion-height": ["coalesce", ["get", "render_height"], 6],
-      "fill-extrusion-base": ["coalesce", ["get", "render_min_height"], 0],
-      "fill-extrusion-opacity": 0.85,
+      "fill-extrusion-color": DPE_COLORS,
+      "fill-extrusion-height": ["coalesce", ["get", "hauteur_mean"], 6],
+      "fill-extrusion-opacity": 0.9,
     },
   });
+  document.getElementById("legend").hidden = false;
 });
 
 let marker = null;

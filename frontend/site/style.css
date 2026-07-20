@@ -42,6 +42,19 @@ html, body { margin: 0; height: 100%; font-family: system-ui, -apple-system, san
 .dpe-unknown { background: #999; }
 .ban-warning { margin: 8px 0; padding: 8px 10px; border-radius: 8px; font-size: 13px; background: #fdecea; color: #b3261e; }
 .ban-ok { background: #e8f5e9; color: #2b7a4b; }
+#legend {
+  position: absolute; bottom: 28px; left: 12px; z-index: 10;
+  background: rgba(255,255,255,.92); border-radius: 8px; padding: 6px 8px;
+  font-size: 11px; display: flex; gap: 3px; align-items: center;
+  box-shadow: 0 1px 4px rgba(0,0,0,.2);
+}
+#legend .lg {
+  display: inline-block; width: 18px; text-align: center; color: #fff;
+  font-weight: 700; border-radius: 3px; padding: 2px 0;
+}
+#legend .dpe-D { color: #333; }
+#legend .lg-none { background: #d5cdc0; color: #666; }
+
 .attribution { font-size: 10px; color: #888; margin-top: 12px; }
 .attribution a { color: #888; }
 .hint { font-size: 12px; color: #777; }
