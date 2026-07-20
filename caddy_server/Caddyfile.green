@@ -3,7 +3,7 @@
 {
 	admin off
 	auto_https off
-	http_port 8020
+	http_port 8095
 	default_bind 127.0.0.1
 }
 
@@ -15,6 +15,6 @@ http://next.ecobuilding.confinia.io {
 	reverse_proxy 127.0.0.1:8021
 }
 
-:8020 {
+:8095 {
 	respond "ecobuilding router (active: green)" 200
 }

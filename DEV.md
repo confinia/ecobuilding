@@ -13,7 +13,7 @@ Internet ──▶ MAIN edge caddy (confinia_caddy_1, owns 80/443, TLS, volatile
              owned by the confinia project; our stanza = 2 lines, forwards
              both hostnames to the router)
                  │
-                 ▼ 127.0.0.1:8020
+                 ▼ 127.0.0.1:8095
              ROUTER caddy (caddy_server/, project ecobuilding-edge, host net
              loopback) — maps hostnames to stacks; PROMOTE = swap one config
              file (Caddyfile.blue|green) + graceful reload
@@ -76,7 +76,7 @@ state recorded in `deploy/.active` on the VM (not in git, survives rsync).
 
 | Service | Port |
 |---|---|
-| router (ecobuilding-edge) | 8020 |
+| router (ecobuilding-edge) | 8095 |
 | blue stack entry caddy | 8021 |
 | green stack entry caddy | 8022 |
 | everything else (api, frontend, grafana, prometheus, otel, exporter) | stack-internal network only |
