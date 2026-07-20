@@ -21,6 +21,7 @@ from pydantic import BaseModel
 log = logging.getLogger("ecobuilding")
 
 BAN_URL = "https://api-adresse.data.gouv.fr/search/"
+BAN_REVERSE_URL = "https://api-adresse.data.gouv.fr/reverse/"
 BDNB_URL = "https://api.bdnb.io/v1/bdnb/donnees/batiment_groupe_complet/adresse"
 GEORISQUES_URL = "https://georisques.gouv.fr/api/v1/resultats_rapport_risque"
 
@@ -178,29 +179,7 @@ async def suggest(q: str = Query(min_length=3, description="Partial address")):
     }
 
 
-@app.get("/v1/lookup", tags=["buildings"])
-async def lookup(
-    q: str | None = Query(None, description="Free-text address"),
-    ban_id: str | None = Query(None, description="BAN interop id, e.g. 80021_6370_00007"),
-    lon: float | None = Query(None, description="Longitude (used for the risk report when ban_id is given)"),
-    lat: float | None = Query(None, description="Latitude (idem)"),
-):
-    """Address -> geocode (BAN) -> building record (BDNB) -> risk report (Géorisques)."""
-    if not q and not ban_id:
-        raise HTTPException(422, "Provide q or ban_id")
-
-    address = None
-    if not ban_id:
-        geo = await _client.get(BAN_URL, params={"q": q, "limit": 1, "type": "housenumber"})
-        geo.raise_for_status()
-        feats = geo.json().get("features", [])
-        if not feats:
-            M_LOOKUPS.add(1, {"status": "address_not_found"})
-            raise HTTPException(404, "Address not found (BAN)")
-        p = feats[0]["properties"]
-        ban_id, address = p["id"], p["label"]
-        lon, lat = feats[0]["geometry"]["coordinates"][:2]
-
+async def _do_lookup(q, ban_id, address, lon, lat):
     bdnb = await _client.get(
         BDNB_URL, params={"cle_interop_adr": f"eq.{ban_id}", "limit": "5"}
     )
@@ -244,6 +223,48 @@ async def lookup(
             "Géorisques — Licence Ouverte",
         ],
     }
+
+
+@app.get("/v1/lookup", tags=["buildings"])
+async def lookup(
+    q: str | None = Query(None, description="Free-text address"),
+    ban_id: str | None = Query(None, description="BAN interop id, e.g. 80021_6370_00007"),
+    lon: float | None = Query(None, description="Longitude (used for the risk report when ban_id is given)"),
+    lat: float | None = Query(None, description="Latitude (idem)"),
+):
+    """Address -> geocode (BAN) -> building record (BDNB) -> risk report (Géorisques)."""
+    if not q and not ban_id:
+        raise HTTPException(422, "Provide q or ban_id")
+
+    address = None
+    if not ban_id:
+        geo = await _client.get(BAN_URL, params={"q": q, "limit": 1, "type": "housenumber"})
+        geo.raise_for_status()
+        feats = geo.json().get("features", [])
+        if not feats:
+            M_LOOKUPS.add(1, {"status": "address_not_found"})
+            raise HTTPException(404, "Address not found (BAN)")
+        p = feats[0]["properties"]
+        ban_id, address = p["id"], p["label"]
+        lon, lat = feats[0]["geometry"]["coordinates"][:2]
+
+    return await _do_lookup(q, ban_id, address, lon, lat)
+
+
+@app.get("/v1/reverse", tags=["buildings"])
+async def reverse(
+    lon: float = Query(description="Longitude (e.g. from GPS)"),
+    lat: float = Query(description="Latitude"),
+):
+    """GPS position -> nearest address (BAN reverse) -> building record (BDNB)."""
+    geo = await _client.get(BAN_REVERSE_URL, params={"lon": lon, "lat": lat, "type": "housenumber"})
+    geo.raise_for_status()
+    feats = geo.json().get("features", [])
+    if not feats:
+        M_LOOKUPS.add(1, {"status": "reverse_not_found"})
+        raise HTTPException(404, "No address near this position (BAN reverse)")
+    p = feats[0]["properties"]
+    return await _do_lookup(None, p["id"], p["label"], lon, lat)
 
 
 class FrontendEvent(BaseModel):
