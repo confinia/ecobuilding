@@ -158,6 +158,25 @@ Definition used — *willingness to pay*: verified evidence that identified BUYE
 the category (published prices, real contracts), the strongest form being one's own paying
 customer. Competitors' prices are evidence of buyers, not the goal itself.
 
+### v1 monetization ladders (defined 2026-07-21 — all self-serve, shared backend)
+
+v1 (free 3D DPE map + open API) sells nothing yet; it is one brick from four ladders:
+
+| # | Ladder | Brick needed | Price | Buyer | Signal that triggers it |
+|---|---|---|---|---|---|
+| 1 | API keys + metered billing | key middleware + Stripe (~2-4 d) | 0 / 29 / 99 / 299€ per mo | proptech devs, lead-gen, insurtech, diagnostiqueur software | devs asking about the API |
+| 2 | Per-address paid report (PDF) | template + checkout (~1 w) | 9–29€ per report | sellers/landlords/buyers | consumer traffic + "can I get a document?" |
+| 3 | **Portfolio monitoring** (validated gap: Deepki ignores SMB) | accounts + CSV upload + alerts (~2 w) | 15–50€ per mo | agencies, syndics, small landlords | agency/syndic replies to LinkedIn post |
+| 4 | Embeddable widget | script packaging + domain licence (~1 w) | 19–49€ per domain/mo | agency websites | listing-site interest |
+
+Later (traffic-dependent): renovation/solar lead-gen (qualified leads resell 20-100€, e.g. to
+Effy-type players — F/G-building visitors ARE those leads); white-label (sales-led — parked).
+
+No-regret foundations regardless of ladder: /lookup cache (BDNB quota guard), then
+**self-host BDNB data** (full download, Licence Ouverte) → own SLA, own margins, no upstream
+dependency: turns the API from wrapper into infrastructure. Decision rule: launch first,
+let the strongest signal pick the ladder — all four share the same backend.
+
 ### Launch plan (defined 2026-07-20 — energy view live in prod)
 
 Positioning honesty: DPE maps already exist (ADEME observatoire, CSTB BDNB viewer, real-estate
