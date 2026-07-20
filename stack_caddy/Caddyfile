@@ -23,8 +23,10 @@
 		reverse_proxy grafana:3000
 	}
 
-	# MapLibre frontend.
+	# MapLibre frontend. no-cache = browsers must revalidate (ETag), so every
+	# deploy reaches users without hard refresh; tiny files, cost negligible.
 	handle {
+		header Cache-Control "no-cache"
 		reverse_proxy frontend:80
 	}
 }
