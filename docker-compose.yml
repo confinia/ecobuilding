@@ -85,6 +85,10 @@ services:
   # socket: systemctl --user enable --now podman.socket
   podman-exporter:
     image: quay.io/navidys/prometheus-podman-exporter:latest
+    # Rootless: host uid 1000 (socket owner) maps to container root — the
+    # exporter must run as root INSIDE the container to read the socket
+    # (still the unprivileged debian user on the host).
+    user: "0"
     environment:
       CONTAINER_HOST: unix:///run/podman/podman.sock
     command: ["--collector.enable-all"]
