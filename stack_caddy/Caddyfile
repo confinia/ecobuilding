@@ -1,0 +1,30 @@
+# Stack-internal edge: single entry point of ONE blue/green stack.
+# Hostname mapping is done upstream by the router (caddy_server/); here we
+# only route paths to this stack's own services over the private network.
+{
+	admin off
+	auto_https off
+}
+
+:80 {
+	encode zstd gzip
+	log {
+		output stdout
+		format json
+	}
+
+	# Public API (FastAPI). /api stripped; app root_path keeps docs correct.
+	handle_path /api/* {
+		reverse_proxy api:8000
+	}
+
+	# This stack's Grafana (subpath mode).
+	handle /grafana* {
+		reverse_proxy grafana:3000
+	}
+
+	# MapLibre frontend.
+	handle {
+		reverse_proxy frontend:80
+	}
+}
