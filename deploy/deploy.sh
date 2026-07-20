@@ -56,7 +56,7 @@ podman-compose -p "ecobuilding-$CANDIDATE" -f docker-compose.yml -f "deploy/$CAN
 # Router: config must match .active; start or reload.
 cp "caddy_server/Caddyfile.$ACTIVE" caddy_server/Caddyfile
 podman-compose -p ecobuilding-edge -f caddy_server/docker-compose.yml up -d
-podman exec ecobuilding-edge_caddy_1 caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile 2>/dev/null || true
+podman restart ecobuilding-edge_caddy_1 >/dev/null
 
 # Upstream (platform) edge: prod host is already routed to 8020 by the
 # platform Caddyfile; ensure next. is too (idempotent append + reload).
