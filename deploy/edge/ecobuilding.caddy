@@ -1,0 +1,43 @@
+# EcoBuilding — vhost for the VM's shared caddy edge.
+# Deployed by deploy/deploy.sh to ~/projects/confinia/deploy/sites/ecobuilding.caddy
+# (imported by the main Caddyfile), then graceful-reloaded via
+# ~/projects/confinia/deploy/deploy-edge.sh. Backends bind 127.0.0.1 only.
+
+ecobuilding.confinia.io {
+	encode zstd gzip
+
+	log {
+		output file /data/logs/ecobuilding-access.log {
+			roll_size 20MiB
+			roll_keep 5
+		}
+		format json
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	route {
+		import block_scanners
+
+		# Public API (FastAPI). /api is stripped; the app's root_path keeps
+		# docs URLs correct -> https://ecobuilding.confinia.io/api/v1/docs
+		handle_path /api/* {
+			reverse_proxy 127.0.0.1:8010
+		}
+
+		# Dedicated Grafana (subpath mode, auth handled by Grafana itself).
+		handle /grafana* {
+			reverse_proxy 127.0.0.1:3002
+		}
+
+		# MapLibre frontend (static).
+		handle {
+			reverse_proxy 127.0.0.1:8011
+		}
+	}
+}

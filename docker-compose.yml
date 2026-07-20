@@ -1,0 +1,77 @@
+# EcoBuilding — full stack for podman-compose (VM) / docker compose (local).
+# Public exposure is handled by the VM's shared edge caddy (deploy/edge/):
+# every service here binds 127.0.0.1 only.
+#
+#   frontend  127.0.0.1:8011  static MapLibre app
+#   api       127.0.0.1:8010  FastAPI /v1 (public path: /api/v1)
+#   grafana   127.0.0.1:3002  dashboards (public path: /grafana)
+#   otel-collector, prometheus, podman-exporter: internal network only
+
+services:
+  api:
+    build: ./api
+    image: ecobuilding-api:latest
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_SERVICE_NAME: ecobuilding-api
+    ports:
+      - "127.0.0.1:8010:8000"
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    image: ecobuilding-frontend:latest
+    ports:
+      - "127.0.0.1:8011:80"
+    restart: unless-stopped
+
+  otel-collector:
+    image: docker.io/otel/opentelemetry-collector-contrib:0.119.0
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./monitoring/otel-collector.yaml:/etc/otelcol/config.yaml:ro
+    restart: unless-stopped
+
+  prometheus:
+    image: docker.io/prom/prometheus:v3.1.0
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=90d"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prom_data:/prometheus
+    restart: unless-stopped
+
+  grafana:
+    image: docker.io/grafana/grafana-oss:11.5.1
+    env_file:
+      - ./deploy/secrets.env   # GF_SECURITY_ADMIN_PASSWORD (gitignored)
+    environment:
+      GF_SERVER_ROOT_URL: https://ecobuilding.confinia.io/grafana/
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+    ports:
+      - "127.0.0.1:3002:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    restart: unless-stopped
+
+  # Per-container metrics of the (rootless) podman user. Requires the user
+  # socket: systemctl --user enable --now podman.socket
+  podman-exporter:
+    image: quay.io/navidys/prometheus-podman-exporter:latest
+    environment:
+      CONTAINER_HOST: unix:///run/podman/podman.sock
+    command: ["--collector.enable-all"]
+    volumes:
+      - ${XDG_RUNTIME_DIR:-/run/user/1000}/podman/podman.sock:/run/podman/podman.sock:ro
+    security_opt:
+      - label=disable
+    restart: unless-stopped
+
+volumes:
+  prom_data:
+  grafana_data:
