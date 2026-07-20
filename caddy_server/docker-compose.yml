@@ -1,6 +1,6 @@
 # EcoBuilding ROUTER — own tiny compose project (name: ecobuilding-edge).
 # Receives both hostnames from the VM's main caddy (TLS terminated there) on
-# 127.0.0.1:8020 and maps prod/next to the blue or green stack. Promotion and
+# 127.0.0.1:8095 and maps prod/next to the blue or green stack. Promotion and
 # rollback only touch THIS caddy's config (see deploy/promote.sh).
 # Host network (loopback bind only): it must reach the stacks' published
 # ports 127.0.0.1:8021 / 8022.
