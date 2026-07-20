@@ -6,7 +6,7 @@
 # Model: two complete independent stacks from the same docker-compose.yml
 #   ecobuilding-blue  (entry 127.0.0.1:8021)
 #   ecobuilding-green (entry 127.0.0.1:8022)
-# plus the router (caddy_server/, project ecobuilding-edge, 127.0.0.1:8095)
+# plus the router (caddy_server/, project ecobuilding-edge, 127.0.0.1:8020)
 # which maps prod/next hostnames to the stacks. State: deploy/.active on VM.
 set -eu
 
@@ -22,7 +22,7 @@ rsync -az --delete \
   ./ "$HOST:~/projects/ecobuilding/"
 
 # Upstream edge = platform repo (github.com/confinia/platform): its Caddyfile
-# already forwards ecobuilding.confinia.io -> 127.0.0.1:8095 (our router).
+# already forwards ecobuilding.confinia.io -> 127.0.0.1:8020 (our router).
 # Only next. may be missing; ensured idempotently on the VM below.
 
 echo "== remote: stacks"
@@ -61,7 +61,7 @@ podman exec ecobuilding-edge_caddy_1 caddy reload --config /etc/caddy/Caddyfile 
 # Upstream (platform) edge: prod host is already routed to 8095 by the
 # platform Caddyfile; ensure next. is too (idempotent append + reload).
 if ! grep -q "next.ecobuilding.confinia.io" ~/projects/platform/caddy/Caddyfile 2>/dev/null; then
-  printf '\n# next.ecobuilding — staging du routeur ecobuilding (ajout auto par le deploy ecobuilding)\nnext.ecobuilding.confinia.io {\n\treverse_proxy 127.0.0.1:8095\n}\n' >> ~/projects/platform/caddy/Caddyfile
+  printf '\n# next.ecobuilding — staging du routeur ecobuilding (ajout auto par le deploy ecobuilding)\nnext.ecobuilding.confinia.io {\n\treverse_proxy 127.0.0.1:8020\n}\n' >> ~/projects/platform/caddy/Caddyfile
   podman exec platform_caddy_1 caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile 2>/dev/null \
     || echo "   WARN: platform edge reload failed — next. will load on its next reload"
 fi
