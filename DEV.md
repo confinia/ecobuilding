@@ -30,14 +30,40 @@ ecobuilding compose network (internal):
   `~/projects/confinia/deploy/sites/` and calls
   `~/projects/confinia/deploy/deploy-edge.sh` (validate + graceful reload).
   Our vhost source of truth: [deploy/edge/ecobuilding.caddy](deploy/edge/ecobuilding.caddy).
+  ⚠ **Incident 2026-07-20**: the confinia project's own deploy sync owns
+  `deploy/sites/` and DELETES foreign files — our vhost was wiped minutes after
+  installation (before the TLS cert was issued). Fix: the vhost is also copied
+  into the local `confinia-core` checkout (`~/project/confinia/deploy/sites/`),
+  so the owning project's syncs now preserve it. deploy.sh does both copies.
+
+## Blue/green with a manual validation gate
+
+Fixed slot roles — no state to flip in caddy, the vhost is static:
+
+| Slot | Role | URL | api | frontend |
+|---|---|---|---|---|
+| A | **production** | https://ecobuilding.confinia.io | 8010 | 8011 |
+| B | **staging** | https://next.ecobuilding.confinia.io | 8110 | 8111 |
+
+- `./deploy/deploy.sh` → builds, tags images with the git SHA, restarts **slot B
+  only**, prints the preview URL. Production is never touched.
+- **You validate on `next.`**, then `./deploy/promote.sh` → health-checks staging,
+  retags `:latest` to the validated SHA, recreates slot A, records the previous
+  SHA. No traffic switch trickery: prod containers are recreated on the
+  validated image (seconds of restart, acceptable for this product).
+- `./deploy/rollback.sh` → recreates slot A on the previously recorded SHA.
+- Prod has **no automatic failover to staging**: an unvalidated version must
+  never receive production traffic.
+- Version state on the VM: `deploy/.staging_sha`, `.prod_sha`, `.prev_prod_sha`
+  (not in git).
 
 ## Ports (127.0.0.1 on the VM — never public)
 
 | Service | Port | Public path |
 |---|---|---|
-| api (FastAPI) | 8010 | `/api/v1/...` |
-| frontend (static) | 8011 | `/` |
-| grafana | 3002 | `/grafana` |
+| api A / B | 8010 / 8110 | `/api/v1/...` (prod / next.) |
+| frontend A / B | 8011 / 8111 | `/` (prod / next.) |
+| grafana (shared) | 3002 | `/grafana` (both hosts) |
 | otel-collector, prometheus, podman-exporter | internal network only | — |
 
 Taken by other projects (do not reuse): 8000/8001 (confinia api), 3000
@@ -96,15 +122,25 @@ Taken by other projects (do not reuse): 8000/8001 (confinia api), 3000
 docker compose up --build          # then http://localhost:8011 / :8010/v1/docs
                                    # (create deploy/secrets.env from the .example first)
 
-# deploy to the VM (rsync + build + up + edge vhost + smoke tests)
-./deploy/deploy.sh
+# 1. deploy current code to STAGING (slot B) — prod untouched
+./deploy/deploy.sh                 # -> https://next.ecobuilding.confinia.io
 
-# logs on the VM
-ssh confinia 'cd ~/projects/ecobuilding && podman-compose logs -f api'
+# 2. validate manually on next., then promote to PRODUCTION (slot A)
+./deploy/promote.sh                # -> https://ecobuilding.confinia.io
+
+# oops?
+./deploy/rollback.sh
+
+# logs on the VM (slot A: api / frontend ; slot B: api-b / frontend-b)
+ssh confinia 'cd ~/projects/ecobuilding && podman-compose logs -f api-b'
 
 # edge access log
 ssh confinia 'podman exec confinia_caddy_1 tail -f /data/logs/ecobuilding-access.log'
 ```
+
+Note: the ssh alias `confinia` (`~/.ssh/config`) forwards local **9976** →
+VM 9966 (maplibre-dev); changed from 9966→9976 on 2026-07-20 to avoid clashing
+with another session's forward.
 
 ## Decisions
 

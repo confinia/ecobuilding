@@ -8,12 +8,16 @@
 #   otel-collector, prometheus, podman-exporter: internal network only
 
 services:
+  # --- Slot A = PRODUCTION (ecobuilding.confinia.io). Recreated ONLY by
+  # deploy/promote.sh, never by deploy.sh: prod stays on its image until a
+  # deployed version has been validated on the staging slot.
   api:
     build: ./api
     image: ecobuilding-api:latest
     environment:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
       OTEL_SERVICE_NAME: ecobuilding-api
+      OTEL_RESOURCE_ATTRIBUTES: deployment.environment=production
     ports:
       - "127.0.0.1:8010:8000"
     restart: unless-stopped
@@ -23,6 +27,24 @@ services:
     image: ecobuilding-frontend:latest
     ports:
       - "127.0.0.1:8011:80"
+    restart: unless-stopped
+
+  # --- Slot B = STAGING (next.ecobuilding.confinia.io). Target of every
+  # deploy.sh run; always runs the latest build for validation.
+  api-b:
+    image: ecobuilding-api:latest
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_SERVICE_NAME: ecobuilding-api
+      OTEL_RESOURCE_ATTRIBUTES: deployment.environment=staging
+    ports:
+      - "127.0.0.1:8110:8000"
+    restart: unless-stopped
+
+  frontend-b:
+    image: ecobuilding-frontend:latest
+    ports:
+      - "127.0.0.1:8111:80"
     restart: unless-stopped
 
   otel-collector:
