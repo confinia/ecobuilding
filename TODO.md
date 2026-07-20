@@ -15,7 +15,7 @@ Status: `[ ]` todo · `[~]` in progress · `[x]` done
 - [ ] Recheck DPE ban-calendar legislation before committing (April 2026 "Relance logement" bill derogations)
 - [ ] Define v1 scope of the DPE-rentability scorecard (free lookup + paid portfolio tier)
 - [ ] Design the API surface early (the scorecard backend IS the API): normalized per-building JSON schema, keys, metering
-- [ ] Prototype one thematic vector-tile layer (DPE France) on top of BDNB tiles
+- [x] DPE France layer live in prod (BDNB tiles, 3D colored by class, 2026-07-20)
 - [ ] Spec the embeddable widget (script tag, per-domain licensing)
 - [ ] Pick 1 primary target segment from research findings (see BUSINESS.md §8)
 - [x] Verify ODbL implications (2026-07-20: Produced Works sellable; no moat in enhanced OSM data; photospheres safe as reference-linked layer — BUSINESS.md §5)

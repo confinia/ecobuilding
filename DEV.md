@@ -127,7 +127,7 @@ Taken by other projects (do not reuse): 8000/8001 (confinia api), 3000
 - MapLibre GL JS 4.x (CDN), basemap **OpenFreeMap `liberty`** (free vector
   tiles, no key, no quota) + `fill-extrusion` 3D buildings from the basemap's
   OpenMapTiles `building` layer.
-- Next iterations: BDNB vector tiles overlay
+- DONE 2026-07-20: BDNB vector tiles overlay (layer `sql_statement`, attrs classe_bilan_dpe + hauteur_mean, CORS open) renders the whole 3D city colored by DPE class. Next: BDNB tile caching/quota watch, photosphere layer
   (`https://api.bdnb.io/v1/bdnb/tuiles/batiment_groupe/{z}/{x}/{y}.pbf`, probed OK)
   to color buildings by DPE class; photosphere layer (see maplibre-gl-photosphere
   project already on the VM).
