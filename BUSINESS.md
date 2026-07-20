@@ -158,6 +158,24 @@ Definition used — *willingness to pay*: verified evidence that identified BUYE
 the category (published prices, real contracts), the strongest form being one's own paying
 customer. Competitors' prices are evidence of buyers, not the goal itself.
 
+### Launch plan (defined 2026-07-20 — energy view live in prod)
+
+Positioning honesty: DPE maps already exist (ADEME observatoire, CSTB BDNB viewer, real-estate
+sites). Our map ≠ the product; it is the acquisition layer. Announce the **countdown**, not the
+map: "see every building that becomes illegal to rent in 2028/2034, in 3D."
+
+1. **Announce** (no novelty claims, show-don't-promise): Show HN (solo + open data + open API
+   angle) · LinkedIn FR (agencies/notaires reach) · OSM forum / r/openstreetmap / geo Mastodon ·
+   r/france if public-interest framing.
+2. **Measure first, decide after** — success thresholds set BEFORE posting: >500 lookups in
+   launch week, any organic return traffic, or ≥1 inbound portfolio request → green-light step 3.
+   Metrics live in /grafana (page_view, search, lookup, geolocate).
+3. **Monetizable brick next**: per-address SEO pages (DPE + countdown + risks) converting spike →
+   durable organic traffic; first zero-touch revenue = per-address "rapport de conformité
+   locative" (~10–30€, card) or portfolio-upload monitoring subscription for agencies/syndics.
+Pre-announce guard: cache /lookup responses (BDNB 10k calls/month); tiles already go
+browser→BDNB directly (spike-safe for us); attribution displayed (Licence Ouverte ✓).
+
 ## 9. KPIs to track (once live)
 
 - Buildings captured / modeled

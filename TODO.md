@@ -49,6 +49,12 @@ Status: `[ ]` todo · `[~]` in progress · `[x]` done
 
 ## Marketing / visibility
 
+- [ ] Pre-announce: add /lookup response cache (BDNB quota guard) — ~1h work
+- [ ] Set launch success thresholds in writing (see BUSINESS.md §8 launch plan), then post
+- [ ] Show HN draft: "3D map of every French building's energy class (open data, solo side project)" — countdown framing
+- [ ] LinkedIn FR post (agencies/notaires angle: interdiction de location 2028/2034)
+- [ ] OSM forum + r/openstreetmap + geo Mastodon (community + backlinks)
+- [ ] Week after: read Grafana numbers, decide per-address SEO pages go/no-go
 - [ ] Publish the FPS demo publicly (HN, OSM community, r/openstreetmap, LinkedIn)
 - [ ] Write a technical blog post on the photosphere↔OSM pipeline
 - [ ] Present at a local OSM / geo meetup (SOTM-FR?)
