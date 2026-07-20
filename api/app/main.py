@@ -161,9 +161,14 @@ async def healthz():
 
 
 @app.get("/v1/suggest", tags=["geocoding"])
-async def suggest(q: str = Query(min_length=3, description="Partial address")):
-    """Address autocomplete (BAN). Returns label, BAN id and coordinates."""
-    resp = await _client.get(BAN_URL, params={"q": q, "limit": 5, "type": "housenumber"})
+async def suggest(q: str = Query(min_length=3, description="Partial address, street or city")):
+    """Autocomplete (BAN): cities, streets and full addresses.
+
+    `type` is one of municipality | street | locality | housenumber; only
+    housenumber entries can be looked up as buildings — others are navigation
+    targets.
+    """
+    resp = await _client.get(BAN_URL, params={"q": q, "limit": 6})
     resp.raise_for_status()
     feats = resp.json().get("features", [])
     return {
@@ -171,6 +176,8 @@ async def suggest(q: str = Query(min_length=3, description="Partial address")):
             {
                 "label": f["properties"]["label"],
                 "ban_id": f["properties"]["id"],
+                "type": f["properties"].get("type"),
+                "city": f["properties"].get("city"),
                 "lon": f["geometry"]["coordinates"][0],
                 "lat": f["geometry"]["coordinates"][1],
             }

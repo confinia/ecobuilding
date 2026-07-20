@@ -123,9 +123,19 @@ document.addEventListener("click", (e) => { if (!e.target.closest("#searchbox"))
 async function select(s) {
   list.hidden = true;
   input.value = s.label;
-  track("search", s.ban_id);
-  map.flyTo({ center: [s.lon, s.lat], zoom: 17.5, pitch: 55, bearing: -18, duration: 2500 });
+  track("search", s.type || "unknown");
   if (marker) marker.remove();
+
+  // City or street: just fly there (zoom 13.5+ reveals the DPE colors).
+  if (s.type !== "housenumber") {
+    const zoom = s.type === "municipality" ? 13.5 : 16.5;
+    panel.hidden = true;
+    map.flyTo({ center: [s.lon, s.lat], zoom, pitch: 45, duration: 2500 });
+    return;
+  }
+
+  // Full address: fly to the building and open its record.
+  map.flyTo({ center: [s.lon, s.lat], zoom: 17.5, pitch: 55, bearing: -18, duration: 2500 });
   marker = new maplibregl.Marker({ color: "#2b7a4b" }).setLngLat([s.lon, s.lat]).addTo(map);
   showPanel('<p class="hint">Chargement des données du bâtiment…</p>');
   try {
