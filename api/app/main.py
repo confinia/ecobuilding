@@ -23,6 +23,7 @@ log = logging.getLogger("ecobuilding")
 BAN_URL = "https://api-adresse.data.gouv.fr/search/"
 BAN_REVERSE_URL = "https://api-adresse.data.gouv.fr/reverse/"
 BDNB_URL = "https://api.bdnb.io/v1/bdnb/donnees/batiment_groupe_complet/adresse"
+BDNB_BASE_URL = "https://api.bdnb.io/v1/bdnb/donnees/batiment_groupe_complet"
 GEORISQUES_URL = "https://georisques.gouv.fr/api/v1/resultats_rapport_risque"
 
 # Rental-ban calendar, loi Climat et Résilience (verified 2026-07-20).
@@ -186,6 +187,33 @@ async def suggest(q: str = Query(min_length=3, description="Partial address, str
     }
 
 
+async def _area_risks(lon, lat):
+    if lon is None or lat is None:
+        return None
+    try:
+        g = await _client.get(GEORISQUES_URL, params={"latlon": f"{lon},{lat}"})
+        if g.status_code != 200:
+            return None
+        gj = g.json()
+        return {
+            "commune": (gj.get("commune") or {}).get("libelle"),
+            "report_url": gj.get("url"),
+            "risques_naturels": [
+                k
+                for k, v in (gj.get("risquesNaturels") or {}).items()
+                if isinstance(v, dict) and v.get("present")
+            ],
+            "risques_technologiques": [
+                k
+                for k, v in (gj.get("risquesTechnologiques") or {}).items()
+                if isinstance(v, dict) and v.get("present")
+            ],
+        }
+    except httpx.HTTPError as e:
+        log.warning("Géorisques unavailable: %s", e)
+        return None
+
+
 async def _do_lookup(q, ban_id, address, lon, lat):
     bdnb = await _client.get(
         BDNB_URL, params={"cle_interop_adr": f"eq.{ban_id}", "limit": "5"}
@@ -196,28 +224,7 @@ async def _do_lookup(q, ban_id, address, lon, lat):
         log.warning("BDNB error: %s", rows)
         rows = []
 
-    risks = None
-    if lon is not None:
-        try:
-            g = await _client.get(GEORISQUES_URL, params={"latlon": f"{lon},{lat}"})
-            if g.status_code == 200:
-                gj = g.json()
-                risks = {
-                    "commune": (gj.get("commune") or {}).get("libelle"),
-                    "report_url": gj.get("url"),
-                    "risques_naturels": [
-                        k
-                        for k, v in (gj.get("risquesNaturels") or {}).items()
-                        if isinstance(v, dict) and v.get("present")
-                    ],
-                    "risques_technologiques": [
-                        k
-                        for k, v in (gj.get("risquesTechnologiques") or {}).items()
-                        if isinstance(v, dict) and v.get("present")
-                    ],
-                }
-        except httpx.HTTPError as e:
-            log.warning("Géorisques unavailable: %s", e)
+    risks = await _area_risks(lon, lat)
 
     M_LOOKUPS.add(1, {"status": "ok" if rows else "no_building"})
     return {
@@ -272,6 +279,31 @@ async def reverse(
         raise HTTPException(404, "No address near this position (BAN reverse)")
     p = feats[0]["properties"]
     return await _do_lookup(None, p["id"], p["label"], lon, lat)
+
+
+@app.get("/v1/buildings/{bdnb_id}", tags=["buildings"])
+async def building(
+    bdnb_id: str,
+    lon: float | None = Query(None, description="Longitude (adds the Géorisques area report)"),
+    lat: float | None = Query(None, description="Latitude (idem)"),
+):
+    """Full record of one building by its BDNB id (e.g. from a map click)."""
+    r = await _client.get(BDNB_BASE_URL, params={"batiment_groupe_id": f"eq.{bdnb_id}", "limit": "1"})
+    r.raise_for_status()
+    rows = r.json()
+    if not isinstance(rows, list) or not rows:
+        raise HTTPException(404, "Unknown building id")
+    row = rows[0]
+    M_LOOKUPS.add(1, {"status": "by_id"})
+    return {
+        "query": {"bdnb_id": bdnb_id, "address": row.get("libelle_adr_principale_ban"), "lon": lon, "lat": lat},
+        "buildings": [_normalize_building(row)],
+        "area_risks": await _area_risks(lon, lat),
+        "sources": [
+            "BDNB (CSTB) — Licence Ouverte v2.0",
+            "Géorisques — Licence Ouverte",
+        ],
+    }
 
 
 class FrontendEvent(BaseModel):
