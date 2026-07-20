@@ -54,8 +54,9 @@ podman-compose -p "ecobuilding-$CANDIDATE" -f docker-compose.yml -f "deploy/$CAN
 podman-compose -p "ecobuilding-$CANDIDATE" -f docker-compose.yml -f "deploy/$CANDIDATE.override.yml" up -d --force-recreate
 
 # Router: config must match .active; start or reload.
+# (podman-compose 1.3 fails to open "-f subdir/file" — run from inside the dir)
 cp "caddy_server/Caddyfile.$ACTIVE" caddy_server/Caddyfile
-podman-compose -p ecobuilding-edge -f caddy_server/docker-compose.yml up -d
+( cd caddy_server && podman-compose -p ecobuilding-edge -f docker-compose.yml up -d )
 podman restart ecobuilding-edge_caddy_1 >/dev/null
 
 # Upstream (platform) edge: prod host is already routed to 8020 by the
