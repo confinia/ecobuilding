@@ -90,6 +90,26 @@ map.on("load", () => {
     },
   });
   document.getElementById("legend").hidden = false;
+
+  // Click any building -> full record (BDNB id comes from the tile itself).
+  map.on("click", "bdnb-dpe-3d", async (e) => {
+    const f = e.features && e.features[0];
+    const id = f && f.properties.batiment_groupe_id;
+    if (!id) return;
+    track("building_click");
+    if (marker) marker.remove();
+    showPanel('<p class="hint">Chargement des données du bâtiment…</p>');
+    try {
+      const r = await fetch(`${API}/buildings/${encodeURIComponent(id)}?lon=${e.lngLat.lng}&lat=${e.lngLat.lat}`);
+      if (!r.ok) throw new Error(r.status);
+      const data = await r.json();
+      renderPanel({ label: data.query.address || "Bâtiment" }, data);
+    } catch {
+      showPanel('<p class="hint">Données indisponibles pour ce bâtiment.</p>');
+    }
+  });
+  map.on("mouseenter", "bdnb-dpe-3d", () => { map.getCanvas().style.cursor = "pointer"; });
+  map.on("mouseleave", "bdnb-dpe-3d", () => { map.getCanvas().style.cursor = ""; });
 });
 
 let marker = null;
