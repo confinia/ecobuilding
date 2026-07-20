@@ -1,50 +1,35 @@
-# EcoBuilding — full stack for podman-compose (VM) / docker compose (local).
-# Public exposure is handled by the VM's shared edge caddy (deploy/edge/):
-# every service here binds 127.0.0.1 only.
+# EcoBuilding — ONE complete, self-contained stack (app + its own edge caddy
+# + full monitoring). Instantiated TWICE for blue/green:
 #
-#   frontend  127.0.0.1:8011  static MapLibre app
-#   api       127.0.0.1:8010  FastAPI /v1 (public path: /api/v1)
-#   grafana   127.0.0.1:3002  dashboards (public path: /grafana)
-#   otel-collector, prometheus, podman-exporter: internal network only
+#   podman-compose -p ecobuilding-blue  -f docker-compose.yml -f deploy/blue.override.yml  up -d
+#   podman-compose -p ecobuilding-green -f docker-compose.yml -f deploy/green.override.yml up -d
+#
+# The ONLY published port is this stack's caddy (blue 127.0.0.1:8021, green
+# 127.0.0.1:8022 — set by the override files); everything else stays on the
+# stack's private network, so the two stacks can never collide. The router
+# (caddy_server/) maps prod/next hostnames to the stacks; the VM's main caddy
+# terminates TLS and forwards to the router.
 
 services:
-  # --- Slot A = PRODUCTION (ecobuilding.confinia.io). Recreated ONLY by
-  # deploy/promote.sh, never by deploy.sh: prod stays on its image until a
-  # deployed version has been validated on the staging slot.
+  # Stack entry: routes /api, /grafana and / to this stack's own services.
+  caddy:
+    image: docker.io/library/caddy:2
+    volumes:
+      - ./stack_caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+    # ports: set per stack by deploy/{blue,green}.override.yml
+    restart: unless-stopped
+
   api:
     build: ./api
     image: ecobuilding-api:latest
     environment:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
       OTEL_SERVICE_NAME: ecobuilding-api
-      OTEL_RESOURCE_ATTRIBUTES: deployment.environment=production
-    ports:
-      - "127.0.0.1:8010:8000"
     restart: unless-stopped
 
   frontend:
     build: ./frontend
     image: ecobuilding-frontend:latest
-    ports:
-      - "127.0.0.1:8011:80"
-    restart: unless-stopped
-
-  # --- Slot B = STAGING (next.ecobuilding.confinia.io). Target of every
-  # deploy.sh run; always runs the latest build for validation.
-  api-b:
-    image: ecobuilding-api:latest
-    environment:
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
-      OTEL_SERVICE_NAME: ecobuilding-api
-      OTEL_RESOURCE_ATTRIBUTES: deployment.environment=staging
-    ports:
-      - "127.0.0.1:8110:8000"
-    restart: unless-stopped
-
-  frontend-b:
-    image: ecobuilding-frontend:latest
-    ports:
-      - "127.0.0.1:8111:80"
     restart: unless-stopped
 
   otel-collector:
@@ -73,8 +58,6 @@ services:
       GF_SERVER_SERVE_FROM_SUB_PATH: "true"
       GF_USERS_ALLOW_SIGN_UP: "false"
       GF_ANALYTICS_REPORTING_ENABLED: "false"
-    ports:
-      - "127.0.0.1:3002:3000"
     volumes:
       - grafana_data:/var/lib/grafana
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
@@ -83,11 +66,10 @@ services:
 
   # Per-container metrics of the (rootless) podman user. Requires the user
   # socket: systemctl --user enable --now podman.socket
+  # Rootless: host uid 1000 (socket owner) maps to container root — the
+  # exporter must run as root INSIDE the container to read the socket.
   podman-exporter:
     image: quay.io/navidys/prometheus-podman-exporter:latest
-    # Rootless: host uid 1000 (socket owner) maps to container root — the
-    # exporter must run as root INSIDE the container to read the socket
-    # (still the unprivileged debian user on the host).
     user: "0"
     environment:
       CONTAINER_HOST: unix:///run/podman/podman.sock

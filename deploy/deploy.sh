@@ -1,30 +1,34 @@
 #!/bin/bash
-# EcoBuilding — deploy the current code to the STAGING slot (B) only.
-# Production (slot A) is never touched: validate on the preview URL, then run
-# ./deploy/promote.sh to switch prod. Requirements: ssh alias "confinia".
+# EcoBuilding — deploy the current code to the CANDIDATE stack (the one NOT
+# serving production). Production stack is never touched: validate on
+# https://next.ecobuilding.confinia.io then run ./deploy/promote.sh.
 #
-#   ./deploy/deploy.sh        rsync + build + restart staging + edge vhosts
+# Model: two complete independent stacks from the same docker-compose.yml
+#   ecobuilding-blue  (entry 127.0.0.1:8021)
+#   ecobuilding-green (entry 127.0.0.1:8022)
+# plus the router (caddy_server/, project ecobuilding-edge, 127.0.0.1:8020)
+# which maps prod/next hostnames to the stacks. State: deploy/.active on VM.
 set -eu
 
 HOST=confinia
 cd "$(dirname "$0")/.."
-SHA=$(git rev-parse --short HEAD 2>/dev/null || date +%s)
+SHA=$(git rev-parse --short HEAD 2>/dev/null || echo dev)
 
 echo "== rsync sources -> $HOST:~/projects/ecobuilding (version $SHA)"
 rsync -az --delete \
   --exclude .git --exclude __pycache__ --exclude .venv --exclude node_modules \
-  --exclude deploy/secrets.env \
+  --exclude deploy/secrets.env --exclude deploy/.active \
+  --exclude caddy_server/Caddyfile \
   ./ "$HOST:~/projects/ecobuilding/"
 
-# The shared edge's sites/ dir is owned by the confinia project deploy (it
-# deletes foreign files): the vhost must ALSO live in the local confinia-core
-# checkout so its own syncs preserve it.
-if [ -d "$HOME/project/confinia/deploy/sites" ]; then
-  cp deploy/edge/ecobuilding.caddy "$HOME/project/confinia/deploy/sites/ecobuilding.caddy"
-fi
+# Main-edge stanza also lives in the local confinia-core checkout (its deploys
+# own the sites dirs and delete foreign files).
+for d in "$HOME/project/confinia/deploy/sites" "$HOME/project/confinia/deploy/caddy/sites"; do
+  [ -d "$d" ] && cp deploy/edge/ecobuilding.caddy "$d/ecobuilding.caddy"
+done
 
-echo "== remote: secrets, podman socket, build, staging up, edge"
-ssh "$HOST" "ECOBUILDING_SHA=$SHA" 'bash -s' <<'EOF'
+echo "== remote: stacks"
+ssh "$HOST" 'bash -s' <<'EOF'
 set -eu
 cd ~/projects/ecobuilding
 
@@ -33,28 +37,48 @@ if [ ! -f deploy/secrets.env ]; then
   chmod 600 deploy/secrets.env
   echo "   -> deploy/secrets.env generated (grafana admin password)"
 fi
-
 systemctl --user is-active --quiet podman.socket || systemctl --user enable --now podman.socket
 
-# Build once, remember the version for promote/rollback.
-podman-compose build
-podman tag ecobuilding-api:latest      "ecobuilding-api:${ECOBUILDING_SHA}"
-podman tag ecobuilding-frontend:latest "ecobuilding-frontend:${ECOBUILDING_SHA}"
-echo "${ECOBUILDING_SHA}" > deploy/.staging_sha
+ACTIVE=$(cat deploy/.active 2>/dev/null || echo blue)
+echo "$ACTIVE" > deploy/.active
+if [ "$ACTIVE" = blue ]; then CANDIDATE=green; else CANDIDATE=blue; fi
+echo "   active stack: $ACTIVE — deploying to candidate: $CANDIDATE"
 
-# Shared services + STAGING slot only. Slot A (api, frontend) is untouched.
-podman-compose up -d otel-collector prometheus grafana podman-exporter
-podman-compose up -d --force-recreate api-b frontend-b
+# One-time cleanup of the legacy single-stack deployment (ecobuilding_*).
+LEGACY=$(podman ps -a --format '{{.Names}}' | grep -E '^ecobuilding_' || true)
+[ -n "$LEGACY" ] && { echo "   removing legacy containers"; echo "$LEGACY" | xargs podman rm -f >/dev/null; }
 
-# Edge vhosts (idempotent; survives confinia deploys via confinia-core copy).
-cp deploy/edge/ecobuilding.caddy ~/projects/confinia/deploy/sites/ecobuilding.caddy
-~/projects/confinia/deploy/deploy-edge.sh
+# Ensure the ACTIVE stack exists/runs (no rebuild, no recreate).
+podman-compose -p "ecobuilding-$ACTIVE" -f docker-compose.yml -f "deploy/$ACTIVE.override.yml" up -d
+
+# Build fresh images and fully recreate the CANDIDATE stack.
+podman-compose -p "ecobuilding-$CANDIDATE" -f docker-compose.yml -f "deploy/$CANDIDATE.override.yml" build
+podman-compose -p "ecobuilding-$CANDIDATE" -f docker-compose.yml -f "deploy/$CANDIDATE.override.yml" up -d --force-recreate
+
+# Router: config must match .active; start or reload.
+cp "caddy_server/Caddyfile.$ACTIVE" caddy_server/Caddyfile
+podman-compose -p ecobuilding-edge -f caddy_server/docker-compose.yml up -d
+podman exec ecobuilding-edge_caddy_1 caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile 2>/dev/null || true
+
+# Main edge: (re)install the minimal stanza in whichever sites dir exists,
+# then graceful-reload from INSIDE the running container (its env has the
+# placeholders the ephemeral validation lacks).
+for d in ~/projects/confinia/deploy/sites ~/projects/confinia/deploy/caddy/sites; do
+  [ -d "$d" ] && cp deploy/edge/ecobuilding.caddy "$d/ecobuilding.caddy"
+done
+podman exec confinia_caddy_1 caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile 2>/dev/null \
+  || podman exec confinia_caddy_1 caddy reload --config /etc/caddy/conf/Caddyfile 2>/dev/null \
+  || echo "   WARN: main edge reload failed — vhost will load on its next restart"
+
+# Hard health gate on the candidate, via its local entry port.
+if [ "$CANDIDATE" = blue ]; then PORT=8021; else PORT=8022; fi
+sleep 3
+curl -fsS -m 10 "http://127.0.0.1:$PORT/api/v1/healthz" >/dev/null && echo "   candidate $CANDIDATE healthy on :$PORT"
 EOF
 
-echo "== staging smoke checks"
-sleep 5
-curl -fsS https://next.ecobuilding.confinia.io/api/v1/healthz && echo
-curl -fsS -o /dev/null -w "staging frontend: %{http_code}\n" https://next.ecobuilding.confinia.io/
+echo "== public smoke (staging)"
+sleep 2
+curl -fsS -m 10 https://next.ecobuilding.confinia.io/api/v1/healthz && echo || echo "WARN: public staging check failed (main edge may be mid-churn)"
 echo
-echo "Version $SHA is on STAGING: https://next.ecobuilding.confinia.io"
+echo "Version $SHA is on the CANDIDATE stack: https://next.ecobuilding.confinia.io"
 echo "Validate it, then run:  ./deploy/promote.sh"

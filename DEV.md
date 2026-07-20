@@ -6,16 +6,28 @@ Working rules (2026-07-20):
 - **Dockerfile + docker-compose.yml are the deployment contract**: everything
   runs with `podman-compose` on the VM (and `docker compose` locally).
 
-## Architecture
+## Architecture (3 caddy tiers, 2 independent app stacks)
 
 ```
-Internet ──▶ shared edge caddy (confinia_caddy_1, host net, owns 80/443)
-              vhost: ~/projects/confinia/deploy/sites/ecobuilding.caddy
-              ├── /            ──▶ 127.0.0.1:8011  frontend (caddy static, MapLibre)
-              ├── /api/*  (striped) ─▶ 127.0.0.1:8010  api (FastAPI, /v1)
-              └── /grafana* ──▶ 127.0.0.1:3002  grafana (subpath mode)
+Internet ──▶ MAIN edge caddy (confinia_caddy_1, owns 80/443, TLS, volatile —
+             owned by the confinia project; our stanza = 2 lines, forwards
+             both hostnames to the router)
+                 │
+                 ▼ 127.0.0.1:8020
+             ROUTER caddy (caddy_server/, project ecobuilding-edge, host net
+             loopback) — maps hostnames to stacks; PROMOTE = swap one config
+             file (Caddyfile.blue|green) + graceful reload
+                 ├── ecobuilding.confinia.io      ──▶ ACTIVE stack
+                 └── next.ecobuilding.confinia.io ──▶ CANDIDATE stack
+                        │
+                        ▼ 127.0.0.1:8021 (blue) / 8022 (green)
+             STACK caddy (stack_caddy/Caddyfile, single published port of the
+             stack) ── /api/* ─▶ api:8000 ; /grafana* ─▶ grafana:3000 ;
+                       /      ─▶ frontend:80        (compose network names)
 
-ecobuilding compose network (internal):
+Each stack (ecobuilding-blue, ecobuilding-green) is COMPLETE & independent:
+  caddy + api + frontend + otel-collector + prometheus + grafana +
+  podman-exporter, own volumes (per-project prefix), own private network.
   api ──OTLP/http──▶ otel-collector ──:8889──▶ prometheus ◀── podman-exporter
                                                     ▲
                                                grafana (datasource)
@@ -36,35 +48,38 @@ ecobuilding compose network (internal):
   into the local `confinia-core` checkout (`~/project/confinia/deploy/sites/`),
   so the owning project's syncs now preserve it. deploy.sh does both copies.
 
-## Blue/green with a manual validation gate
+## Blue/green: two complete independent stacks, manual validation gate
 
-Fixed slot roles — no state to flip in caddy, the vhost is static:
+Same `docker-compose.yml`, two compose project names:
 
-| Slot | Role | URL | api | frontend |
-|---|---|---|---|---|
-| A | **production** | https://ecobuilding.confinia.io | 8010 | 8011 |
-| B | **staging** | https://next.ecobuilding.confinia.io | 8110 | 8111 |
+| Stack | Project | Entry port | Role |
+|---|---|---|---|
+| blue | `ecobuilding-blue` | 127.0.0.1:8021 | active OR candidate |
+| green | `ecobuilding-green` | 127.0.0.1:8022 | the other one |
 
-- `./deploy/deploy.sh` → builds, tags images with the git SHA, restarts **slot B
-  only**, prints the preview URL. Production is never touched.
-- **You validate on `next.`**, then `./deploy/promote.sh` → health-checks staging,
-  retags `:latest` to the validated SHA, recreates slot A, records the previous
-  SHA. No traffic switch trickery: prod containers are recreated on the
-  validated image (seconds of restart, acceptable for this product).
-- `./deploy/rollback.sh` → recreates slot A on the previously recorded SHA.
-- Prod has **no automatic failover to staging**: an unvalidated version must
+Which stack is production is decided ONLY by the router config
+(`caddy_server/Caddyfile` = copy of `Caddyfile.blue` or `Caddyfile.green`);
+state recorded in `deploy/.active` on the VM (not in git, survives rsync).
+
+- `./deploy/deploy.sh` → builds fresh images, **fully recreates the CANDIDATE
+  stack only** (the active one is never touched), ensures router + main-edge
+  stanza, hard health gate on the candidate's local port.
+- **You validate on https://next.ecobuilding.confinia.io**, then
+  `./deploy/promote.sh` → health-checks the candidate, copies the matching
+  router Caddyfile, graceful reload. **The previous stack keeps running.**
+- `./deploy/rollback.sh` → same flip, back — instant (the old stack never
+  stopped), with a health check on the target.
+- No automatic failover from prod to candidate: an unvalidated version must
   never receive production traffic.
-- Version state on the VM: `deploy/.staging_sha`, `.prod_sha`, `.prev_prod_sha`
-  (not in git).
 
 ## Ports (127.0.0.1 on the VM — never public)
 
-| Service | Port | Public path |
-|---|---|---|
-| api A / B | 8010 / 8110 | `/api/v1/...` (prod / next.) |
-| frontend A / B | 8011 / 8111 | `/` (prod / next.) |
-| grafana (shared) | 3002 | `/grafana` (both hosts) |
-| otel-collector, prometheus, podman-exporter | internal network only | — |
+| Service | Port |
+|---|---|
+| router (ecobuilding-edge) | 8020 |
+| blue stack entry caddy | 8021 |
+| green stack entry caddy | 8022 |
+| everything else (api, frontend, grafana, prometheus, otel, exporter) | stack-internal network only |
 
 Taken by other projects (do not reuse): 8000/8001 (confinia api), 3000
 (confinia grafana), 3001 (orbit-poc grafana), 9081/9082 (overwatch), 5432 (pg),
@@ -122,17 +137,17 @@ Taken by other projects (do not reuse): 8000/8001 (confinia api), 3000
 docker compose up --build          # then http://localhost:8011 / :8010/v1/docs
                                    # (create deploy/secrets.env from the .example first)
 
-# 1. deploy current code to STAGING (slot B) — prod untouched
+# 1. deploy current code to the CANDIDATE stack — prod untouched
 ./deploy/deploy.sh                 # -> https://next.ecobuilding.confinia.io
 
-# 2. validate manually on next., then promote to PRODUCTION (slot A)
+# 2. validate manually on next., then flip production to the candidate
 ./deploy/promote.sh                # -> https://ecobuilding.confinia.io
 
-# oops?
+# oops? (previous stack never stopped — instant)
 ./deploy/rollback.sh
 
-# logs on the VM (slot A: api / frontend ; slot B: api-b / frontend-b)
-ssh confinia 'cd ~/projects/ecobuilding && podman-compose logs -f api-b'
+# logs on the VM (per stack)
+ssh confinia 'cd ~/projects/ecobuilding && podman logs -f ecobuilding-green_api_1'
 
 # edge access log
 ssh confinia 'podman exec confinia_caddy_1 tail -f /data/logs/ecobuilding-access.log'

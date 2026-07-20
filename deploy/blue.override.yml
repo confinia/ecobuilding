@@ -1,0 +1,8 @@
+# BLUE stack: entry caddy published on 127.0.0.1:8021.
+services:
+  caddy:
+    ports:
+      - "127.0.0.1:8021:80"
+  api:
+    environment:
+      OTEL_RESOURCE_ATTRIBUTES: deployment.environment=blue
