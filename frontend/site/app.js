@@ -17,6 +17,7 @@ const map = new maplibregl.Map({
   center: [2.3522, 48.8566],
   zoom: 5.2,
   pitch: 0,
+  hash: true,   // position in URL (#zoom/lat/lng/bearing/pitch), shareable & restored on load
   attributionControl: { compact: true },
 });
 // --- Controls: zoom + compass/pitch, GPS, 3D toggle -----------------------------
