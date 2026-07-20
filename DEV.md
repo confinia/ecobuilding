@@ -87,6 +87,16 @@ Taken by other projects (do not reuse): 8000/8001 (confinia api), 3000
 (confinia grafana), 3001 (orbit-poc grafana), 9081/9082 (overwatch), 5432 (pg),
 9966 (maplibre-dev), 9100 (node-exporter, host).
 
+⚠ **Caddy admin API on host network**: every host-network caddy on this VM
+shares the host loopback, and caddy's admin API defaults to `localhost:2019` —
+so **each host-net caddy must set a UNIQUE admin address** (e.g.
+`admin 127.0.0.1:20xx`) or disable it (`admin off`), otherwise the second one
+fails to start or reloads target the wrong instance. Our router uses
+`admin off`; consequence: `caddy reload` is impossible for it, so config
+changes are applied with `podman restart ecobuilding-edge_caddy_1`
+(1–2 s blip, done by the deploy/promote/rollback scripts). The platform edge
+keeps the default 2019 — never bind 2019 from another host-net caddy.
+
 ## API (a product in its own right)
 
 - **Versioning**: everything under `/v1`; breaking changes → `/v2`, `/v1` stays.
