@@ -53,13 +53,37 @@ Mechanics: stay online 2–3h to answer comments. On "already exists": agree —
 flat maps exist; this adds 3D + click-to-inspect + open API; love letter to
 French open data.
 
-## OSM forum (community.openstreetmap.org, catégorie France) + Mastodon
+## OSM France — forum.openstreetmap.fr, catégorie « Annonces »
 
-Petit projet perso : https://ecobuilding.confinia.io — les bâtiments français
-en 3D (MapLibre), colorés par DPE, via les tuiles vectorielles ouvertes de la
-BDNB (CSTB), fond de carte OpenFreeMap/OpenMapTiles/OSM. Recherche BAN, risques
-Géorisques, API publique. Attributions en place — remarques bienvenues,
-notamment sur l'attribution ou l'usage des données.
+(⚠ la catégorie France de community.openstreetmap.org est une ARCHIVE
+read-only — ne pas y poster ; la communauté FR vit sur forum.openstreetmap.fr.
+Version EN éventuelle : community.openstreetmap.org → General talk.)
+
+Titre : EcoBuilding — les bâtiments français en 3D, colorés par DPE
+(MapLibre + BDNB + fond OSM)
+
+Bonjour,
+
+Petit projet perso mis en ligne ce week-end : https://ecobuilding.confinia.io
+
+Les bâtiments français en 3D dans MapLibre GL, colorés par classe DPE, à partir
+des tuiles vectorielles ouvertes de la BDNB (CSTB, Licence Ouverte, ~32 M de
+bâtiments). Fond de carte OpenFreeMap (OpenMapTiles / données © OpenStreetMap).
+Recherche d'adresse via la BAN, risques via Géorisques. En cliquant sur un
+bâtiment : classe énergie, échéance loi Climat & Résilience, année de
+construction, matériaux, aléa argiles, potentiel solaire.
+
+Une API JSON publique et documentée expose la même chaîne de données :
+https://ecobuilding.confinia.io/api/v1/docs
+
+Les attributions sont en place (OSM, OpenMapTiles, OpenFreeMap, BDNB, BAN,
+Géorisques) — si vous voyez quelque chose à corriger sur ce point, je suis
+preneur. Remarques et idées bienvenues !
+
+## Mastodon (mapstodon.space ou instance geo)
+
+Toot court : lien + « bâtiments français en 3D colorés par DPE, 100 % données
+ouvertes (BDNB/CSTB, BAN, Géorisques), fond OSM, API publique ».
 
 ## Reddit
 
