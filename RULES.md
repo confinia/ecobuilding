@@ -14,3 +14,7 @@
    validation on staging. No automatic failover to unvalidated versions.
 4. No AI co-author attribution in commits or PRs.
 5. Communication: under-promise — announce only what already works.
+6. **No company creation below a 10k€ invoice** (rule set 2026-07-21): no legal
+   structure, no Stripe, no paid offers until at least one ≥10k€ deal is
+   secured. Until then the product stays free (beta) and monetization effort
+   targets 10k€-scale opportunities, not small transactions.
