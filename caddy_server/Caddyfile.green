@@ -1,7 +1,7 @@
 # ACTIVE = GREEN. prod -> green stack (8022), next -> blue stack (8021).
 # Installed as ./Caddyfile by deploy/promote.sh (or deploy.sh from .active).
 {
-	admin off
+	admin 127.0.0.1:2030
 	auto_https off
 	http_port 8020
 	default_bind 127.0.0.1
