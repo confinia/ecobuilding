@@ -25,6 +25,11 @@ services:
     environment:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
       OTEL_SERVICE_NAME: ecobuilding-api
+      GEOIP_DB: /geoip/dbip-country-lite.mmdb
+    volumes:
+      # Country-level GeoIP (dbip-country-lite) — provisioned by deploy.sh,
+      # outside git and outside the rsync --delete scope.
+      - ./data/geoip:/geoip:ro
     restart: unless-stopped
 
   frontend:
