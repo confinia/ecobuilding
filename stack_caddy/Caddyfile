@@ -4,6 +4,10 @@
 {
 	admin off
 	auto_https off
+	servers {
+		# Pass the original client IP through (router is a private-range peer).
+		trusted_proxies static private_ranges
+	}
 }
 
 :80 {
