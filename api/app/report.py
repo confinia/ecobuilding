@@ -11,6 +11,36 @@ from weasyprint import HTML
 
 DPE_COLORS = {"A": "#009036", "B": "#52b153", "C": "#a5cc74", "D": "#f4e70f",
               "E": "#f0b40f", "F": "#eb8235", "G": "#d7221f"}
+GES_COLORS = {"A": "#f2eefb", "B": "#dfd3f3", "C": "#c7b2e9", "D": "#a98ddb",
+              "E": "#8a68cb", "F": "#6b46b8", "G": "#4a2a94"}
+# Ad-style class thresholds (kWh/m²/an and kgCO2/m²/an) to derive the GES
+# class when only the value is known.
+GES_BOUNDS = [(6, "A"), (11, "B"), (30, "C"), (50, "D"), (70, "E"), (100, "F")]
+
+
+def _ges_class(value):
+    if value is None:
+        return None
+    for bound, cls in GES_BOUNDS:
+        if value <= bound:
+            return cls
+    return "G"
+
+
+def _scale(active_cls, colors, value_text, dark_text_classes=("A", "B", "C", "D")):
+    """Ad-style A→G arrow scale with the active class highlighted."""
+    rows = []
+    for i, cls in enumerate("ABCDEFG"):
+        width = 30 + i * 10
+        active = cls == active_cls
+        text_col = "#333" if (colors is GES_COLORS and cls in dark_text_classes) or cls == "D" else "#fff"
+        extra = (f'<span class="val">{value_text}</span>' if active and value_text else "")
+        rows.append(
+            f'<div class="bar{" active" if active else ""}" '
+            f'style="width:{width}%;background:{colors[cls]};color:{text_col}">'
+            f'<strong>{cls}</strong>{extra}</div>'
+        )
+    return '<div class="scale">' + "".join(rows) + "</div>"
 
 
 def _row(label, value, unit=""):
@@ -63,6 +93,14 @@ def build_report_pdf(data: dict) -> bytes:
   td {{ padding: 3pt 4pt; border-bottom: 0.5pt dashed #eee; vertical-align: top; }}
   td.k {{ color: #666; width: 45%; }}
   footer {{ margin-top: 18pt; font-size: 7.5pt; color: #888; border-top: 0.5pt solid #ccc; padding-top: 6pt; }}
+  .labels {{ margin: 8pt 0 2pt; }}
+  .labels td {{ width: 50%; border: none; padding: 0 8pt 0 0; }}
+  .lbl-title {{ font-size: 8.5pt; font-weight: bold; margin-bottom: 3pt; }}
+  .lbl-title span {{ font-weight: normal; color: #777; }}
+  .scale .bar {{ padding: 2.2pt 5pt; margin: 1.2pt 0; border-radius: 0 3pt 3pt 0; font-size: 8.5pt; }}
+  .scale .bar strong {{ font-size: 9.5pt; }}
+  .scale .bar.active {{ outline: 1.5pt solid #333; font-size: 10pt; }}
+  .scale .bar .val {{ float: right; font-weight: bold; }}
 </style>
 <header>
   <div class="brand">EcoBuilding</div>
@@ -74,6 +112,12 @@ def build_report_pdf(data: dict) -> bytes:
 <h2>Énergie (DPE)</h2>
 <p><span class="dpe">{cls}</span>&nbsp;&nbsp;{f"{round(conso)} kWh/m²/an" if conso else "Aucun DPE enregistré dans la BDNB pour ce bâtiment"}</p>
 {ban_html}
+{('<table class="labels"><tr>'
+  '<td><div class="lbl-title">Étiquette énergie <span>(kWh/m²/an, énergie primaire)</span></div>'
+  + _scale(cls, DPE_COLORS, f"{round(conso)}" if conso else "") +
+  '</td><td><div class="lbl-title">Étiquette climat <span>(kgCO₂/m²/an)</span></div>'
+  + _scale(_ges_class(ges), GES_COLORS, f"{round(ges)}" if ges else "") +
+  '</td></tr></table>') if e.get("dpe_class") else ""}
 <table>
   {_row("Date du DPE", (e.get("dpe_date") or "")[:10] or None)}
   {_row("Émissions GES", round(ges) if ges else None, " kgCO₂/m²/an")}
