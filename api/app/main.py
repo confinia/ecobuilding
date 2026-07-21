@@ -12,6 +12,8 @@ Data sources (all open, keyless):
 
 import logging
 import os
+import time
+from collections import OrderedDict
 
 import httpx
 from fastapi import FastAPI, HTTPException, Query
@@ -102,6 +104,31 @@ async def count_requests(request, call_next):
 
 _client = httpx.AsyncClient(timeout=15.0, headers={"User-Agent": "ecobuilding.confinia.io"})
 
+# In-process TTL+LRU cache on upstream calls. Guards the BDNB free tier
+# (10k calls/month) against traffic spikes; building data changes rarely.
+_CACHE: OrderedDict = OrderedDict()
+_CACHE_MAX = 5000
+M_CACHE = _meter.create_counter("ecobuilding_upstream_cache", description="Upstream cache hits/misses", unit="1")
+
+
+async def _cached_get_json(url: str, params: dict, ttl: float):
+    key = url + "?" + "&".join(f"{k}={v}" for k, v in sorted(params.items()))
+    now = time.monotonic()
+    hit = _CACHE.get(key)
+    if hit and now - hit[0] < ttl:
+        _CACHE.move_to_end(key)
+        M_CACHE.add(1, {"result": "hit"})
+        return hit[1]
+    M_CACHE.add(1, {"result": "miss"})
+    resp = await _client.get(url, params=params)
+    resp.raise_for_status()
+    data = resp.json()
+    _CACHE[key] = (now, data)
+    _CACHE.move_to_end(key)
+    while len(_CACHE) > _CACHE_MAX:
+        _CACHE.popitem(last=False)
+    return data
+
 
 def _rental_ban(dpe_class: str | None) -> dict | None:
     if not dpe_class:
@@ -169,9 +196,8 @@ async def suggest(q: str = Query(min_length=3, description="Partial address, str
     housenumber entries can be looked up as buildings — others are navigation
     targets.
     """
-    resp = await _client.get(BAN_URL, params={"q": q, "limit": 6})
-    resp.raise_for_status()
-    feats = resp.json().get("features", [])
+    data = await _cached_get_json(BAN_URL, {"q": q, "limit": 6}, ttl=3600)
+    feats = data.get("features", [])
     return {
         "suggestions": [
             {
@@ -191,10 +217,7 @@ async def _area_risks(lon, lat):
     if lon is None or lat is None:
         return None
     try:
-        g = await _client.get(GEORISQUES_URL, params={"latlon": f"{lon},{lat}"})
-        if g.status_code != 200:
-            return None
-        gj = g.json()
+        gj = await _cached_get_json(GEORISQUES_URL, {"latlon": f"{lon},{lat}"}, ttl=86400)
         return {
             "commune": (gj.get("commune") or {}).get("libelle"),
             "report_url": gj.get("url"),
@@ -215,11 +238,9 @@ async def _area_risks(lon, lat):
 
 
 async def _do_lookup(q, ban_id, address, lon, lat):
-    bdnb = await _client.get(
-        BDNB_URL, params={"cle_interop_adr": f"eq.{ban_id}", "limit": "5"}
+    rows = await _cached_get_json(
+        BDNB_URL, {"cle_interop_adr": f"eq.{ban_id}", "limit": "5"}, ttl=86400
     )
-    bdnb.raise_for_status()
-    rows = bdnb.json()
     if not isinstance(rows, list):
         log.warning("BDNB error: %s", rows)
         rows = []
@@ -252,9 +273,8 @@ async def lookup(
 
     address = None
     if not ban_id:
-        geo = await _client.get(BAN_URL, params={"q": q, "limit": 1, "type": "housenumber"})
-        geo.raise_for_status()
-        feats = geo.json().get("features", [])
+        geo = await _cached_get_json(BAN_URL, {"q": q, "limit": 1, "type": "housenumber"}, ttl=86400)
+        feats = geo.get("features", [])
         if not feats:
             M_LOOKUPS.add(1, {"status": "address_not_found"})
             raise HTTPException(404, "Address not found (BAN)")
@@ -271,9 +291,8 @@ async def reverse(
     lat: float = Query(description="Latitude"),
 ):
     """GPS position -> nearest address (BAN reverse) -> building record (BDNB)."""
-    geo = await _client.get(BAN_REVERSE_URL, params={"lon": lon, "lat": lat, "type": "housenumber"})
-    geo.raise_for_status()
-    feats = geo.json().get("features", [])
+    geo = await _cached_get_json(BAN_REVERSE_URL, {"lon": lon, "lat": lat, "type": "housenumber"}, ttl=86400)
+    feats = geo.get("features", [])
     if not feats:
         M_LOOKUPS.add(1, {"status": "reverse_not_found"})
         raise HTTPException(404, "No address near this position (BAN reverse)")
@@ -288,9 +307,9 @@ async def building(
     lat: float | None = Query(None, description="Latitude (idem)"),
 ):
     """Full record of one building by its BDNB id (e.g. from a map click)."""
-    r = await _client.get(BDNB_BASE_URL, params={"batiment_groupe_id": f"eq.{bdnb_id}", "limit": "1"})
-    r.raise_for_status()
-    rows = r.json()
+    rows = await _cached_get_json(
+        BDNB_BASE_URL, {"batiment_groupe_id": f"eq.{bdnb_id}", "limit": "1"}, ttl=86400
+    )
     if not isinstance(rows, list) or not rows:
         raise HTTPException(404, "Unknown building id")
     row = rows[0]
