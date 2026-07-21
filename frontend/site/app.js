@@ -91,6 +91,32 @@ map.on("load", () => {
   });
   document.getElementById("legend").hidden = false;
 
+  // First visit (no #hash in the URL): cinematic entry on the showcase
+  // building — 244 Rue de Rivoli, Paris (DPE G, rental ban since 2025).
+  // Shared/bookmarked URLs (with a hash) keep their own view untouched.
+  const SHOWCASE = {
+    bdnb_id: "bdnb-bg-LT4B-YEAJ-XXF1",
+    lon: 2.325414, lat: 48.86646,
+    zoom: 18.15, bearing: -36.8, pitch: 38,
+  };
+  if (!location.hash) {
+    track("showcase_default");
+    map.flyTo({
+      center: [SHOWCASE.lon, SHOWCASE.lat],
+      zoom: SHOWCASE.zoom, bearing: SHOWCASE.bearing, pitch: SHOWCASE.pitch,
+      duration: 4500, essential: true,
+    });
+    (async () => {
+      try {
+        const r = await fetch(`${API}/buildings/${SHOWCASE.bdnb_id}?lon=${SHOWCASE.lon}&lat=${SHOWCASE.lat}`);
+        if (r.ok) {
+          const data = await r.json();
+          renderPanel({ label: data.query.address }, data);
+        }
+      } catch { /* showcase is best-effort */ }
+    })();
+  }
+
   // Click any building -> full record (BDNB id comes from the tile itself).
   map.on("click", "bdnb-dpe-3d", async (e) => {
     const f = e.features && e.features[0];
@@ -199,10 +225,10 @@ function renderPanel(s, data) {
   showPanel(`
     <h2>${b.address || s.label}</h2>
     <h3>Énergie (DPE)</h3>
-    <p>${dpeBadge} ${b.energy?.consumption_kwh_m2y ? `&nbsp;${b.energy.consumption_kwh_m2y} kWh/m²/an` : ""}</p>
+    <p>${dpeBadge} ${b.energy?.consumption_kwh_m2y ? `&nbsp;${Math.round(b.energy.consumption_kwh_m2y)} kWh/m²/an` : ""}</p>
     ${banHtml}
-    ${kv("Date du DPE", b.energy?.dpe_date)}
-    ${kv("GES", b.energy?.ghg_kgco2_m2y ? b.energy.ghg_kgco2_m2y + " kgCO₂/m²/an" : null)}
+    ${kv("Date du DPE", b.energy?.dpe_date ? String(b.energy.dpe_date).slice(0, 10) : null)}
+    ${kv("GES", b.energy?.ghg_kgco2_m2y ? Math.round(b.energy.ghg_kgco2_m2y) + " kgCO₂/m²/an" : null)}
     <h3>Bâtiment</h3>
     ${kv("Année de construction", b.construction_year)}
     ${kv("Hauteur moyenne", b.height_m ? b.height_m + " m" : null)}
