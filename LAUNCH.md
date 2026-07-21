@@ -87,6 +87,33 @@ ouvertes (BDNB/CSTB, BAN, Géorisques), fond OSM, API publique ».
 
 ## Reddit
 
-r/openstreetmap, r/webdev, r/dataisbeautiful: shortened Show HN body.
-r/france: ONLY if reception elsewhere is good; frame as service public
-("vérifiez le DPE et les risques de votre logement"), Forum Libre thread.
+- **r/InternetIsBeautiful** (priorité #1, HN étant bloqué) — link post, titre :
+  "Interactive 3D map of every building in France, colored by energy
+  efficiency — built entirely on open government data" + 1 commentaire auteur
+  (click any building → record; rental bans 2025/2028/2034; free API).
+- **r/immobilier** (persona acheteur/bailleur) — titre : "[Outil gratuit]
+  Vérifiez le DPE, l'échéance d'interdiction de location et les risques de
+  n'importe quel bâtiment, en 3D" + texte FR (données ouvertes, pas de compte).
+- r/openstreetmap, r/webdev, r/SideProject, r/dataisbeautiful : corps Show HN
+  raccourci.
+- r/france : SEULEMENT si bonne réception ailleurs ; angle service public,
+  Forum Libre.
+
+## GeoRezo (georezo.net — géomaticiens FR = prospects API)
+
+Titre : EcoBuilding — BDNB en tuiles vectorielles + MapLibre : bâtiments 3D
+colorés par DPE, API publique.
+REX : la BDNB expose 32 M de bâtiments en tuiles MVT consommables par MapLibre
+(couche sql_statement, classe_bilan_dpe, hauteur_mean…). Carte 3D cliquable +
+API JSON normalisée (BAN → BDNB → Géorisques) : ecobuilding.confinia.io
+(docs /api/v1/docs). Détails techniques volontiers — preneur de retours sur les
+usages métier.
+
+## Product Hunt (optionnel)
+
+Tagline : "Every French building's energy efficiency, in 3D — open data, free API".
+
+## Astuce LinkedIn
+
+Lien dans le PREMIER COMMENTAIRE, pas dans le post (throttling des liens
+externes) ; reposter aux heures de bureau FR.
