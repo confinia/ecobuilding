@@ -6,3 +6,6 @@ services:
   api:
     environment:
       OTEL_RESOURCE_ATTRIBUTES: deployment.environment=blue
+  otel-collector:
+    ports:
+      - "127.0.0.1:8891:8889"

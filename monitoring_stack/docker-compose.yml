@@ -1,0 +1,52 @@
+# EcoBuilding SHARED MONITORING — third compose project (ecobuilding-monitoring),
+# deliberately OUTSIDE the blue/green stacks so usage metrics survive promotes.
+# Host network (loopback targets): scrapes both stacks' otel-collectors
+# (blue 127.0.0.1:8891, green 127.0.0.1:8892) and the podman exporter.
+# Grafana binds :3002 (port reserved for ecobuilding in the platform README);
+# ufw does not expose it — public access goes through /grafana on the app hosts.
+services:
+  prometheus:
+    image: docker.io/prom/prometheus:v3.1.0
+    network_mode: host
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=180d"
+      - "--web.listen-address=127.0.0.1:9095"
+    volumes:
+      - ../monitoring/prometheus-shared.yml:/etc/prometheus/prometheus.yml:ro
+      - prom_data:/prometheus
+    restart: unless-stopped
+
+  grafana:
+    image: docker.io/grafana/grafana-oss:11.5.1
+    network_mode: host
+    env_file:
+      - ../deploy/secrets.env   # GF_SECURITY_ADMIN_PASSWORD (unchanged)
+    environment:
+      GF_SERVER_HTTP_PORT: "3002"
+      GF_SERVER_ROOT_URL: https://ecobuilding.confinia.io/grafana/
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ../monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    restart: unless-stopped
+
+  podman-exporter:
+    image: quay.io/navidys/prometheus-podman-exporter:latest
+    network_mode: host
+    user: "0"
+    environment:
+      CONTAINER_HOST: unix:///run/podman/podman.sock
+    command: ["--collector.enable-all", "--web.listen-address=127.0.0.1:9882"]
+    volumes:
+      - /run/user/1000/podman/podman.sock:/run/podman/podman.sock:ro
+    security_opt:
+      - label=disable
+    restart: unless-stopped
+
+volumes:
+  prom_data:
+  grafana_data:
