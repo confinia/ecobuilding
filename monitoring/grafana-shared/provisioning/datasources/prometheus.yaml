@@ -1,0 +1,9 @@
+apiVersion: 1
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    # Shared monitoring runs on the HOST network: the shared prometheus
+    # listens on loopback :9095 (see monitoring/prometheus-shared.yml).
+    url: http://127.0.0.1:9095
+    isDefault: true
