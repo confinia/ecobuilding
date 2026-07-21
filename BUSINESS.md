@@ -113,6 +113,7 @@ indoor/photosphere pipeline — worth exploring before SOTM.
 | 2026-07-20 | Skip SOTM Paris (2026-10-05) attendance; collaborate remotely, target demo Tobias can present there | Ticket + travel cost vs uncertain ROI; visibility achievable without attending |
 | 2026-07-20 | Game = marketing + OSM-indoor data flywheel + white-label venues; NOT a consumer revenue bet unless D7 retention > 10–15% after viral launch | B2C precedents (Google, Microsoft, Niantic) all failed or pivoted; data flywheel serves the B2B verticals |
 | 2026-07-20 | Side-project constraint locked in: permanent OVH contract incoming → only autonomous/self-serve revenue models; consulting & sales-led paths excluded | Alternative revenue in spare time, not a second job |
+| 2026-07-21 | Launch signal weak (HN flat) but engagement/visitor strong (~2 clicks/view) → chosen path: SEO per-address pages as STRUCTURAL distribution; PDF report = first revenue brick; portfolio tier waits for first agency conversation | Don't gamble on viral distribution; compounding organic + purchase-intent traffic fits the side-project constraint |
 | 2026-07-20 | MVP live at ecobuilding.confinia.io (BAN→BDNB→Géorisques lookup, 3D MapLibre, versioned public API, OTel/Grafana, blue/green with manual promote gate) | Ship the chassis; data quality & SEO surface come next |
 
 ## 8. Current recommendation (updated 2026-07-20 for the side-project constraint)

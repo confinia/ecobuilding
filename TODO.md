@@ -22,7 +22,8 @@ Status: `[ ]` todo · `[~]` in progress · `[x]` done
 - [x] Verify OSM2World license (2026-07-20: MIT since Feb 2026 — commercial SaaS OK)
 - [ ] Check OVH employment contract for exclusivity/loyalty clause (side-project compatibility); set up/reuse micro-entreprise
 - [ ] Define the self-serve product v1: per-address automated report or 3D scorecard (vertical from report #2)
-- [ ] Validate demand cheaply & asynchronously: landing page + SEO test on ~100 generated address pages, measure organic traffic before building the full pipeline
+- [ ] NEXT BUILD: per-address SEO pages /adresse/{ban_id} (server-rendered HTML, sitemap, 2-3 communes first, Search Console) — decision 2026-07-21
+- [ ] Before generating pages: measure real DPE coverage on the chosen communes (honest-data gate)
 
 ## Partnership — Tobias Knerr / OSM2World
 
