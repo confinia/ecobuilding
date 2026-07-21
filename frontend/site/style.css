@@ -19,7 +19,8 @@ html, body { margin: 0; height: 100%; font-family: system-ui, -apple-system, san
 }
 #suggestions li { padding: 8px 12px; font-size: 13px; cursor: pointer; }
 #suggestions li:hover { background: #eef6f0; }
-#apilink { font-size: 13px; color: #2b7a4b; text-decoration: none; border: 1px solid #2b7a4b; border-radius: 8px; padding: 6px 10px; }
+#apilink, #offerlink { font-size: 13px; color: #2b7a4b; text-decoration: none; border: 1px solid #2b7a4b; border-radius: 8px; padding: 6px 10px; white-space: nowrap; }
+#offerlink { background: #2b7a4b; color: #fff; }
 
 #panel {
   position: absolute; top: 64px; right: 12px; z-index: 10;

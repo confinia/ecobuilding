@@ -350,6 +350,35 @@ async def building(
     }
 
 
+class Lead(BaseModel):
+    email: str
+    org: str | None = None
+    need: str | None = None
+
+
+M_LEADS = _meter.create_counter("ecobuilding_leads", description="Access requests / waitlist signups", unit="1")
+LEADS_PATH = os.environ.get("LEADS_PATH", "/leads/leads.jsonl")
+
+
+@app.post("/v1/leads", tags=["telemetry"], status_code=204)
+async def create_lead(lead: Lead):
+    """Access request / waitlist signup (offer page). Stored locally, never shared."""
+    import json as _json
+    from datetime import datetime, timezone
+
+    rec = {"ts": datetime.now(timezone.utc).isoformat(), "email": lead.email[:200],
+           "org": (lead.org or "")[:200], "need": (lead.need or "")[:2000]}
+    try:
+        os.makedirs(os.path.dirname(LEADS_PATH), exist_ok=True)
+        with open(LEADS_PATH, "a") as f:
+            f.write(_json.dumps(rec, ensure_ascii=False) + "\n")
+    except OSError as e:
+        log.error("lead not persisted: %s", e)
+        raise HTTPException(500, "Storage error")
+    M_LEADS.add(1, {"kind": "enterprise" if "10" in (lead.need or "") else "waitlist"})
+    return None
+
+
 class FrontendEvent(BaseModel):
     event: str
     meta: str | None = None

@@ -37,6 +37,9 @@ if [ ! -f deploy/secrets.env ]; then
 fi
 systemctl --user is-active --quiet podman.socket || systemctl --user enable --now podman.socket
 
+# Persistent lead storage (offer page), outside git/rsync.
+mkdir -p data/leads
+
 # GeoIP db (country-only): reuse the confinia project's copy if not present.
 mkdir -p data/geoip
 if [ ! -f data/geoip/dbip-country-lite.mmdb ]; then
