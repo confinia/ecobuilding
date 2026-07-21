@@ -18,7 +18,7 @@ curl -fsS -m 5 "http://127.0.0.1:$PORT/api/v1/healthz" >/dev/null \
   || { echo "Candidate stack ($CANDIDATE, :$PORT) unhealthy — refusing to promote"; exit 1; }
 
 cp "caddy_server/Caddyfile.$CANDIDATE" caddy_server/Caddyfile
-podman restart ecobuilding-edge_caddy_1 >/dev/null
+podman exec ecobuilding-edge_caddy_1 caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile 2>/dev/null || podman restart ecobuilding-edge_caddy_1 >/dev/null
 echo "$CANDIDATE" > deploy/.active
 echo "Production now served by the $CANDIDATE stack (previous: $ACTIVE, still running for rollback)."
 EOF

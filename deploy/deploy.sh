@@ -61,8 +61,14 @@ for c in grafana prometheus podman-exporter; do
   podman rm -f "ecobuilding-blue_${c}_1" "ecobuilding-green_${c}_1" 2>/dev/null || true
 done
 
-# Ensure the ACTIVE stack exists/runs (no rebuild, no recreate).
-podman-compose -p "ecobuilding-$ACTIVE" -f docker-compose.yml -f "deploy/$ACTIVE.override.yml" up -d
+# ZERO-DOWNTIME RULE: never touch the ACTIVE stack. Bootstrap it only if it
+# does not exist at all; config changes reach it on the NEXT promote cycle.
+if ! podman container exists "ecobuilding-${ACTIVE}_api_1" 2>/dev/null; then
+  echo "   bootstrap: active stack $ACTIVE absent — creating"
+  podman-compose -p "ecobuilding-$ACTIVE" -f docker-compose.yml -f "deploy/$ACTIVE.override.yml" up -d
+else
+  echo "   active stack $ACTIVE left untouched"
+fi
 
 # Build fresh images and fully recreate the CANDIDATE stack.
 podman-compose -p "ecobuilding-$CANDIDATE" -f docker-compose.yml -f "deploy/$CANDIDATE.override.yml" build
@@ -72,7 +78,10 @@ podman-compose -p "ecobuilding-$CANDIDATE" -f docker-compose.yml -f "deploy/$CAN
 # (podman-compose 1.3 fails to open "-f subdir/file" — run from inside the dir)
 cp "caddy_server/Caddyfile.$ACTIVE" caddy_server/Caddyfile
 ( cd caddy_server && podman-compose -p ecobuilding-edge -f docker-compose.yml up -d )
-podman restart ecobuilding-edge_caddy_1 >/dev/null
+# Graceful reload (admin 127.0.0.1:2030); restart only as fallback for the
+# one-time transition from an admin-off config.
+podman exec ecobuilding-edge_caddy_1 caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile 2>/dev/null \
+  || podman restart ecobuilding-edge_caddy_1 >/dev/null
 
 # Upstream (platform) edge: prod host is already routed to 8020 by the
 # platform Caddyfile; ensure next. is too (idempotent append + reload).
