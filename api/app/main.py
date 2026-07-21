@@ -350,6 +350,34 @@ async def building(
     }
 
 
+M_REPORTS = _meter.create_counter("ecobuilding_reports", description="PDF fiches generated", unit="1")
+
+
+@app.get("/v1/report/{bdnb_id}.pdf", tags=["reports"])
+async def report(
+    bdnb_id: str,
+    lon: float | None = Query(None),
+    lat: float | None = Query(None),
+):
+    """Normalized one-page PDF fiche of a building (free during beta).
+
+    Informational document for pre-sale/diagnostic preparation — replaces
+    neither an official DPE nor a regulatory ERP.
+    """
+    from fastapi.responses import Response
+
+    from .report import build_report_pdf
+
+    data = await building(bdnb_id, lon, lat)
+    pdf = build_report_pdf(data)
+    M_REPORTS.add(1, {"has_dpe": str(bool((data["buildings"][0].get("energy") or {}).get("dpe_class"))).lower()})
+    return Response(
+        pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="ecobuilding-{bdnb_id}.pdf"'},
+    )
+
+
 class Lead(BaseModel):
     email: str
     org: str | None = None
