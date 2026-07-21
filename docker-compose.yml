@@ -37,54 +37,14 @@ services:
     image: ecobuilding-frontend:latest
     restart: unless-stopped
 
+  # App-local OTel buffer; its prometheus exporter (:8889) is published per
+  # stack (blue 127.0.0.1:8891 / green :8892 via the override files) and
+  # scraped by the SHARED monitoring project (monitoring_stack/), which owns
+  # prometheus + grafana + podman-exporter — metrics survive promotes.
   otel-collector:
     image: docker.io/otel/opentelemetry-collector-contrib:0.119.0
     command: ["--config=/etc/otelcol/config.yaml"]
     volumes:
       - ./monitoring/otel-collector.yaml:/etc/otelcol/config.yaml:ro
+    # ports: set per stack by deploy/{blue,green}.override.yml
     restart: unless-stopped
-
-  prometheus:
-    image: docker.io/prom/prometheus:v3.1.0
-    command:
-      - "--config.file=/etc/prometheus/prometheus.yml"
-      - "--storage.tsdb.retention.time=90d"
-    volumes:
-      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - prom_data:/prometheus
-    restart: unless-stopped
-
-  grafana:
-    image: docker.io/grafana/grafana-oss:11.5.1
-    env_file:
-      - ./deploy/secrets.env   # GF_SECURITY_ADMIN_PASSWORD (gitignored)
-    environment:
-      GF_SERVER_ROOT_URL: https://ecobuilding.confinia.io/grafana/
-      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
-      GF_USERS_ALLOW_SIGN_UP: "false"
-      GF_ANALYTICS_REPORTING_ENABLED: "false"
-    volumes:
-      - grafana_data:/var/lib/grafana
-      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
-    restart: unless-stopped
-
-  # Per-container metrics of the (rootless) podman user. Requires the user
-  # socket: systemctl --user enable --now podman.socket
-  # Rootless: host uid 1000 (socket owner) maps to container root — the
-  # exporter must run as root INSIDE the container to read the socket.
-  podman-exporter:
-    image: quay.io/navidys/prometheus-podman-exporter:latest
-    user: "0"
-    environment:
-      CONTAINER_HOST: unix:///run/podman/podman.sock
-    command: ["--collector.enable-all"]
-    volumes:
-      - ${XDG_RUNTIME_DIR:-/run/user/1000}/podman/podman.sock:/run/podman/podman.sock:ro
-    security_opt:
-      - label=disable
-    restart: unless-stopped
-
-volumes:
-  prom_data:
-  grafana_data:
