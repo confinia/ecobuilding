@@ -13,15 +13,34 @@ track("page_view");
 setInterval(() => { if (document.visibilityState === "visible") track("heartbeat"); }, 60000);
 
 // --- Map ----------------------------------------------------------------------
+// Showcase: 244 Rue de Rivoli, Paris (DPE G, rental ban since 2025).
+const SHOWCASE = {
+  bdnb_id: "bdnb-bg-LT4B-YEAJ-XXF1",
+  lon: 2.325414, lat: 48.86646,
+  zoom: 18.15, bearing: -36.8, pitch: 38,
+};
+// Captured BEFORE map init: maplibre rewrites the hash continuously.
+const hadHash = !!location.hash;
+const urlBuilding = new URLSearchParams(location.search).get("b");
+
 const map = new maplibregl.Map({
   container: "map",
   style: "https://tiles.openfreemap.org/styles/liberty",
-  center: [2.3522, 48.8566],
-  zoom: 5.2,
-  pitch: 0,
+  // Default camera = the showcase building (a #hash in the URL overrides it).
+  center: [SHOWCASE.lon, SHOWCASE.lat],
+  zoom: SHOWCASE.zoom,
+  pitch: SHOWCASE.pitch,
+  bearing: SHOWCASE.bearing,
   hash: true,   // position in URL (#zoom/lat/lng/bearing/pitch), shareable & restored on load
   attributionControl: { compact: true },
 });
+
+// Selected building in the URL (?b=<bdnb_id>, hash preserved): a shared URL
+// reproduces both the view and the open info panel.
+function setUrlBuilding(id) {
+  const qs = id ? `?b=${encodeURIComponent(id)}` : location.pathname;
+  history.replaceState(null, "", (id ? qs : location.pathname) + location.hash);
+}
 // --- Controls: zoom + compass/pitch, GPS, 3D toggle -----------------------------
 map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "bottom-right");
 
@@ -93,48 +112,22 @@ map.on("load", () => {
   });
   document.getElementById("legend").hidden = false;
 
-  // First visit (no #hash in the URL): cinematic entry on the showcase
-  // building — 244 Rue de Rivoli, Paris (DPE G, rental ban since 2025).
-  // Shared/bookmarked URLs (with a hash) keep their own view untouched.
-  const SHOWCASE = {
-    bdnb_id: "bdnb-bg-LT4B-YEAJ-XXF1",
-    lon: 2.325414, lat: 48.86646,
-    zoom: 18.15, bearing: -36.8, pitch: 38,
-  };
-  if (!location.hash) {
-    track("showcase_default");
-    map.flyTo({
-      center: [SHOWCASE.lon, SHOWCASE.lat],
-      zoom: SHOWCASE.zoom, bearing: SHOWCASE.bearing, pitch: SHOWCASE.pitch,
-      duration: 4500, essential: true,
-    });
-    (async () => {
-      try {
-        const r = await fetch(`${API}/buildings/${SHOWCASE.bdnb_id}?lon=${SHOWCASE.lon}&lat=${SHOWCASE.lat}`);
-        if (r.ok) {
-          const data = await r.json();
-          renderPanel({ label: data.query.address }, data);
-        }
-      } catch { /* showcase is best-effort */ }
-    })();
+  // Initial selection: ?b= from the URL, else the showcase (no-hash visits).
+  const initialB = urlBuilding || (!hadHash ? SHOWCASE.bdnb_id : null);
+  if (initialB) {
+    if (!urlBuilding) track("showcase_default");
+    const c = map.getCenter();
+    openBuildingById(initialB, c.lng, c.lat);
   }
 
   // Click any building -> full record (BDNB id comes from the tile itself).
-  map.on("click", "bdnb-dpe-3d", async (e) => {
+  map.on("click", "bdnb-dpe-3d", (e) => {
     const f = e.features && e.features[0];
     const id = f && f.properties.batiment_groupe_id;
     if (!id) return;
     track("building_click");
     if (marker) marker.remove();
-    showPanel('<p class="hint">Chargement des données du bâtiment…</p>');
-    try {
-      const r = await fetch(`${API}/buildings/${encodeURIComponent(id)}?lon=${e.lngLat.lng}&lat=${e.lngLat.lat}`);
-      if (!r.ok) throw new Error(r.status);
-      const data = await r.json();
-      renderPanel({ label: data.query.address || "Bâtiment" }, data);
-    } catch {
-      showPanel('<p class="hint">Données indisponibles pour ce bâtiment.</p>');
-    }
+    openBuildingById(id, e.lngLat.lng, e.lngLat.lat);
   });
   map.on("mouseenter", "bdnb-dpe-3d", () => { map.getCanvas().style.cursor = "pointer"; });
   map.on("mouseleave", "bdnb-dpe-3d", () => { map.getCanvas().style.cursor = ""; });
@@ -199,9 +192,21 @@ async function select(s) {
 // --- Panel rendering -------------------------------------------------------------
 const panel = document.getElementById("panel");
 const content = document.getElementById("panel-content");
-document.getElementById("close").onclick = () => (panel.hidden = true);
+document.getElementById("close").onclick = () => { panel.hidden = true; setUrlBuilding(null); };
 
 function showPanel(html) { content.innerHTML = html; panel.hidden = false; }
+
+async function openBuildingById(id, lon, lat) {
+  showPanel('<p class="hint">Chargement des données du bâtiment…</p>');
+  try {
+    const r = await fetch(`${API}/buildings/${encodeURIComponent(id)}?lon=${lon}&lat=${lat}`);
+    if (!r.ok) throw new Error(r.status);
+    const data = await r.json();
+    renderPanel({ label: data.query.address || "Bâtiment" }, data);
+  } catch {
+    showPanel('<p class="hint">Données indisponibles pour ce bâtiment.</p>');
+  }
+}
 
 function kv(k, v) {
   return v === null || v === undefined || v === "" ? "" :
@@ -210,6 +215,7 @@ function kv(k, v) {
 
 function renderPanel(s, data) {
   const b = data.buildings?.[0];
+  if (b?.bdnb_id) setUrlBuilding(b.bdnb_id);
   if (!b) {
     showPanel(`<h2>${s.label}</h2><p class="hint">Aucune fiche BDNB trouvée pour cette adresse.
       Le bâtiment existe peut-être sous une adresse voisine.</p>`);
