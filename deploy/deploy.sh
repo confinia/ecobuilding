@@ -18,7 +18,7 @@ echo "== rsync sources -> $HOST:~/projects/ecobuilding (version $SHA)"
 rsync -az --delete \
   --exclude .git --exclude __pycache__ --exclude .venv --exclude node_modules \
   --exclude deploy/secrets.env --exclude deploy/.active \
-  --exclude caddy_server/Caddyfile \
+  --exclude caddy_server/Caddyfile --exclude data/ \
   ./ "$HOST:~/projects/ecobuilding/"
 
 # Upstream edge = platform repo (github.com/confinia/platform): its Caddyfile
@@ -36,6 +36,13 @@ if [ ! -f deploy/secrets.env ]; then
   echo "   -> deploy/secrets.env generated (grafana admin password)"
 fi
 systemctl --user is-active --quiet podman.socket || systemctl --user enable --now podman.socket
+
+# GeoIP db (country-only): reuse the confinia project's copy if not present.
+mkdir -p data/geoip
+if [ ! -f data/geoip/dbip-country-lite.mmdb ]; then
+  cp ~/projects/confinia/data/geoip/dbip-country-lite.mmdb data/geoip/ 2>/dev/null \
+    || echo "   WARN: GeoIP db not found — visitor countries will be 'unknown'"
+fi
 
 ACTIVE=$(cat deploy/.active 2>/dev/null || echo blue)
 echo "$ACTIVE" > deploy/.active

@@ -9,6 +9,8 @@ function track(event, meta) {
     fetch(`${API}/events`, { method: "POST", headers: { "Content-Type": "application/json" }, body });
 }
 track("page_view");
+// Live-audience heartbeat: 1/min per visible tab, anonymous like all events.
+setInterval(() => { if (document.visibilityState === "visible") track("heartbeat"); }, 60000);
 
 // --- Map ----------------------------------------------------------------------
 const map = new maplibregl.Map({
