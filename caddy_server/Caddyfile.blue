@@ -5,13 +5,37 @@
 	auto_https off
 	http_port 8020
 	default_bind 127.0.0.1
+	servers {
+		# Keep the original client IP in X-Forwarded-For across the local
+		# proxy chain (platform edge -> this router -> stack caddy -> api):
+		# without this, each hop REPLACES XFF and the API only ever sees
+		# loopback/bridge IPs (country metric = "unknown").
+		trusted_proxies static private_ranges
+	}
+}
+
+# Scanner probes (/.env, /.git, wordpress kits…): block with 403 AND log —
+# monitored via: podman logs ecobuilding-edge_caddy_1 | grep '"status":403'
+(block_scanners) {
+	@scanners path /.env* *.env /.git* /.aws* /.ssh* /.svn* /.hg* /.DS_Store /.vscode* /.idea* /.npmrc /.docker* /wp-admin* /wp-login* /wp-content* /wp-includes* /xmlrpc.php *.php /vendor/* /credentials* /config.json /debug/* /actuator/* /*secret*
+	respond @scanners 403
 }
 
 http://ecobuilding.confinia.io {
+	log {
+		output stdout
+		format json
+	}
+	import block_scanners
 	reverse_proxy 127.0.0.1:8021
 }
 
 http://next.ecobuilding.confinia.io {
+	log {
+		output stdout
+		format json
+	}
+	import block_scanners
 	reverse_proxy 127.0.0.1:8022
 }
 
