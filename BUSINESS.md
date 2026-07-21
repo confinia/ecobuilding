@@ -141,7 +141,7 @@ Ranked plays, filtered for "runs without me" — vertical now selected from repo
      one schema, SLA vs six raw government APIs (BDNB free tier: 10k calls/mo, no SLA) — the
      "convenience layer on free data" logic the ERP market proves (81% pay despite free tool).
      US analogues: ATTOM/Estated/Regrid. France: namR = enterprise-only datasets → no self-serve
-     SMB per-building API exists. Freemium metered: ~500 free calls/mo, tiers ~29/99/299€/mo.
+     SMB per-building API exists. Freemium metered: ~500 free calls/mo, tiers ~29/99/299€/mo. Payment rail (2026-07-21): Lemon Squeezy (Merchant of Record — EU VAT handled, individual onboarding) rather than raw Stripe; wired only once RULES.md #6 (≥10k€) is met.
    - **Thematic vector tiles**: hosted "DPE France" / "risks" / "3D buildings" tile endpoints for
      MapLibre/Leaflet devs. Jawg (FR) proves hosted-tiles viability; do NOT do generic basemaps
      (price war) — per-building thematic layers are the open lane.
