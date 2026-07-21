@@ -53,6 +53,14 @@ echo "   active stack: $ACTIVE — deploying to candidate: $CANDIDATE"
 LEGACY=$(podman ps -a --format '{{.Names}}' | grep -E '^ecobuilding_' || true)
 [ -n "$LEGACY" ] && { echo "   removing legacy containers"; echo "$LEGACY" | xargs podman rm -f >/dev/null; }
 
+# Shared monitoring (promote-proof): prometheus + grafana + podman-exporter.
+( cd monitoring_stack && podman-compose -p ecobuilding-monitoring -f docker-compose.yml up -d )
+
+# Remove per-stack monitoring leftovers from the pre-shared-monitoring layout.
+for c in grafana prometheus podman-exporter; do
+  podman rm -f "ecobuilding-blue_${c}_1" "ecobuilding-green_${c}_1" 2>/dev/null || true
+done
+
 # Ensure the ACTIVE stack exists/runs (no rebuild, no recreate).
 podman-compose -p "ecobuilding-$ACTIVE" -f docker-compose.yml -f "deploy/$ACTIVE.override.yml" up -d
 

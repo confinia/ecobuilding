@@ -22,9 +22,10 @@
 		reverse_proxy api:8000
 	}
 
-	# This stack's Grafana (subpath mode).
+	# SHARED Grafana (monitoring_stack project, host :3002) — same instance
+	# whichever stack serves prod, so dashboards survive promotes.
 	handle /grafana* {
-		reverse_proxy grafana:3000
+		reverse_proxy host.containers.internal:3002
 	}
 
 	# MapLibre frontend. no-cache = browsers must revalidate (ETag), so every
