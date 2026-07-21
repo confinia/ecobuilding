@@ -36,6 +36,22 @@
       "targets": [{ "expr": "sum(up)" }]
     },
     {
+      "id": 9, "type": "stat", "title": "Browsing now (approx.)",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 12 },
+      "targets": [{ "expr": "ceil(sum(increase(ecobuilding_frontend_events_total{event=\"heartbeat\"}[2m])) / 2)" }]
+    },
+    {
+      "id": 10, "type": "bargauge", "title": "Visitors by country (24h, page views)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "options": { "displayMode": "gradient", "orientation": "horizontal" },
+      "targets": [{ "expr": "sort_desc(sum by (country) (increase(ecobuilding_frontend_events_total{event=\"page_view\"}[24h])))", "legendFormat": "{{country}}" }]
+    },
+    {
+      "id": 11, "type": "timeseries", "title": "Page views / min by country",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "targets": [{ "expr": "sum by (country) (rate(ecobuilding_frontend_events_total{event=\"page_view\"}[5m])) * 60", "legendFormat": "{{country}}" }]
+    },
+    {
       "id": 7, "type": "timeseries", "title": "Podman containers — CPU (cores)",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
       "targets": [{ "expr": "sum by (name) (rate(podman_container_cpu_seconds_total[5m]))", "legendFormat": "{{name}}" }]

@@ -16,7 +16,7 @@ import time
 from collections import OrderedDict
 
 import httpx
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -30,6 +30,31 @@ GEORISQUES_URL = "https://georisques.gouv.fr/api/v1/resultats_rapport_risque"
 
 # Rental-ban calendar, loi Climat et Résilience (verified 2026-07-20).
 DPE_BAN_DATES = {"G": "2025-01-01", "F": "2028-01-01", "E": "2034-01-01"}
+
+# GeoIP: country-level only (dbip-country-lite), resolved in memory — the IP
+# itself is never stored nor logged, matching the "no tracking" promise.
+_geoip = None
+try:
+    import maxminddb
+
+    _GEOIP_DB = os.environ.get("GEOIP_DB", "/geoip/dbip-country-lite.mmdb")
+    if os.path.exists(_GEOIP_DB):
+        _geoip = maxminddb.open_database(_GEOIP_DB)
+except Exception as e:  # missing db/lib must never break the API
+    logging.getLogger("ecobuilding").warning("GeoIP unavailable: %s", e)
+
+
+def _client_country(request: Request) -> str:
+    if _geoip is None:
+        return "unknown"
+    ip = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
+    if not ip and request.client:
+        ip = request.client.host
+    try:
+        rec = _geoip.get(ip) or {}
+        return rec.get("country", {}).get("iso_code") or "unknown"
+    except Exception:
+        return "unknown"
 
 app = FastAPI(
     title="EcoBuilding API",
@@ -331,7 +356,11 @@ class FrontendEvent(BaseModel):
 
 
 @app.post("/v1/events", tags=["telemetry"], status_code=204)
-async def track(ev: FrontendEvent):
-    """Anonymous frontend usage beacon (no cookies, no IP stored) -> OTel counter."""
-    M_FRONTEND.add(1, {"event": ev.event[:40]})
+async def track(ev: FrontendEvent, request: Request):
+    """Anonymous frontend usage beacon -> OTel counter.
+
+    No cookies, no IP stored: the IP is only mapped in-memory to a country
+    code (dbip-country-lite) used as a metric label.
+    """
+    M_FRONTEND.add(1, {"event": ev.event[:40], "country": _client_country(request)})
     return None
