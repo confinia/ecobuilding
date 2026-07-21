@@ -30,6 +30,9 @@ services:
       # Country-level GeoIP (dbip-country-lite) — provisioned by deploy.sh,
       # outside git and outside the rsync --delete scope.
       - ./data/geoip:/geoip:ro
+      # Lead capture (offer page) — persisted outside git/rsync, shared by
+      # both stacks so no lead is lost across promotes.
+      - ./data/leads:/leads
     restart: unless-stopped
 
   frontend:
