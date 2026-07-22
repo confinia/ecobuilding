@@ -14,7 +14,13 @@
    validation on staging. No automatic failover to unvalidated versions.
 4. No AI co-author attribution in commits or PRs.
 5. Communication: under-promise — announce only what already works.
-6. **No company creation below a 10k€ invoice** (rule set 2026-07-21): no legal
+6. **English everywhere in the repo** (rule set 2026-07-22): all code comments
+   AND all markdown documentation are written in English. Exception:
+   user-facing product content (UI strings, PDF fiche wording, forum/social
+   post drafts in LAUNCH.md) may be French — that is content, not documentation.
+   Existing French comments/docs are migrated opportunistically when files are
+   touched.
+7. **No company creation below a 10k€ invoice** (rule set 2026-07-21): no legal
    structure, no Stripe, no paid offers until at least one ≥10k€ deal is
    secured. Until then the product stays free (beta) and monetization effort
    targets 10k€-scale opportunities, not small transactions.
