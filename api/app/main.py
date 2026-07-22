@@ -412,9 +412,86 @@ async def me(request: Request):
 
 M_REPORTS = _meter.create_counter("ecobuilding_reports", description="PDF fiches generated", unit="1")
 
+# --- API keys & soft quota (issue #27) ---------------------------------------
+# Keys are minted by signed-in users (bound to their org) and stored on the
+# shared data volume. The daily cap applies ONLY to value endpoints (report,
+# export) so the free map (suggest/lookup/buildings) stays unlimited. During
+# beta a valid key lifts the cap entirely. The per-IP counter is in-memory
+# (soft, resets on restart / differs per stack) — a nudge, not hard billing.
+import hashlib
+import secrets as _secrets
+from collections import defaultdict
+from datetime import date
+
+KEYS_PATH = os.environ.get("KEYS_PATH", "/leads/keys.jsonl")
+ANON_DAILY_CAP = int(os.environ.get("ANON_DAILY_CAP", "5"))
+_anon_counts: dict = defaultdict(int)
+_anon_day = {"d": None}
+M_KEYS = _meter.create_counter("ecobuilding_api_keys", description="API key events", unit="1")
+M_KEYED_CALLS = _meter.create_counter("ecobuilding_keyed_calls", description="Value calls per key", unit="1")
+
+
+def _load_keys() -> set:
+    keys = set()
+    try:
+        with open(KEYS_PATH) as f:
+            import json as _json
+            for line in f:
+                keys.add(_json.loads(line)["key"])
+    except OSError:
+        pass
+    return keys
+
+
+def _quota_gate(request: Request, endpoint: str):
+    """Allow if a known API key is present; else enforce the anonymous daily
+    per-IP cap. Returns the caller kind for metrics."""
+    key = request.headers.get("x-api-key") or request.query_params.get("key")
+    if key and key in _load_keys():
+        M_KEYED_CALLS.add(1, {"endpoint": endpoint, "key": hashlib.sha256(key.encode()).hexdigest()[:12]})
+        return "key"
+    today = date.today().isoformat()
+    if _anon_day["d"] != today:
+        _anon_day["d"] = today
+        _anon_counts.clear()
+    ip = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip() or "?"
+    _anon_counts[ip] += 1
+    if _anon_counts[ip] > ANON_DAILY_CAP:
+        raise HTTPException(
+            429,
+            f"Limite gratuite atteinte ({ANON_DAILY_CAP}/jour). Créez un compte pour une clé API "
+            f"(gratuite pendant la bêta) : https://ecobuilding.confinia.io/offres.html",
+        )
+    return "anon"
+
+
+@app.post("/v1/keys", tags=["account"], status_code=201)
+async def create_key(request: Request):
+    """Mint an API key for the signed-in user (Keycloak JWT). Free during beta."""
+    auth = request.headers.get("authorization", "")
+    if not auth.lower().startswith("bearer "):
+        raise HTTPException(401, "Bearer token required")
+    try:
+        claims = _decode_token(auth[7:].strip())
+    except Exception:
+        raise HTTPException(401, "Invalid token")
+    key = "eco_" + _secrets.token_urlsafe(24)
+    import json as _json
+    from datetime import datetime, timezone
+
+    rec = {"key": key, "sub": claims.get("sub"),
+           "org": claims.get("org"), "email": claims.get("email"),
+           "created": datetime.now(timezone.utc).isoformat()}
+    os.makedirs(os.path.dirname(KEYS_PATH), exist_ok=True)
+    with open(KEYS_PATH, "a") as f:
+        f.write(_json.dumps(rec, ensure_ascii=False) + "\n")
+    M_KEYS.add(1, {"event": "created"})
+    return {"api_key": key, "note": "Passez-la en en-tête X-API-Key. Gratuite pendant la bêta."}
+
 
 @app.get("/v1/report/{bdnb_id}.pdf", tags=["reports"])
 async def report(
+    request: Request,
     bdnb_id: str,
     lon: float | None = Query(None),
     lat: float | None = Query(None),
@@ -422,12 +499,14 @@ async def report(
     """Normalized one-page PDF fiche of a building (free during beta).
 
     Informational document for pre-sale/diagnostic preparation — replaces
-    neither an official DPE nor a regulatory ERP.
+    neither an official DPE nor a regulatory ERP. Anonymous daily cap applies;
+    a free API key lifts it (issue #27).
     """
     from fastapi.responses import Response
 
     from .report import build_report_pdf
 
+    _quota_gate(request, "report")
     data = await building(bdnb_id, lon, lat)
     pdf = build_report_pdf(data)
     M_REPORTS.add(1, {"has_dpe": str(bool((data["buildings"][0].get("energy") or {}).get("dpe_class"))).lower()})
@@ -464,6 +543,7 @@ async def streetview(
 
 @app.get("/v1/export", tags=["data"])
 async def export_geojson(
+    request: Request,
     commune: str = Query(description="INSEE commune code, e.g. 35238 (Rennes)"),
     limit: int = Query(2000, le=10000, description="Max features"),
 ):
@@ -472,6 +552,7 @@ async def export_geojson(
     Ouverte — issue #24."""
     from fastapi.responses import JSONResponse
 
+    _quota_gate(request, "export")
     fields = ("batiment_groupe_id,libelle_adr_principale_ban,classe_bilan_dpe,"
               "annee_construction,hauteur_mean,alea_argile,"
               "type_generateur_climatisation,geom_groupe")
