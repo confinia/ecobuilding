@@ -106,7 +106,7 @@ M_REQUESTS = _meter.create_counter(
 # Polled from the KC Admin API via an OTel observable gauge, cached 60s. Uses
 # bootstrap admin creds (KC_BOOTSTRAP_ADMIN_USERNAME/PASSWORD from secrets.env);
 # a scoped service account is a SECURITY.md hardening item.
-KC_ADMIN_BASE = os.environ.get("KC_ADMIN_BASE", "http://host.containers.internal:8181/auth")
+KC_ADMIN_BASE = os.environ.get("KC_ADMIN_BASE", "https://ecobuilding.confinia.io/auth")
 KC_ADMIN_USER = os.environ.get("KC_BOOTSTRAP_ADMIN_USERNAME", "admin")
 KC_ADMIN_PASSWORD = os.environ.get("KC_BOOTSTRAP_ADMIN_PASSWORD", "")
 _kc_cache = {"ts": 0.0, "users": 0, "orgs": 0}
@@ -414,7 +414,7 @@ OIDC_ISSUER = os.environ.get("OIDC_ISSUER", "https://ecobuilding.confinia.io/aut
 # JWKS fetched via the host-internal route (api runs in a stack network).
 OIDC_JWKS_URL = os.environ.get(
     "OIDC_JWKS_URL",
-    "http://host.containers.internal:8181/auth/realms/confinia/protocol/openid-connect/certs",
+    "https://ecobuilding.confinia.io/auth/realms/confinia/protocol/openid-connect/certs",
 )
 _jwks_client = None
 
