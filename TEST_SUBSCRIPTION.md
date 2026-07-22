@@ -62,11 +62,12 @@ active**: the current `GH_TOKEN` lacks the `workflow` scope. To activate:
 ## Last results (REAL run)
 
 - **Date:** 2026-07-22 · **Environment:** `python:3.12-slim` container on the
-  production VM (`cka-ovh-dedicated-01`) · **Branch:** `feat/ci-test-harness`
-- **Outcome:** `6 passed, 8 skipped in 1.19s`
+  production VM (`cka-ovh-dedicated-01`) · **Branch:** `feat/keycloak-idp`
+- **Outcome:** `11 passed, 6 skipped in 1.19s`
 
 | Suite | Result |
 |---|---|
 | `test_api.py` (healthz, lookup validation, suggest, events, leads, PDF fiche) | ✅ 6 PASSED |
-| `test_subscription.py` (4 cases) | ⏭ SKIPPED — feature not implemented (#27/#36) |
+| `test_subscription.py` — JWT identity (/v1/me: no token, garbage, valid+org, wrong issuer, expired) | ✅ 5 PASSED |
+| `test_subscription.py` — anonymous cap / key provisioning | ⏭ 2 SKIPPED (#27) |
 | `test_polar.py` (4 cases) | ⏭ SKIPPED — see TEST_POLAR.md |

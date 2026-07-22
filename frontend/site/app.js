@@ -9,6 +9,32 @@ function track(event, meta) {
     fetch(`${API}/events`, { method: "POST", headers: { "Content-Type": "application/json" }, body });
 }
 track("page_view");
+
+// --- Auth (Keycloak, shared /auth) — progressive: UI hides if IdP is down ---
+(function initAuth() {
+  if (!window.Keycloak) return;
+  const kc = new Keycloak({ url: "/auth", realm: "confinia", clientId: "ecobuilding-web" });
+  const show = (id, on) => { document.getElementById(id).hidden = !on; };
+  kc.init({ onLoad: "check-sso", pkceMethod: "S256",
+            silentCheckSsoRedirectUri: location.origin + "/silent-sso.html" })
+    .then((authenticated) => {
+      if (authenticated) {
+        const t = kc.tokenParsed || {};
+        document.getElementById("userlabel").textContent =
+          (t.email || t.preferred_username || "compte") + (t.org ? " · " + t.org : "");
+        show("userchip", true);
+        window.ecoToken = () => kc.token;   // future authenticated API calls
+        setInterval(() => kc.updateToken(60).catch(() => {}), 30000);
+        track("signed_in_view");
+      } else {
+        show("signin", true); show("signup", true);
+      }
+      document.getElementById("signin").onclick = (e) => { e.preventDefault(); track("signin_click"); kc.login(); };
+      document.getElementById("signup").onclick = (e) => { e.preventDefault(); track("signup_click"); kc.register(); };
+      document.getElementById("signout").onclick = (e) => { e.preventDefault(); kc.logout({ redirectUri: location.origin }); };
+    })
+    .catch(() => { /* IdP unreachable: keep auth UI hidden */ });
+})();
 // Live-audience heartbeat: 1/min per visible tab, anonymous like all events.
 setInterval(() => { if (document.visibilityState === "visible") track("heartbeat"); }, 60000);
 
