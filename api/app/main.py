@@ -638,8 +638,10 @@ async def _nearby_photos(lon: float, lat: float, radius: float = 0.0006) -> list
         # Deep-link into the Panoramax web viewer (the STAC "self" link is raw
         # JSON, not a human page).
         viewer = f"https://api.panoramax.xyz/#focus=pic&pic={f['id']}"
+        fov = (f.get("properties", {}).get("pers:interior_orientation") or {}).get("field_of_view")
         if thumb:
             photos.append({"id": f["id"], "thumb": thumb, "sd": sd, "viewer": viewer,
+                           "is_360": fov == 360,
                            "coordinates": f.get("geometry", {}).get("coordinates")})
     return photos
 
