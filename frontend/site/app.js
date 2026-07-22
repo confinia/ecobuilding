@@ -11,8 +11,13 @@ function track(event, meta) {
 track("page_view");
 
 // --- Auth (Keycloak, shared /auth) — progressive: UI hides if IdP is down ---
-(function initAuth() {
-  if (!window.Keycloak) return;
+// Keycloak 26 ships the JS adapter as an ESM module (no server-hosted
+// /auth/js/keycloak.js), so we import it dynamically from a pinned CDN.
+(async function initAuth() {
+  let Keycloak;
+  try {
+    ({ default: Keycloak } = await import("https://esm.sh/keycloak-js@26.1.0"));
+  } catch { return; }
   const kc = new Keycloak({ url: "/auth", realm: "confinia", clientId: "ecobuilding-web" });
   const show = (id, on) => { document.getElementById(id).hidden = !on; };
   kc.init({ onLoad: "check-sso", pkceMethod: "S256",
