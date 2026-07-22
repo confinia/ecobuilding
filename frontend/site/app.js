@@ -263,6 +263,21 @@ async function openBuildingById(id, lon, lat) {
   }
 }
 
+// Human-readable French labels for Géorisques raw keys.
+const RISK_LABELS = {
+  inondation: "Inondation", remonteeNappe: "Remontée de nappe",
+  seisme: "Séisme", mouvementTerrain: "Mouvement de terrain",
+  retraitGonflementArgile: "Retrait-gonflement des argiles",
+  feuForet: "Feu de forêt", radon: "Radon", icpe: "ICPE",
+  canalisationsMatieresDangereuses: "Canalisations (matières dangereuses)",
+  pollutionSols: "Pollution des sols", nucleaire: "Nucléaire",
+  ruptureBarrage: "Rupture de barrage", risqueMinier: "Risque minier",
+  cavite: "Cavité souterraine", avalanche: "Avalanche",
+};
+function humanizeRisk(r) {
+  return RISK_LABELS[r] || r.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/^./, (c) => c.toUpperCase());
+}
+
 function kv(k, v) {
   return v === null || v === undefined || v === "" ? "" :
     `<div class="kv"><span class="k">${k}</span><span>${v}</span></div>`;
@@ -284,6 +299,10 @@ function renderPanel(s, data) {
     : `<div class="ban-warning ban-ok">✓ Aucune interdiction de location prévue pour cette classe</div>`;
 
   const risks = (data.area_risks?.risques_naturels || []).concat(data.area_risks?.risques_technologiques || []);
+  const risksHtml = risks.length
+    ? `<div class="risk-block"><span class="k">Risques de la zone</span>
+        <div class="risk-chips">${risks.map((r) => `<span class="chip">${humanizeRisk(r)}</span>`).join("")}</div></div>`
+    : "";
 
   showPanel(`
     <h2>${b.address || s.label}</h2>
@@ -300,7 +319,7 @@ function renderPanel(s, data) {
     ${kv("Toit", b.roof_material)}
     <h3>Risques</h3>
     ${kv("Retrait-gonflement argiles", b.risks?.clay_shrink_swell)}
-    ${risks.length ? kv("Risques de la zone", risks.join(", ")) : ""}
+    ${risksHtml}
     ${data.area_risks?.report_url ? `<p class="hint"><a href="${data.area_risks.report_url}" target="_blank" rel="noopener">Rapport Géorisques complet →</a></p>` : ""}
     ${b.cooling?.has_cooling ? `<h3>Climatisation</h3>
     ${kv("Générateur", b.cooling.generator_type)}
