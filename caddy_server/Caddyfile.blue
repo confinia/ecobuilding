@@ -31,7 +31,7 @@ http://ecobuilding.confinia.io {
 	# Shared identity (ecobuilding-auth project): Keycloak under /auth,
 	# stateful, outside blue/green like monitoring.
 	handle /auth/* {
-		reverse_proxy 127.0.0.1:8180
+		reverse_proxy 127.0.0.1:8181
 	}
 
 	reverse_proxy 127.0.0.1:8021
@@ -47,7 +47,7 @@ http://next.ecobuilding.confinia.io {
 	# Shared identity (ecobuilding-auth project): Keycloak under /auth,
 	# stateful, outside blue/green like monitoring.
 	handle /auth/* {
-		reverse_proxy 127.0.0.1:8180
+		reverse_proxy 127.0.0.1:8181
 	}
 
 	reverse_proxy 127.0.0.1:8022

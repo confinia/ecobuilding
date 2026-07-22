@@ -57,7 +57,7 @@ LEGACY=$(podman ps -a --format '{{.Names}}' | grep -E '^ecobuilding_' || true)
 [ -n "$LEGACY" ] && { echo "   removing legacy containers"; echo "$LEGACY" | xargs podman rm -f >/dev/null; }
 
 # Shared identity (Keycloak + postgres), outside blue/green like monitoring.
-grep -q KC_DB_PASSWORD deploy/secrets.env || echo "KC_DB_PASSWORD=$(openssl rand -hex 24)" >> deploy/secrets.env
+if ! grep -q KC_DB_PASSWORD deploy/secrets.env; then P=$(openssl rand -hex 24); echo "KC_DB_PASSWORD=$P" >> deploy/secrets.env; echo "POSTGRES_PASSWORD=$P" >> deploy/secrets.env; fi
 grep -q KC_BOOTSTRAP_ADMIN_PASSWORD deploy/secrets.env || echo "KC_BOOTSTRAP_ADMIN_PASSWORD=$(openssl rand -base64 18)" >> deploy/secrets.env
 ( cd auth_stack && podman-compose -p ecobuilding-auth -f docker-compose.yml up -d )
 

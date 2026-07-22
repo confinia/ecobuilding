@@ -359,7 +359,7 @@ OIDC_ISSUER = os.environ.get("OIDC_ISSUER", "https://ecobuilding.confinia.io/aut
 # JWKS fetched via the host-internal route (api runs in a stack network).
 OIDC_JWKS_URL = os.environ.get(
     "OIDC_JWKS_URL",
-    "http://host.containers.internal:8180/auth/realms/confinia/protocol/openid-connect/certs",
+    "http://host.containers.internal:8181/auth/realms/confinia/protocol/openid-connect/certs",
 )
 _jwks_client = None
 
