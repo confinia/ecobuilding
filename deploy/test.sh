@@ -10,7 +10,7 @@ set -eu
 cd "$(dirname "$0")/../api"
 
 ENGINE=$(command -v podman || command -v docker)
-"$ENGINE" run --rm -v "$PWD":/w -w /w -e OTEL_METRIC_EXPORT_INTERVAL=600000 \
+"$ENGINE" run --rm -v "$PWD":/w -w /w -e OTEL_SDK_DISABLED=true \
   docker.io/library/python:3.12-slim bash -c '
     apt-get update -qq >/dev/null &&
     apt-get install -y -qq --no-install-recommends \
