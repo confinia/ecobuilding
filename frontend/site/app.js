@@ -117,6 +117,16 @@ const DPE_COLORS = ["match", ["get", "classe_bilan_dpe"],
   "#d5cdc0"];
 
 map.on("load", () => {
+  // Only extrude BDNB (cquest / OSM-FR feedback, issue #51): the basemap's own
+  // OSM building extrusions overlapped the BDNB "bâtiment groupe" layer, with
+  // BDNB and OSM footprints not aligning 1:1. Remove the basemap building
+  // layers so the DPE-colored BDNB volumes are the only 3D buildings shown.
+  for (const layer of map.getStyle().layers) {
+    if (layer.id !== "bdnb-dpe-3d" && /building/i.test(layer.id)) {
+      map.removeLayer(layer.id);
+    }
+  }
+
   map.addSource("bdnb", {
     type: "vector",
     tiles: ["https://api.bdnb.io/v1/bdnb/tuiles/batiment_groupe/{z}/{x}/{y}.pbf"],
