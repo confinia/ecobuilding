@@ -101,6 +101,54 @@ _meter = metrics.get_meter("ecobuilding")
 M_REQUESTS = _meter.create_counter(
     "ecobuilding_api_requests", description="API requests", unit="1"
 )
+
+# --- Identity gauges (internal dashboard #61): live Keycloak user & org counts.
+# Polled from the KC Admin API via an OTel observable gauge, cached 60s. Uses
+# bootstrap admin creds (KC_BOOTSTRAP_ADMIN_USERNAME/PASSWORD from secrets.env);
+# a scoped service account is a SECURITY.md hardening item.
+KC_ADMIN_BASE = os.environ.get("KC_ADMIN_BASE", "http://host.containers.internal:8181/auth")
+KC_ADMIN_USER = os.environ.get("KC_BOOTSTRAP_ADMIN_USERNAME", "admin")
+KC_ADMIN_PASSWORD = os.environ.get("KC_BOOTSTRAP_ADMIN_PASSWORD", "")
+_kc_cache = {"ts": 0.0, "users": 0, "orgs": 0}
+
+
+def _poll_keycloak() -> dict:
+    now = time.monotonic()
+    if now - _kc_cache["ts"] < 60:
+        return _kc_cache
+    try:
+        with httpx.Client(timeout=5.0) as c:
+            tok = c.post(
+                f"{KC_ADMIN_BASE}/realms/master/protocol/openid-connect/token",
+                data={"grant_type": "password", "client_id": "admin-cli",
+                      "username": KC_ADMIN_USER, "password": KC_ADMIN_PASSWORD},
+            ).json()["access_token"]
+            h = {"Authorization": f"Bearer {tok}"}
+            users = c.get(f"{KC_ADMIN_BASE}/admin/realms/confinia/users/count", headers=h).json()
+            lst = c.get(f"{KC_ADMIN_BASE}/admin/realms/confinia/users",
+                        headers=h, params={"max": 10000, "briefRepresentation": False}).json()
+            orgs = {u.get("attributes", {}).get("organization", [None])[0]
+                    for u in lst if u.get("attributes", {}).get("organization")}
+            _kc_cache.update(ts=now, users=int(users), orgs=len(orgs))
+    except Exception as e:
+        log.warning("Keycloak poll failed: %s", e)
+    return _kc_cache
+
+
+def _obs_users(options):
+    from opentelemetry.metrics import Observation
+    return [Observation(_poll_keycloak()["users"])]
+
+
+def _obs_orgs(options):
+    from opentelemetry.metrics import Observation
+    return [Observation(_poll_keycloak()["orgs"])]
+
+
+_meter.create_observable_gauge("ecobuilding_kc_users", callbacks=[_obs_users],
+                               description="Keycloak user accounts")
+_meter.create_observable_gauge("ecobuilding_kc_organizations", callbacks=[_obs_orgs],
+                               description="Distinct organizations (user attribute)")
 M_LOOKUPS = _meter.create_counter(
     "ecobuilding_lookups", description="Building lookups", unit="1"
 )
