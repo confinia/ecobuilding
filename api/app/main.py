@@ -438,6 +438,30 @@ async def report(
     )
 
 
+PANORAMAX_URL = "https://api.panoramax.xyz/api/search"
+
+
+@app.get("/v1/streetview", tags=["buildings"])
+async def streetview(
+    lon: float = Query(description="Longitude"),
+    lat: float = Query(description="Latitude"),
+    radius: float = Query(0.0006, description="Half-size of the search bbox in degrees"),
+):
+    """Nearest Panoramax street-level photos around a point (open imagery,
+    CC-BY-SA). Bridges toward the photosphere vision — issue #22."""
+    bbox = f"{lon - radius},{lat - radius},{lon + radius},{lat + radius}"
+    data = await _cached_get_json(PANORAMAX_URL, {"bbox": bbox, "limit": "4"}, ttl=3600)
+    photos = []
+    for f in data.get("features", [])[:4]:
+        assets = f.get("assets", {})
+        thumb = (assets.get("thumb") or assets.get("sd") or {}).get("href")
+        viewer = next((l["href"] for l in f.get("links", []) if l.get("rel") == "self"), None)
+        if thumb:
+            photos.append({"id": f["id"], "thumb": thumb, "viewer": viewer,
+                           "coordinates": f.get("geometry", {}).get("coordinates")})
+    return {"photos": photos, "source": "Panoramax — CC-BY-SA 4.0"}
+
+
 @app.get("/v1/export", tags=["data"])
 async def export_geojson(
     commune: str = Query(description="INSEE commune code, e.g. 35238 (Rennes)"),
