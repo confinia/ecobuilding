@@ -24,3 +24,7 @@
    structure, no Stripe, no paid offers until at least one ≥10k€ deal is
    secured. Until then the product stays free (beta) and monetization effort
    targets 10k€-scale opportunities, not small transactions.
+8. **French writing style** (rule set 2026-07-22, applies to French replies,
+   posts, and UI text): never use the em dash "—"; use parentheses or commas
+   instead. No space before a comma. No space before a colon ":" (operator's
+   preference, overrides the standard French thin space).
