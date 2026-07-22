@@ -146,6 +146,52 @@
           "legendFormat": "keys/day"
         }
       ]
+    },
+    {
+      "id": 20,
+      "type": "table",
+      "title": "Organizations (list, with members)",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 20
+      },
+      "targets": [
+        {
+          "expr": "ecobuilding_kc_org_members",
+          "instant": true,
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "job": true,
+              "instance": true,
+              "stack": true
+            },
+            "renameByName": {
+              "org": "Organisation",
+              "Value": "Membres"
+            }
+          }
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "Membres",
+            "desc": true
+          }
+        ]
+      }
     }
   ]
 }
