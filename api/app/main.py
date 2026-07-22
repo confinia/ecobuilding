@@ -198,6 +198,13 @@ def _normalize_building(r: dict) -> dict:
         "risks": {
             "clay_shrink_swell": r.get("alea_argile"),
         },
+        "cooling": {
+            # BDNB fields from DPE — answers the OSM-FR "carte des lieux
+            # climatisés" thread (issue #23).
+            "generator_type": r.get("type_generateur_climatisation"),
+            "generator_age": r.get("type_generateur_climatisation_anciennete"),
+            "has_cooling": bool(r.get("type_generateur_climatisation")),
+        },
         "solar": {
             "thermal_favourable": r.get("batenr_favorabilite_solaire_thermique"),
             "thermal_potential_kwh_y": r.get("batenr_potentiel_prod_solaire_thermique_annuelle"),

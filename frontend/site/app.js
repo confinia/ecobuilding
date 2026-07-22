@@ -283,6 +283,9 @@ function renderPanel(s, data) {
     ${kv("Retrait-gonflement argiles", b.risks?.clay_shrink_swell)}
     ${risks.length ? kv("Risques de la zone", risks.join(", ")) : ""}
     ${data.area_risks?.report_url ? `<p class="hint"><a href="${data.area_risks.report_url}" target="_blank" rel="noopener">Rapport Géorisques complet →</a></p>` : ""}
+    ${b.cooling?.has_cooling ? `<h3>Climatisation</h3>
+    ${kv("Générateur", b.cooling.generator_type)}
+    ${kv("Ancienneté", b.cooling.generator_age)}` : ""}
     <h3>Solaire</h3>
     ${kv("Favorable au solaire thermique", b.solar?.thermal_favourable === true ? "oui" : b.solar?.thermal_favourable === false ? "non" : null)}
     ${kv("Potentiel annuel", b.solar?.thermal_potential_kwh_y ? b.solar.thermal_potential_kwh_y + " kWh/an" : null)}
