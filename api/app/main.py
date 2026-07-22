@@ -109,7 +109,7 @@ M_REQUESTS = _meter.create_counter(
 KC_ADMIN_BASE = os.environ.get("KC_ADMIN_BASE", "https://ecobuilding.confinia.io/auth")
 KC_ADMIN_USER = os.environ.get("KC_BOOTSTRAP_ADMIN_USERNAME", "admin")
 KC_ADMIN_PASSWORD = os.environ.get("KC_BOOTSTRAP_ADMIN_PASSWORD", "")
-_kc_cache = {"ts": 0.0, "users": 0, "orgs": 0}
+_kc_cache = {"ts": 0.0, "users": 0, "orgs": 0, "org_members": {}}
 
 
 def _poll_keycloak() -> dict:
@@ -117,6 +117,7 @@ def _poll_keycloak() -> dict:
     if now - _kc_cache["ts"] < 60:
         return _kc_cache
     try:
+        from collections import Counter
         with httpx.Client(timeout=5.0) as c:
             tok = c.post(
                 f"{KC_ADMIN_BASE}/realms/master/protocol/openid-connect/token",
@@ -127,9 +128,13 @@ def _poll_keycloak() -> dict:
             users = c.get(f"{KC_ADMIN_BASE}/admin/realms/confinia/users/count", headers=h).json()
             lst = c.get(f"{KC_ADMIN_BASE}/admin/realms/confinia/users",
                         headers=h, params={"max": 10000, "briefRepresentation": False}).json()
-            orgs = {u.get("attributes", {}).get("organization", [None])[0]
-                    for u in lst if u.get("attributes", {}).get("organization")}
-            _kc_cache.update(ts=now, users=int(users), orgs=len(orgs))
+            members = Counter(
+                u["attributes"]["organization"][0]
+                for u in lst
+                if u.get("attributes", {}).get("organization")
+            )
+            _kc_cache.update(ts=now, users=int(users), orgs=len(members),
+                             org_members=dict(members))
     except Exception as e:
         log.warning("Keycloak poll failed: %s", e)
     return _kc_cache
@@ -145,10 +150,18 @@ def _obs_orgs(options):
     return [Observation(_poll_keycloak()["orgs"])]
 
 
+def _obs_org_members(options):
+    from opentelemetry.metrics import Observation
+    return [Observation(n, {"org": org})
+            for org, n in _poll_keycloak()["org_members"].items()]
+
+
 _meter.create_observable_gauge("ecobuilding_kc_users", callbacks=[_obs_users],
                                description="Keycloak user accounts")
 _meter.create_observable_gauge("ecobuilding_kc_organizations", callbacks=[_obs_orgs],
                                description="Distinct organizations (user attribute)")
+_meter.create_observable_gauge("ecobuilding_kc_org_members", callbacks=[_obs_org_members],
+                               description="Members per organization")
 M_LOOKUPS = _meter.create_counter(
     "ecobuilding_lookups", description="Building lookups", unit="1"
 )
