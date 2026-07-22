@@ -37,9 +37,6 @@ if [ ! -f deploy/secrets.env ]; then
 fi
 systemctl --user is-active --quiet podman.socket || systemctl --user enable --now podman.socket
 
-# Shared cross-project network (api <-> keycloak by name).
-podman network exists ecobuilding-shared 2>/dev/null || podman network create ecobuilding-shared
-
 # Persistent lead storage (offer page), outside git/rsync.
 mkdir -p data/leads
 
