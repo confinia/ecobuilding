@@ -1,0 +1,61 @@
+{
+  "title": "EcoBuilding — Internal · FinOps & revenue funnel",
+  "uid": "ecobuilding-finops",
+  "tags": ["internal"],
+  "schemaVersion": 39,
+  "refresh": "1m",
+  "time": { "from": "now-90d", "to": "now" },
+  "panels": [
+    {
+      "id": 100, "type": "text", "title": "",
+      "gridPos": { "h": 3, "w": 24, "x": 0, "y": 0 },
+      "options": { "mode": "markdown", "content": "**Pre-revenue funnel is live.** Revenue panels (active pro subscriptions, MRR) populate once Polar (#35) is wired — they read `ecobuilding_pro_subscriptions` / `ecobuilding_mrr_eur`, not yet emitted. Nothing here is faked." }
+    },
+    {
+      "id": 1, "type": "stat", "title": "Enterprise leads (total)",
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 3 },
+      "targets": [{ "expr": "sum(ecobuilding_leads_total{kind=\"enterprise\"})" }]
+    },
+    {
+      "id": 2, "type": "stat", "title": "Waitlist leads (total)",
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 3 },
+      "targets": [{ "expr": "sum(ecobuilding_leads_total{kind=\"waitlist\"})" }]
+    },
+    {
+      "id": 3, "type": "stat", "title": "PDF reports generated (total)",
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 3 },
+      "targets": [{ "expr": "sum(ecobuilding_reports_total)" }]
+    },
+    {
+      "id": 4, "type": "stat", "title": "Anonymous cap hits (429, 7d) — pent-up demand",
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 3 },
+      "targets": [{ "expr": "sum(increase(ecobuilding_api_requests_total{route=~\"/v1/report.*|/v1/export\", status=\"429\"}[7d]))" }]
+    },
+    {
+      "id": 5, "type": "stat", "title": "Active pro subscriptions (Polar)",
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 8 },
+      "targets": [{ "expr": "max(ecobuilding_pro_subscriptions) or vector(0)" }]
+    },
+    {
+      "id": 6, "type": "stat", "title": "MRR (€, Polar)",
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 8 },
+      "fieldConfig": { "defaults": { "unit": "currencyEUR" } },
+      "targets": [{ "expr": "max(ecobuilding_mrr_eur) or vector(0)" }]
+    },
+    {
+      "id": 7, "type": "timeseries", "title": "Leads / day (by kind)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [{ "expr": "sum by (kind) (increase(ecobuilding_leads_total[1d]))", "legendFormat": "{{kind}}" }]
+    },
+    {
+      "id": 8, "type": "timeseries", "title": "Report demand / day (has_dpe)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 13 },
+      "targets": [{ "expr": "sum by (has_dpe) (increase(ecobuilding_reports_total[1d]))", "legendFormat": "has_dpe={{has_dpe}}" }]
+    },
+    {
+      "id": 9, "type": "timeseries", "title": "Keyed value-calls / day (paying-intent usage)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "targets": [{ "expr": "sum by (endpoint) (increase(ecobuilding_keyed_calls_total[1d]))", "legendFormat": "{{endpoint}}" }]
+    }
+  ]
+}
