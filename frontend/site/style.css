@@ -59,6 +59,14 @@ html, body { margin: 0; height: 100%; font-family: system-ui, -apple-system, san
 #legend .dpe-D { color: #333; }
 #legend .lg-none { background: #d5cdc0; color: #666; }
 
+.risk-block { padding: 6px 0; border-bottom: 1px dashed #eee; }
+.risk-block .k { display: block; color: #555; font-size: 13px; margin-bottom: 5px; }
+.risk-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.risk-chips .chip {
+  background: #fdecea; color: #b3261e; border-radius: 10px;
+  padding: 2px 9px; font-size: 12px; white-space: nowrap;
+}
+
 .pano-strip { display: flex; gap: 6px; overflow-x: auto; padding: 2px 0; }
 .pano-strip img { height: 64px; border-radius: 6px; display: block; }
 

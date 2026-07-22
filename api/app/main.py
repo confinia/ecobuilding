@@ -569,7 +569,14 @@ async def report(
 
     _quota_gate(request, "report")
     data = await building(bdnb_id, lon, lat)
-    pdf = build_report_pdf(data)
+    q = data.get("query", {})
+    photos = []
+    if q.get("lon") is not None and q.get("lat") is not None:
+        try:
+            photos = await _nearby_photos(q["lon"], q["lat"])
+        except httpx.HTTPError:
+            pass
+    pdf = build_report_pdf(data, photos=photos)
     M_REPORTS.add(1, {"has_dpe": str(bool((data["buildings"][0].get("energy") or {}).get("dpe_class"))).lower()})
     return Response(
         pdf,
@@ -581,6 +588,25 @@ async def report(
 PANORAMAX_URL = "https://api.panoramax.xyz/api/search"
 
 
+async def _nearby_photos(lon: float, lat: float, radius: float = 0.0006) -> list:
+    """Nearest Panoramax photos around a point. Each item carries thumb, a
+    full-size (sd) href for embedding, and a web-viewer deep link."""
+    bbox = f"{lon - radius},{lat - radius},{lon + radius},{lat + radius}"
+    data = await _cached_get_json(PANORAMAX_URL, {"bbox": bbox, "limit": "4"}, ttl=3600)
+    photos = []
+    for f in data.get("features", [])[:4]:
+        assets = f.get("assets", {})
+        thumb = (assets.get("thumb") or assets.get("sd") or {}).get("href")
+        sd = (assets.get("sd") or assets.get("thumb") or {}).get("href")
+        # Deep-link into the Panoramax web viewer (the STAC "self" link is raw
+        # JSON, not a human page).
+        viewer = f"https://api.panoramax.xyz/#focus=pic&pic={f['id']}"
+        if thumb:
+            photos.append({"id": f["id"], "thumb": thumb, "sd": sd, "viewer": viewer,
+                           "coordinates": f.get("geometry", {}).get("coordinates")})
+    return photos
+
+
 @app.get("/v1/streetview", tags=["buildings"])
 async def streetview(
     lon: float = Query(description="Longitude"),
@@ -589,17 +615,7 @@ async def streetview(
 ):
     """Nearest Panoramax street-level photos around a point (open imagery,
     CC-BY-SA). Bridges toward the photosphere vision — issue #22."""
-    bbox = f"{lon - radius},{lat - radius},{lon + radius},{lat + radius}"
-    data = await _cached_get_json(PANORAMAX_URL, {"bbox": bbox, "limit": "4"}, ttl=3600)
-    photos = []
-    for f in data.get("features", [])[:4]:
-        assets = f.get("assets", {})
-        thumb = (assets.get("thumb") or assets.get("sd") or {}).get("href")
-        viewer = next((l["href"] for l in f.get("links", []) if l.get("rel") == "self"), None)
-        if thumb:
-            photos.append({"id": f["id"], "thumb": thumb, "viewer": viewer,
-                           "coordinates": f.get("geometry", {}).get("coordinates")})
-    return {"photos": photos, "source": "Panoramax — CC-BY-SA 4.0"}
+    return {"photos": await _nearby_photos(lon, lat, radius), "source": "Panoramax — CC-BY-SA 4.0"}
 
 
 @app.get("/v1/export", tags=["data"])

@@ -49,7 +49,7 @@ def _row(label, value, unit=""):
     return f'<tr><td class="k">{label}</td><td>{value}{unit}</td></tr>'
 
 
-def build_report_pdf(data: dict) -> bytes:
+def build_report_pdf(data: dict, photos: list | None = None) -> bytes:
     b = (data.get("buildings") or [{}])[0]
     e = b.get("energy") or {}
     ban = e.get("rental_ban") or {}
@@ -151,5 +151,43 @@ def build_report_pdf(data: dict) -> bytes:
   diagnostic de performance énergétique (DPE) officiel, ni un état des risques et pollutions (ERP)
   réglementaire. Version bêta gratuite.
 </footer>
+{_context_page(data, photos)}
 """
     return HTML(string=html).write_pdf()
+
+
+def _context_page(data: dict, photos: list | None) -> str:
+    """Second PDF page: third-party context (Panoramax imagery + OSM link)."""
+    q = data.get("query", {})
+    lon, lat = q.get("lon"), q.get("lat")
+    address = q.get("address") or "ce bâtiment"
+    photos = photos or []
+    pics = "".join(
+        f'<div class="pic"><img src="{p.get("sd") or p.get("thumb")}"/>'
+        f'<div class="cap">Panoramax — CC-BY-SA</div></div>'
+        for p in photos[:2] if p.get("sd") or p.get("thumb")
+    )
+    if not pics and lon is None:
+        return ""
+    osm = (f'<a href="https://www.openstreetmap.org/#map=19/{lat}/{lon}">'
+           f'openstreetmap.org (19/{lat}/{lon})</a>' if lon is not None else "—")
+    return f"""
+<div style="page-break-before: always;"></div>
+<header>
+  <div class="brand">EcoBuilding</div>
+  <div class="doctitle">Contexte — sources tierces</div>
+</header>
+<h1>{address}</h1>
+<h2>Vue au sol (Panoramax)</h2>
+{('<div class="pics">' + pics + '</div>') if pics else '<p class="meta">Aucune photo Panoramax à proximité.</p>'}
+<h2>OpenStreetMap</h2>
+<table><tr><td class="k" style="width:30%">Voir la zone sur OSM</td><td>{osm}</td></tr></table>
+<footer>
+  Imagerie : Panoramax (CC-BY-SA 4.0). Cartographie : OpenStreetMap et contributeurs (ODbL).
+  Informations de contexte, non contractuelles.
+</footer>
+<style>
+  .pics {{ display: flex; gap: 8pt; flex-wrap: wrap; }}
+  .pic img {{ width: 240pt; border-radius: 4pt; }}
+  .pic .cap {{ font-size: 7pt; color: #888; }}
+</style>"""
