@@ -60,6 +60,7 @@ services:
     restart: unless-stopped
 
 networks:
+  default:
   shared:
     external: true
     name: ecobuilding-shared

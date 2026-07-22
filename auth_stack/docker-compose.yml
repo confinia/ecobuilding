@@ -53,6 +53,7 @@ volumes:
   kc_pgdata:
 
 networks:
+  default:
   shared:
     external: true
     name: ecobuilding-shared
