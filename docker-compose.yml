@@ -22,6 +22,8 @@ services:
   api:
     build: ./api
     image: ecobuilding-api:latest
+    env_file:
+      - ./deploy/secrets.env   # KC_BOOTSTRAP_ADMIN_* for the identity gauges
     environment:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
       OTEL_SERVICE_NAME: ecobuilding-api
