@@ -24,10 +24,15 @@ services:
     image: ecobuilding-api:latest
     env_file:
       - ./deploy/secrets.env   # KC_BOOTSTRAP_ADMIN_* for the identity gauges
+    networks: [default, shared]
     environment:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
       OTEL_SERVICE_NAME: ecobuilding-api
       GEOIP_DB: /geoip/dbip-country-lite.mmdb
+      # Reach Keycloak internally over the shared network (see auth_stack).
+      KC_ADMIN_BASE: http://keycloak:8080/auth
+      OIDC_JWKS_URL: http://keycloak:8080/auth/realms/confinia/protocol/openid-connect/certs
+      OIDC_ISSUER: https://ecobuilding.confinia.io/auth/realms/confinia
     volumes:
       # Country-level GeoIP (dbip-country-lite) — provisioned by deploy.sh,
       # outside git and outside the rsync --delete scope.
@@ -53,3 +58,8 @@ services:
       - ./monitoring/otel-collector.yaml:/etc/otelcol/config.yaml:ro
     # ports: set per stack by deploy/{blue,green}.override.yml
     restart: unless-stopped
+
+networks:
+  shared:
+    external: true
+    name: ecobuilding-shared
