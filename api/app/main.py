@@ -438,6 +438,60 @@ async def report(
     )
 
 
+@app.get("/v1/export", tags=["data"])
+async def export_geojson(
+    commune: str = Query(description="INSEE commune code, e.g. 35238 (Rennes)"),
+    limit: int = Query(2000, le=10000, description="Max features"),
+):
+    """GeoJSON of a commune's buildings (DPE, cooling, clay risk) for reuse
+    (uMap, QGIS, data journalism). Attribution embedded. Open data, Licence
+    Ouverte — issue #24."""
+    from fastapi.responses import JSONResponse
+
+    fields = ("batiment_groupe_id,libelle_adr_principale_ban,classe_bilan_dpe,"
+              "annee_construction,hauteur_mean,alea_argile,"
+              "type_generateur_climatisation,geom_groupe")
+    rows = await _cached_get_json(
+        BDNB_BASE_URL,
+        {"code_commune_insee": f"eq.{commune}", "select": fields, "limit": str(limit)},
+        ttl=86400,
+    )
+    if not isinstance(rows, list):
+        raise HTTPException(502, "Upstream error")
+    import json as _json
+
+    from pyproj import Transformer
+
+    # BDNB geometries are Lambert-93 (EPSG:2154); GeoJSON must be WGS84.
+    to_wgs84 = Transformer.from_crs(2154, 4326, always_xy=True)
+
+    def reproject(coords):
+        if coords and isinstance(coords[0], (int, float)):
+            lon, lat = to_wgs84.transform(coords[0], coords[1])
+            return [round(lon, 6), round(lat, 6)]
+        return [reproject(c) for c in coords]
+
+    feats = []
+    for r in rows:
+        geom = r.get("geom_groupe")
+        if not geom:
+            continue
+        try:
+            g = _json.loads(geom) if isinstance(geom, str) else dict(geom)
+            g = {"type": g["type"], "coordinates": reproject(g["coordinates"])}
+        except (ValueError, TypeError, KeyError):
+            continue
+        feats.append({
+            "type": "Feature", "geometry": g,
+            "properties": {k: v for k, v in r.items() if k != "geom_groupe"},
+        })
+    return JSONResponse({
+        "type": "FeatureCollection",
+        "features": feats,
+        "metadata": {"source": "BDNB (CSTB), Licence Ouverte", "commune": commune, "count": len(feats)},
+    })
+
+
 class Lead(BaseModel):
     email: str
     org: str | None = None

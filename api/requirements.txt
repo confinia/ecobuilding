@@ -8,3 +8,4 @@ opentelemetry-instrumentation-httpx==0.51b0
 maxminddb==2.6.*
 weasyprint==63.*
 PyJWT[crypto]==2.*
+pyproj==3.*
