@@ -28,3 +28,9 @@
    posts, and UI text): never use the em dash "—"; use parentheses or commas
    instead. No space before a comma. No space before a colon ":" (operator's
    preference, overrides the standard French thin space).
+9. **Every issue ships a test** (rule set 2026-07-22): each issue/feature must
+   add a unit test OR an end-to-end test that exercises it (in `api/tests/` or
+   an e2e check). The test suite is run after every deployment via
+   `./deploy/test.sh` (staging), and the change is not promoted until it
+   passes. Tests for not-yet-implemented flows may be `skip`-marked, never
+   faked. Existing features without a test get one added when next touched.
