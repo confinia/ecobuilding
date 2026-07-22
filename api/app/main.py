@@ -354,6 +354,55 @@ async def building(
     }
 
 
+# --- Identity (Keycloak, shared /auth) ---------------------------------------
+OIDC_ISSUER = os.environ.get("OIDC_ISSUER", "https://ecobuilding.confinia.io/auth/realms/confinia")
+# JWKS fetched via the host-internal route (api runs in a stack network).
+OIDC_JWKS_URL = os.environ.get(
+    "OIDC_JWKS_URL",
+    "http://host.containers.internal:8180/auth/realms/confinia/protocol/openid-connect/certs",
+)
+_jwks_client = None
+
+
+def _get_signing_key(token: str):
+    """Resolve the RS256 signing key for a token (separated for tests)."""
+    global _jwks_client
+    import jwt as pyjwt
+
+    if _jwks_client is None:
+        _jwks_client = pyjwt.PyJWKClient(OIDC_JWKS_URL, cache_keys=True)
+    return _jwks_client.get_signing_key_from_jwt(token).key
+
+
+def _decode_token(token: str) -> dict:
+    import jwt as pyjwt
+
+    key = _get_signing_key(token)
+    return pyjwt.decode(
+        token, key, algorithms=["RS256"], issuer=OIDC_ISSUER,
+        options={"verify_aud": False},
+    )
+
+
+@app.get("/v1/me", tags=["account"])
+async def me(request: Request):
+    """Identity of the signed-in user (Keycloak JWT). Tier is 'free' until
+    the Polar pro plan ships (#35)."""
+    auth = request.headers.get("authorization", "")
+    if not auth.lower().startswith("bearer "):
+        raise HTTPException(401, "Bearer token required")
+    try:
+        claims = _decode_token(auth[7:].strip())
+    except Exception:
+        raise HTTPException(401, "Invalid token")
+    return {
+        "sub": claims.get("sub"),
+        "email": claims.get("email") or claims.get("preferred_username"),
+        "organization": claims.get("org"),
+        "tier": "free",
+    }
+
+
 M_REPORTS = _meter.create_counter("ecobuilding_reports", description="PDF fiches generated", unit="1")
 
 
