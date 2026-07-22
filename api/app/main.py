@@ -485,7 +485,7 @@ from collections import defaultdict
 from datetime import date
 
 KEYS_PATH = os.environ.get("KEYS_PATH", "/leads/keys.jsonl")
-ANON_DAILY_CAP = int(os.environ.get("ANON_DAILY_CAP", "5"))
+ANON_DAILY_CAP = int(os.environ.get("ANON_DAILY_CAP", "20"))
 _anon_counts: dict = defaultdict(int)
 _anon_day = {"d": None}
 M_KEYS = _meter.create_counter("ecobuilding_api_keys", description="API key events", unit="1")
@@ -524,6 +524,32 @@ def _quota_gate(request: Request, endpoint: str):
             f"(gratuite pendant la bêta) : https://ecobuilding.confinia.io/offres.html",
         )
     return "anon"
+
+
+from fastapi.responses import HTMLResponse
+
+
+@app.exception_handler(HTTPException)
+async def _http_exc_handler(request: Request, exc: HTTPException):
+    """Render the free-limit (429) as a friendly HTML page for browser
+    navigations (e.g. a PDF link), keep JSON for API clients."""
+    from fastapi.exception_handlers import http_exception_handler
+
+    if exc.status_code == 429 and "text/html" in request.headers.get("accept", ""):
+        return HTMLResponse(status_code=429, content=f"""<!DOCTYPE html><html lang="fr"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Limite gratuite atteinte — EcoBuilding</title>
+<style>body{{font-family:system-ui,sans-serif;max-width:540px;margin:12vh auto;padding:0 20px;color:#222;text-align:center}}
+h1{{font-size:22px}}.c{{background:#fdecea;color:#b3261e;border-radius:10px;padding:14px;margin:18px 0}}
+a.btn{{display:inline-block;margin:6px;padding:11px 18px;border-radius:8px;text-decoration:none;font-weight:600}}
+.p{{background:#2b7a4b;color:#fff}}.s{{border:1px solid #2b7a4b;color:#2b7a4b}}</style></head><body>
+<h1>🏢 Limite gratuite atteinte</h1>
+<div class="c">Vous avez atteint la limite gratuite de {ANON_DAILY_CAP} documents par jour.</div>
+<p>Créez un compte pour obtenir une clé API (gratuite pendant la bêta) et lever cette limite.</p>
+<p><a class="btn p" href="https://ecobuilding.confinia.io/offres.html">Voir les offres</a>
+<a class="btn s" href="https://ecobuilding.confinia.io/">Retour à la carte</a></p>
+</body></html>""")
+    return await http_exception_handler(request, exc)
 
 
 @app.post("/v1/keys", tags=["account"], status_code=201)
