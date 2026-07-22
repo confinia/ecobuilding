@@ -90,7 +90,11 @@ from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.sdk.resources import Resource
 
 _resource = Resource.create({"service.name": "ecobuilding-api"})
-_reader = PeriodicExportingMetricReader(OTLPMetricExporter(), export_interval_millis=15000)
+_reader = PeriodicExportingMetricReader(
+    OTLPMetricExporter(),
+    # CI/tests set a huge interval so the exporter never fires without a collector.
+    export_interval_millis=int(os.environ.get("OTEL_METRIC_EXPORT_INTERVAL", "15000")),
+)
 metrics.set_meter_provider(MeterProvider(resource=_resource, metric_readers=[_reader]))
 _meter = metrics.get_meter("ecobuilding")
 
