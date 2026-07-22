@@ -162,11 +162,18 @@ def _context_page(data: dict, photos: list | None) -> str:
     lon, lat = q.get("lon"), q.get("lat")
     address = q.get("address") or "ce bâtiment"
     photos = photos or []
-    pics = "".join(
-        f'<div class="pic"><img src="{p.get("sd") or p.get("thumb")}"/>'
-        f'<div class="cap">Panoramax — CC-BY-SA</div></div>'
-        for p in photos[:2] if p.get("sd") or p.get("thumb")
-    )
+    def _pic(p):
+        src = p.get("sd") or p.get("thumb")
+        # 360° photospheres are equirectangular and warp on flat paper: crop to
+        # a forward-facing central window (~90°x45°) instead of the full strip.
+        # Non-360 photos are shown as-is. (True rectilinear reprojection = #81.)
+        if p.get("is_360"):
+            inner = f'<div class="crop"><img src="{src}"/></div>'
+        else:
+            inner = f'<img class="flat" src="{src}"/>'
+        return f'<div class="pic">{inner}<div class="cap">Panoramax — CC-BY-SA</div></div>'
+
+    pics = "".join(_pic(p) for p in photos[:2] if p.get("sd") or p.get("thumb"))
     if not pics and lon is None:
         return ""
     osm = (f'<a href="https://www.openstreetmap.org/#map=19/{lat}/{lon}">'
@@ -188,6 +195,10 @@ def _context_page(data: dict, photos: list | None) -> str:
 </footer>
 <style>
   .pics {{ display: flex; gap: 8pt; flex-wrap: wrap; }}
-  .pic img {{ width: 240pt; border-radius: 4pt; }}
+  .pic img.flat {{ width: 240pt; border-radius: 4pt; }}
+  /* Central forward crop of an equirectangular 360 (2:1 image): box shows the
+     central 1/4 width (90 deg) x 1/4 height (45 deg). */
+  .pic .crop {{ width: 240pt; height: 120pt; overflow: hidden; border-radius: 4pt; }}
+  .pic .crop img {{ width: 960pt; margin-left: -360pt; margin-top: -180pt; }}
   .pic .cap {{ font-size: 7pt; color: #888; }}
 </style>"""
