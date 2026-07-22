@@ -232,6 +232,20 @@ document.getElementById("close").onclick = () => { panel.hidden = true; setUrlBu
 
 function showPanel(html) { content.innerHTML = html; panel.hidden = false; }
 
+// Panoramax street-level photos near the building (issue #22).
+async function loadStreetview(lon, lat) {
+  const el = document.getElementById("streetview");
+  if (!el || lon == null || lat == null) return;
+  try {
+    const r = await fetch(`${API}/streetview?lon=${lon}&lat=${lat}`);
+    const { photos } = await r.json();
+    if (!photos?.length) return;
+    el.innerHTML = `<h3>Vue au sol (Panoramax)</h3><div class="pano-strip">` +
+      photos.map((p) => `<a href="${p.viewer}" target="_blank" rel="noopener"><img src="${p.thumb}" loading="lazy" alt="Photo Panoramax"></a>`).join("") +
+      `</div><p class="hint">Images Panoramax — CC-BY-SA</p>`;
+  } catch { /* imagery is best-effort */ }
+}
+
 async function openBuildingById(id, lon, lat) {
   showPanel('<p class="hint">Chargement des données du bâtiment…</p>');
   try {
@@ -290,6 +304,8 @@ function renderPanel(s, data) {
     ${kv("Favorable au solaire thermique", b.solar?.thermal_favourable === true ? "oui" : b.solar?.thermal_favourable === false ? "non" : null)}
     ${kv("Potentiel annuel", b.solar?.thermal_potential_kwh_y ? b.solar.thermal_potential_kwh_y + " kWh/an" : null)}
     <p><a class="report-link" href="${API}/report/${encodeURIComponent(b.bdnb_id)}.pdf" target="_blank" rel="noopener">📄 Fiche PDF normalisée — gratuit (bêta)</a></p>
+    <div id="streetview"></div>
     <p class="hint">ID BDNB : ${b.bdnb_id}</p>
   `);
+  loadStreetview(data.query?.lon, data.query?.lat);
 }
