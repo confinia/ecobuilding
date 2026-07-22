@@ -24,8 +24,12 @@ log = logging.getLogger("ecobuilding")
 
 BAN_URL = "https://api-adresse.data.gouv.fr/search/"
 BAN_REVERSE_URL = "https://api-adresse.data.gouv.fr/reverse/"
-BDNB_URL = "https://api.bdnb.io/v1/bdnb/donnees/batiment_groupe_complet/adresse"
-BDNB_BASE_URL = "https://api.bdnb.io/v1/bdnb/donnees/batiment_groupe_complet"
+# Overridable so we can cut over to the self-hosted BDNB (local PostgREST,
+# issue #28) with config only, no code change. Defaults = the public BDNB API.
+BDNB_URL = os.environ.get(
+    "BDNB_URL", "https://api.bdnb.io/v1/bdnb/donnees/batiment_groupe_complet/adresse")
+BDNB_BASE_URL = os.environ.get(
+    "BDNB_BASE_URL", "https://api.bdnb.io/v1/bdnb/donnees/batiment_groupe_complet")
 GEORISQUES_URL = "https://georisques.gouv.fr/api/v1/resultats_rapport_risque"
 
 # Rental-ban calendar, loi Climat et Résilience (verified 2026-07-20).
