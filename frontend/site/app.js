@@ -327,7 +327,7 @@ function renderPanel(s, data) {
     <h3>Solaire</h3>
     ${kv("Favorable au solaire thermique", b.solar?.thermal_favourable === true ? "oui" : b.solar?.thermal_favourable === false ? "non" : null)}
     ${kv("Potentiel annuel", b.solar?.thermal_potential_kwh_y ? b.solar.thermal_potential_kwh_y + " kWh/an" : null)}
-    <p><a class="report-link" href="${API}/report/${encodeURIComponent(b.bdnb_id)}.pdf" target="_blank" rel="noopener">📄 Fiche PDF normalisée — gratuit (bêta)</a></p>
+    <p><a class="report-link" href="${API}/report/${encodeURIComponent(b.bdnb_id)}.pdf${data.query?.lon != null ? `?lon=${data.query.lon}&lat=${data.query.lat}` : ""}" target="_blank" rel="noopener">📄 Fiche PDF normalisée — gratuit (bêta)</a></p>
     <div id="streetview"></div>
     <p class="hint">ID BDNB : ${b.bdnb_id}</p>
   `);
