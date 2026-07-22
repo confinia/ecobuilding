@@ -136,6 +136,7 @@ still loses everything. This is the top open DR item.
 | P0 | Automated encrypted backups (accounts + leads) | script added — needs cron + `age` key + **off-site copy** |
 | P0 | Off-site backup copy | OPEN (operator) |
 | P1 | Drop `delete_repo` from `GH_TOKEN`; enable GitHub 2FA | OPEN (operator) |
+| P1 | Keycloak admin port 8181 bound to 0.0.0.0 (reachable by app containers via host gateway) is protected ONLY by ufw — verify 8181 stays out of the ufw allow-list; a scoped view-users service account would also reduce the API's KC privilege | ufw-dependent |
 | P1 | SMTP + email verification + registration rate-limit before paid tiers | OPEN |
 | P2 | Activate GitHub Actions (real CI gate) + Dependabot/pip-audit | OPEN (needs `workflow` scope) |
 | P2 | SSH key passphrase + laptop disk encryption | operator hygiene |
