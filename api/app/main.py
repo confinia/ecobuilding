@@ -570,6 +570,17 @@ async def report(
     _quota_gate(request, "report")
     data = await building(bdnb_id, lon, lat)
     q = data.get("query", {})
+    # Self-resolve coordinates from the building's address if the caller did not
+    # pass them, so the Panoramax context page works regardless of entry point.
+    if q.get("lon") is None and (data.get("buildings") or [{}])[0].get("address"):
+        try:
+            geo = await _cached_get_json(
+                BAN_URL, {"q": data["buildings"][0]["address"], "limit": 1}, ttl=86400)
+            feats = geo.get("features", [])
+            if feats:
+                q["lon"], q["lat"] = feats[0]["geometry"]["coordinates"][:2]
+        except httpx.HTTPError:
+            pass
     photos = []
     if q.get("lon") is not None and q.get("lat") is not None:
         try:
