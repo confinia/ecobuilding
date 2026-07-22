@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>EcoBuilding — À propos & sources ouvertes</title>
+  <meta name="description" content="EcoBuilding repose sur une pile 100% ouverte et souveraine : MapLibre, OpenFreeMap/OSM, BAN, BDNB, Géorisques.">
+  <link rel="stylesheet" href="style.css">
+  <style>
+    body { overflow: auto; background: #f7f6f3; }
+    .page { max-width: 820px; margin: 0 auto; padding: 24px 16px 64px; font-family: system-ui, sans-serif; line-height: 1.55; color: #222; }
+    .page h1 { font-size: 26px; margin: 16px 0 4px; }
+    .page h2 { font-size: 17px; color: #2b7a4b; margin: 26px 0 8px; }
+    .page a { color: #2b7a4b; }
+    .back { font-size: 13px; }
+    table { width: 100%; border-collapse: collapse; margin: 8px 0; }
+    td, th { text-align: left; padding: 6px 8px; border-bottom: 1px solid #e5e5e5; font-size: 14px; }
+    th { color: #555; }
+    .lead { color: #444; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <p class="back"><a href="/">← Retour à la carte</a></p>
+    <h1>À propos d'EcoBuilding</h1>
+    <p class="lead">EcoBuilding montre les bâtiments français en 3D, colorés par classe énergie (DPE),
+    à partir de données publiques ouvertes. Aucune brique propriétaire, aucune dépendance à un
+    fournisseur de cartographie fermé : une démonstration qu'une pile cartographique souveraine et
+    gratuite est utilisable aujourd'hui.</p>
+
+    <h2>La pile, 100% ouverte</h2>
+    <table>
+      <tr><th>Brique</th><th>Rôle</th><th>Licence</th></tr>
+      <tr><td><a href="https://maplibre.org" target="_blank" rel="noopener">MapLibre GL</a></td><td>Moteur de rendu 3D (client)</td><td>BSD</td></tr>
+      <tr><td><a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> / OpenMapTiles</td><td>Fond de carte (données © OpenStreetMap)</td><td>ODbL</td></tr>
+      <tr><td><a href="https://adresse.data.gouv.fr" target="_blank" rel="noopener">Base Adresse Nationale</a></td><td>Géocodage d'adresses</td><td>Licence Ouverte</td></tr>
+      <tr><td><a href="https://bdnb.io" target="_blank" rel="noopener">BDNB (CSTB)</a></td><td>Données bâtiment (DPE, matériaux, climatisation…)</td><td>Licence Ouverte 2.0</td></tr>
+      <tr><td><a href="https://www.georisques.gouv.fr" target="_blank" rel="noopener">Géorisques</a></td><td>Risques naturels et technologiques</td><td>Licence Ouverte</td></tr>
+    </table>
+
+    <h2>Données & attribution</h2>
+    <p>Toutes les données affichées sont ouvertes et attribuées à leurs producteurs. Les vues
+    rendues (cartes, fiches PDF) sont des œuvres dérivées autorisées ; les bases restent sous leurs
+    licences respectives. Une <a href="/api/v1/docs">API JSON publique</a> expose la même chaîne de
+    données. Un <a href="/api/v1/export?commune=35238">export GeoJSON par commune</a> permet la
+    réutilisation (uMap, QGIS).</p>
+
+    <h2>Contact</h2>
+    <p>Projet développé par Confinia. Retours et suggestions bienvenus, notamment sur l'usage et
+    l'attribution des données. Voir les <a href="/offres.html">offres</a> pour un accès entreprise.</p>
+  </div>
+</body>
+</html>
