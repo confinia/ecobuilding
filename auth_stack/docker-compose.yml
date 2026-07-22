@@ -37,22 +37,11 @@ services:
     volumes:
       - ./realm-confinia.json:/opt/keycloak/data/import/realm-confinia.json:ro
     ports:
-      - "127.0.0.1:8181:8080"
-    networks:
-      default: {}
-      # Shared cross-project network so the app-stack API reaches Keycloak by
-      # name (http://keycloak:8080) without a host-published port (avoids the
-      # 127.0.0.1-vs-gateway and public-URL hairpin problems).
-      shared:
-        aliases: [keycloak]
+      # 0.0.0.0 so containers reach it via host.containers.internal (ufw blocks 8181 publicly)
+      - "8181:8080"
     depends_on:
       - kc-db
     restart: unless-stopped
 
 volumes:
   kc_pgdata:
-
-networks:
-  shared:
-    external: true
-    name: ecobuilding-shared
