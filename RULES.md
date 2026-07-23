@@ -34,3 +34,9 @@
    `./deploy/test.sh` (staging), and the change is not promoted until it
    passes. Tests for not-yet-implemented flows may be `skip`-marked, never
    faked. Existing features without a test get one added when next touched.
+10. **Keep pulling toward business & marketing** (rule set 2026-07-22): often,
+    proactively remind the operator of the concrete business/marketing actions
+    that improve the odds of making money with the product (announce, reply to
+    leads/community, talk to buyers, SEO, pricing). Engineering is a means, not
+    the goal: flag when we are over-building features while demand/distribution
+    actions sit undone.
