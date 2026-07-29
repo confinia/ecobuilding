@@ -30,7 +30,7 @@ track("page_view");
         document.getElementById("userlabel").textContent =
           (t.email || t.preferred_username || "compte") + (t.org ? " · " + t.org : "");
         show("userchip", true);
-        show("gopro", true);
+        if (window.ECO_PRO_ENABLED) show("gopro", true);   // off in prod until the pro plan is live
         window.ecoToken = () => kc.token;   // future authenticated API calls
         setInterval(() => kc.updateToken(60).catch(() => {}), 30000);
         track("signed_in_view");

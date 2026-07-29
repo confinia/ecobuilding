@@ -4,3 +4,4 @@
 // image at the sandbox-ecobuilding realm — no separate build.
 window.ECO_REALM = "confinia";
 window.ECO_CLIENT = "ecobuilding-web";
+window.ECO_PRO_ENABLED = false;   // hide "Passer Pro" in prod until the plan is live (RULES.md #7)
