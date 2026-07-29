@@ -471,7 +471,7 @@ async def me(request: Request):
         "sub": claims.get("sub"),
         "email": claims.get("email") or claims.get("preferred_username"),
         "organization": claims.get("org"),
-        "tier": "free",
+        "tier": "pro" if _pro_active(claims.get("sub")) else "free",
     }
 
 
@@ -578,6 +578,129 @@ async def create_key(request: Request):
         f.write(_json.dumps(rec, ensure_ascii=False) + "\n")
     M_KEYS.add(1, {"event": "created"})
     return {"api_key": key, "note": "Passez-la en en-tête X-API-Key. Gratuite pendant la bêta."}
+
+
+# --- Pro plan via Polar (Merchant of Record) — issue #35 / sandbox #90 --------
+# Self-serve upgrade: a signed-in user starts a Polar checkout; on payment Polar
+# sends a signed webhook (Standard Webhooks) that flips the user to the pro tier.
+# All money flows through Polar (EU VAT handled). Runs against the Polar SANDBOX
+# during beta (POLAR_BASE_URL=https://sandbox-api.polar.sh); no real money until
+# RULES.md #7 is met. Tier is stored on the shared /leads volume, like keys.
+POLAR_BASE_URL = os.environ.get("POLAR_BASE_URL", "https://api.polar.sh").rstrip("/")
+POLAR_ACCESS_TOKEN = os.environ.get("POLAR_ACCESS_TOKEN", "")
+POLAR_PRODUCT_ID = os.environ.get("POLAR_PRODUCT_ID", "")
+POLAR_WEBHOOK_SECRET = os.environ.get("POLAR_WEBHOOK_SECRET", "")
+PUBLIC_BASE_URL = (os.environ.get("PUBLIC_BASE_URL")
+                   or OIDC_ISSUER.split("/auth/")[0]).rstrip("/")
+PRO_PATH = os.environ.get("PRO_PATH", "/leads/pro.json")
+M_PRO = _meter.create_counter("ecobuilding_pro_events", description="Pro plan events", unit="1")
+
+
+def _pro_load() -> dict:
+    import json as _json
+    try:
+        with open(PRO_PATH) as f:
+            return _json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def _pro_set(ext_id: str, active: bool, **extra):
+    """Upsert a user's pro status, keyed by their Keycloak sub (external_id)."""
+    import json as _json
+    from datetime import datetime, timezone
+    if not ext_id:
+        return
+    store = _pro_load()
+    rec = store.get(ext_id, {})
+    rec.update(status="active" if active else "inactive",
+               updated=datetime.now(timezone.utc).isoformat(), **extra)
+    store[ext_id] = rec
+    os.makedirs(os.path.dirname(PRO_PATH), exist_ok=True)
+    tmp = PRO_PATH + ".tmp"
+    with open(tmp, "w") as f:
+        _json.dump(store, f, ensure_ascii=False)
+    os.replace(tmp, PRO_PATH)
+
+
+def _pro_active(ext_id: str | None) -> bool:
+    return bool(ext_id) and _pro_load().get(ext_id, {}).get("status") == "active"
+
+
+def _sub_external_id(data: dict) -> str | None:
+    """Extract our Keycloak sub from a Polar subscription/order payload."""
+    cust = data.get("customer") or {}
+    return (cust.get("external_id")
+            or data.get("customer_external_id")
+            or (data.get("metadata") or {}).get("kc_sub"))
+
+
+@app.get("/v1/pro/checkout", tags=["account"])
+async def pro_checkout(request: Request):
+    """Start a Polar checkout for the pro plan (signed-in users). Returns the
+    Polar-hosted checkout URL as JSON (the frontend redirects to it); the user's
+    Keycloak sub travels as the customer external_id so the webhook can upgrade
+    the right account."""
+    auth = request.headers.get("authorization", "")
+    if not auth.lower().startswith("bearer "):
+        raise HTTPException(401, "Bearer token required")
+    try:
+        claims = _decode_token(auth[7:].strip())
+    except Exception:
+        raise HTTPException(401, "Invalid token")
+    if not (POLAR_ACCESS_TOKEN and POLAR_PRODUCT_ID):
+        raise HTTPException(503, "Pro plan not configured")
+    payload = {
+        "products": [POLAR_PRODUCT_ID],
+        "success_url": f"{PUBLIC_BASE_URL}/?pro=success",
+        "customer_email": claims.get("email") or claims.get("preferred_username"),
+        "customer_external_id": claims.get("sub"),
+        "metadata": {"kc_sub": claims.get("sub") or "", "org": claims.get("org") or ""},
+    }
+    try:
+        resp = await _client.post(
+            f"{POLAR_BASE_URL}/v1/checkouts/", json=payload,
+            headers={"Authorization": f"Bearer {POLAR_ACCESS_TOKEN}"})
+        resp.raise_for_status()
+    except httpx.HTTPError as e:
+        log.warning("Polar checkout failed: %s", e)
+        raise HTTPException(502, "Checkout provider error")
+    M_PRO.add(1, {"event": "checkout"})
+    body = resp.json()
+    return {"url": body["url"], "checkout_id": body.get("id")}
+
+
+@app.post("/v1/pro/webhook", tags=["account"], status_code=202)
+async def pro_webhook(request: Request):
+    """Polar webhook (Standard Webhooks, signed). Verifies the signature, then
+    flips the subscriber's tier: active -> pro, canceled/revoked -> free."""
+    if not POLAR_WEBHOOK_SECRET:
+        raise HTTPException(503, "Webhook not configured")
+    body = await request.body()
+    try:
+        from standardwebhooks import Webhook
+        wh = Webhook(POLAR_WEBHOOK_SECRET)
+        event = wh.verify(body, {
+            "webhook-id": request.headers.get("webhook-id", ""),
+            "webhook-timestamp": request.headers.get("webhook-timestamp", ""),
+            "webhook-signature": request.headers.get("webhook-signature", ""),
+        })
+    except Exception:
+        M_PRO.add(1, {"event": "webhook_rejected"})
+        raise HTTPException(401, "Invalid signature")
+    if isinstance(event, (bytes, str)):
+        import json as _json
+        event = _json.loads(event)
+    etype = event.get("type", "")
+    data = event.get("data", {}) or {}
+    ext_id = _sub_external_id(data)
+    if etype in ("subscription.created", "subscription.active", "subscription.updated"):
+        active = (data.get("status") in ("active", "trialing")) or etype == "subscription.active"
+        _pro_set(ext_id, active, subscription_id=data.get("id"), product_id=data.get("product_id"))
+    elif etype in ("subscription.canceled", "subscription.revoked"):
+        _pro_set(ext_id, False, subscription_id=data.get("id"))
+    M_PRO.add(1, {"event": "webhook", "type": etype})
+    return {"received": True, "type": etype}
 
 
 @app.get("/v1/report/{bdnb_id}.pdf", tags=["reports"])

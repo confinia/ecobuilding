@@ -5,3 +5,4 @@ node_modules/
 deploy/secrets.env
 data/
 .DS_Store
+sandbox_stack/secrets.env

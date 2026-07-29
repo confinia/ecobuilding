@@ -18,7 +18,9 @@ track("page_view");
   try {
     ({ default: Keycloak } = await import("https://esm.sh/keycloak-js@26.1.0"));
   } catch { return; }
-  const kc = new Keycloak({ url: "/auth", realm: "confinia", clientId: "ecobuilding-web" });
+  const kc = new Keycloak({ url: "/auth",
+    realm: window.ECO_REALM || "confinia",
+    clientId: window.ECO_CLIENT || "ecobuilding-web" });
   const show = (id, on) => { document.getElementById(id).hidden = !on; };
   kc.init({ onLoad: "check-sso", pkceMethod: "S256",
             silentCheckSsoRedirectUri: location.origin + "/silent-sso.html" })
@@ -28,6 +30,7 @@ track("page_view");
         document.getElementById("userlabel").textContent =
           (t.email || t.preferred_username || "compte") + (t.org ? " · " + t.org : "");
         show("userchip", true);
+        show("gopro", true);
         window.ecoToken = () => kc.token;   // future authenticated API calls
         setInterval(() => kc.updateToken(60).catch(() => {}), 30000);
         track("signed_in_view");
@@ -37,6 +40,14 @@ track("page_view");
       document.getElementById("signin").onclick = (e) => { e.preventDefault(); track("signin_click"); kc.login(); };
       document.getElementById("signup").onclick = (e) => { e.preventDefault(); track("signup_click"); kc.register(); };
       document.getElementById("signout").onclick = (e) => { e.preventDefault(); kc.logout({ redirectUri: location.origin }); };
+      document.getElementById("gopro").onclick = async (e) => {
+        e.preventDefault(); track("gopro_click");
+        try {
+          const r = await fetch("/api/v1/pro/checkout", { headers: { Authorization: "Bearer " + kc.token } });
+          if (!r.ok) throw new Error(r.status);
+          window.location.href = (await r.json()).url;   // -> Polar hosted checkout
+        } catch { alert("Le passage à l'offre Pro est momentanément indisponible."); }
+      };
     })
     .catch(() => { /* IdP unreachable: keep auth UI hidden */ });
 })();
