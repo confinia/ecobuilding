@@ -9,3 +9,4 @@ maxminddb==2.6.*
 weasyprint==63.*
 PyJWT[crypto]==2.*
 pyproj==3.*
+standardwebhooks==1.*

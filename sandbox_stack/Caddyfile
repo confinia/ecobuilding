@@ -1,0 +1,44 @@
+# Sandbox edge (project ecobuilding-sandbox). One bridged caddy published on
+# 127.0.0.1:8030; the platform edge forwards both sandbox hostnames here and we
+# dispatch by Host. Same compose project as the api/frontend, so we reach them
+# by container DNS; Keycloak is a sibling container reached the same way.
+{
+	admin off
+	auto_https off
+	http_port 8030
+	servers {
+		trusted_proxies static private_ranges
+	}
+}
+
+# App host: frontend + /auth (sandbox Keycloak) + /api (sandbox API).
+http://sandbox.ecobuilding.confinia.io {
+	encode zstd gzip
+	log {
+		output stdout
+		format json
+	}
+
+	handle /auth/* {
+		reverse_proxy sandbox-keycloak:8080
+	}
+
+	handle_path /api/* {
+		reverse_proxy sandbox-api:8000
+	}
+
+	handle {
+		header Cache-Control "no-cache"
+		reverse_proxy sandbox-frontend:80
+	}
+}
+
+# Dedicated API host: the FastAPI app at the domain root (clean API surface).
+http://sandbox.api.ecobuilding.confinia.io {
+	encode zstd gzip
+	log {
+		output stdout
+		format json
+	}
+	reverse_proxy sandbox-api:8000
+}

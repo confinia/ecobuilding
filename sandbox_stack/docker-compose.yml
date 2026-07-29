@@ -1,0 +1,89 @@
+# EcoBuilding SANDBOX (project: ecobuilding-sandbox) — a fully isolated copy of
+# the app to validate the end-to-end workflow (registration via Keycloak + pro
+# plan via Polar SANDBOX) without touching production or moving real money.
+#
+#   podman-compose -p ecobuilding-sandbox up -d --build   (via deploy/sandbox.sh)
+#
+# Isolation:
+#  - own Keycloak instance + DB, realm "sandbox-ecobuilding" (prod's KC and its
+#    pinned KC_HOSTNAME are untouched);
+#  - own secrets (./secrets.env, gitignored), own volumes;
+#  - single bridged caddy published on 127.0.0.1:8030; the platform edge routes
+#    sandbox.ecobuilding.confinia.io + sandbox.api.ecobuilding.confinia.io here.
+# Shared (read-only, no duplication): the BDNB backend — sandbox-api defaults to
+# public api.bdnb.io and can be repointed to the local PostgREST (#28) via env.
+services:
+  sandbox-kc-db:
+    image: docker.io/library/postgres:16
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+    env_file:
+      - ./secrets.env          # POSTGRES_PASSWORD (= KC_DB_PASSWORD)
+    volumes:
+      - sandbox_kc_pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  sandbox-keycloak:
+    image: quay.io/keycloak/keycloak:26.1
+    command: ["start", "--import-realm", "--cache=local"]
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://sandbox-kc-db/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_HTTP_ENABLED: "true"
+      KC_HTTP_RELATIVE_PATH: /auth
+      KC_PROXY_HEADERS: xforwarded
+      KC_HOSTNAME: https://sandbox.ecobuilding.confinia.io/auth
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+    env_file:
+      - ./secrets.env          # KC_DB_PASSWORD, KC_BOOTSTRAP_ADMIN_PASSWORD
+    volumes:
+      - ./realm-sandbox-ecobuilding.json:/opt/keycloak/data/import/realm-sandbox-ecobuilding.json:ro
+    depends_on:
+      - sandbox-kc-db
+    restart: unless-stopped
+
+  sandbox-api:
+    build: ../api
+    image: ecobuilding-api:latest      # reuse the prod-built image
+    env_file:
+      - ./secrets.env                  # KC_BOOTSTRAP_ADMIN_*, POLAR_* (sandbox)
+    environment:
+      OTEL_SDK_DISABLED: "true"
+      GEOIP_DB: /geoip/dbip-country-lite.mmdb
+      # Keycloak reached by container DNS (same project); issuer stays public.
+      KC_ADMIN_BASE: http://sandbox-keycloak:8080/auth
+      OIDC_JWKS_URL: http://sandbox-keycloak:8080/auth/realms/sandbox-ecobuilding/protocol/openid-connect/certs
+      OIDC_ISSUER: https://sandbox.ecobuilding.confinia.io/auth/realms/sandbox-ecobuilding
+      OIDC_REALM: sandbox-ecobuilding
+      # Polar SANDBOX (token/org/product/webhook secret live in ./secrets.env).
+      POLAR_ENV: sandbox
+      POLAR_BASE_URL: https://sandbox-api.polar.sh
+    volumes:
+      - ../data/geoip:/geoip:ro
+      - ./data/leads:/leads
+    # No depends_on: JWKS is fetched lazily, and podman container dependencies
+    # otherwise block single-service recreates (caddy -> api -> keycloak chain).
+    restart: unless-stopped
+
+  sandbox-frontend:
+    build: ../frontend
+    image: ecobuilding-frontend:latest
+    volumes:
+      # Point the shared image at the sandbox realm (overrides /srv/env.js).
+      - ./env.sandbox.js:/srv/env.js:ro
+    restart: unless-stopped
+
+  sandbox-caddy:
+    image: docker.io/library/caddy:2
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    ports:
+      - "127.0.0.1:8030:8030"
+    # No depends_on (see sandbox-api): caddy retries upstreams until they answer.
+    restart: unless-stopped
+
+volumes:
+  sandbox_kc_pgdata:
