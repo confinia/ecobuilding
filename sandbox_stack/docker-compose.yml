@@ -58,6 +58,8 @@ services:
       OIDC_JWKS_URL: http://sandbox-keycloak:8080/auth/realms/sandbox-ecobuilding/protocol/openid-connect/certs
       OIDC_ISSUER: https://sandbox.ecobuilding.confinia.io/auth/realms/sandbox-ecobuilding
       OIDC_REALM: sandbox-ecobuilding
+      # DVF home prices (#89) via the shared BDNB PostgREST RPC (ufw-blocked 3005).
+      DVF_RPC_URL: http://host.containers.internal:3005/rpc/prices_for_building
       # Polar SANDBOX (token/org/product/webhook secret live in ./secrets.env).
       POLAR_ENV: sandbox
       POLAR_BASE_URL: https://sandbox-api.polar.sh

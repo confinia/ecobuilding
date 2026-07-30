@@ -30,6 +30,10 @@ BDNB_URL = os.environ.get(
     "BDNB_URL", "https://api.bdnb.io/v1/bdnb/donnees/batiment_groupe_complet/adresse")
 BDNB_BASE_URL = os.environ.get(
     "BDNB_BASE_URL", "https://api.bdnb.io/v1/bdnb/donnees/batiment_groupe_complet")
+# DVF home prices via the local PostgREST RPC (#89). Empty in prod until the
+# self-hosted stack is live; when set, building records carry a `prices` block
+# (recent parcelle sales + commune median €/m²).
+DVF_RPC_URL = os.environ.get("DVF_RPC_URL", "")
 GEORISQUES_URL = "https://georisques.gouv.fr/api/v1/resultats_rapport_risque"
 
 # Rental-ban calendar, loi Climat et Résilience (verified 2026-07-20).
@@ -224,6 +228,19 @@ async def _cached_get_json(url: str, params: dict, ttl: float):
     return data
 
 
+async def _dvf_prices(bdnb_id: str):
+    """DVF price block for a building (recent parcelle sales + commune median
+    €/m²), via the local PostgREST RPC. None when DVF is not wired or on error,
+    so a DVF hiccup never breaks the building record."""
+    if not DVF_RPC_URL:
+        return None
+    try:
+        return await _cached_get_json(DVF_RPC_URL, {"bdnb_id": bdnb_id}, ttl=86400)
+    except Exception as e:
+        log.warning("DVF prices failed for %s: %s", bdnb_id, e)
+        return None
+
+
 def _rental_ban(dpe_class: str | None) -> dict | None:
     if not dpe_class:
         return None
@@ -415,14 +432,16 @@ async def building(
         raise HTTPException(404, "Unknown building id")
     row = rows[0]
     M_LOOKUPS.add(1, {"status": "by_id"})
+    prices = await _dvf_prices(bdnb_id)
+    sources = ["BDNB (CSTB) — Licence Ouverte v2.0", "Géorisques — Licence Ouverte"]
+    if prices:
+        sources.append("DVF (DGFiP) / Etalab — Licence Ouverte")
     return {
         "query": {"bdnb_id": bdnb_id, "address": row.get("libelle_adr_principale_ban"), "lon": lon, "lat": lat},
         "buildings": [_normalize_building(row)],
         "area_risks": await _area_risks(lon, lat),
-        "sources": [
-            "BDNB (CSTB) — Licence Ouverte v2.0",
-            "Géorisques — Licence Ouverte",
-        ],
+        "prices": prices,
+        "sources": sources,
     }
 
 
