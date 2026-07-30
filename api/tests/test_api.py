@@ -125,3 +125,35 @@ def test_report_pdf_with_prices():
     from app.report import build_report_pdf
     pdf = build_report_pdf({**BUILDING_FIXTURE, "prices": PRICES_FIXTURE})
     assert pdf.startswith(b"%PDF") and len(pdf) > 5000
+
+
+# --- Traceability annex (issue #93) ------------------------------------------
+def test_traceability_annex_exposes_source_key_date_link():
+    from app.report import _traceability_annex
+    data = {**BUILDING_FIXTURE, "prices": PRICES_FIXTURE}
+    photos = [{"id": "pano-abc12345",
+               "viewer": "https://api.panoramax.xyz/#focus=pic&pic=pano-abc12345",
+               "date": "2023-04-01T10:00:00Z"}]
+    h = _traceability_annex(data, photos)
+    for src in ("BAN", "BDNB", "Géorisques", "DVF", "Panoramax"):
+        assert src in h                       # every active source named
+    assert "batiment_groupe_id = bdnb-bg-TEST" in h   # exact key
+    assert "api.bdnb.io" in h                 # reproducible verify link
+    assert "2024-05-01" in h                  # DPE reference date
+    assert "pano-abc" in h                    # photo id
+
+
+def test_traceability_annex_omits_absent_categories():
+    from app.report import _traceability_annex
+    data = {"query": {"bdnb_id": "bdnb-bg-X"}, "buildings": [{"bdnb_id": "bdnb-bg-X"}]}
+    h = _traceability_annex(data, [])
+    assert "BDNB" in h
+    assert "DVF" not in h and "Géorisques" not in h and "Panoramax" not in h
+
+
+def test_traceability_annex_dvf_unavailable_is_named_not_faked():
+    from app.report import _traceability_annex
+    data = {"query": {"bdnb_id": "bdnb-bg-X"}, "buildings": [{"bdnb_id": "bdnb-bg-X"}],
+            "prices": {"available": False}}
+    h = _traceability_annex(data, [])
+    assert "DVF" in h and "indisponible" in h
