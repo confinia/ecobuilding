@@ -70,3 +70,58 @@ def test_report_pdf_bytes():
     pdf = build_report_pdf(BUILDING_FIXTURE)
     assert pdf.startswith(b"%PDF")
     assert len(pdf) > 5000
+
+
+# --- DVF home prices (issue #89) ---------------------------------------------
+PRICES_FIXTURE = {
+    "available": True, "commune_code": "75101",
+    "sales": [{"date": "2023-05-01", "valeur_fonciere": 500000, "type_local": "Appartement",
+               "surface_m2": 50, "pieces": 2, "eur_m2": 10000}],
+    "commune_eur_m2": {"Appartement": {"median": 12828, "n": 1518}},
+}
+
+
+def test_prices_html_available():
+    from app.report import _prices_html
+    h = _prices_html(PRICES_FIXTURE)
+    assert "Prix de vente (DVF)" in h and "12 828" in h and "10 000" in h
+
+
+def test_prices_html_unavailable_is_honest():
+    from app.report import _prices_html
+    h = _prices_html({"available": False})
+    assert "indisponibles" in h and "Alsace-Moselle" in h  # never a fake number
+
+
+def test_prices_html_none_omits_section():
+    from app.report import _prices_html
+    assert _prices_html(None) == ""
+
+
+def test_building_includes_prices(monkeypatch):
+    async def fake_bdnb(url, params, ttl):
+        return [{"batiment_groupe_id": "bdnb-bg-X", "libelle_adr_principale_ban": "1 rue X"}]
+    async def fake_prices(bid): return PRICES_FIXTURE
+    async def fake_risks(lon, lat): return {}
+    monkeypatch.setattr(main, "_cached_get_json", fake_bdnb)
+    monkeypatch.setattr(main, "_dvf_prices", fake_prices)
+    monkeypatch.setattr(main, "_area_risks", fake_risks)
+    body = client.get("/v1/buildings/bdnb-bg-X").json()
+    assert body["prices"]["available"] is True
+    assert any("DVF" in s for s in body["sources"])
+
+
+def test_building_prices_none_when_dvf_disabled(monkeypatch):
+    async def fake_bdnb(url, params, ttl):
+        return [{"batiment_groupe_id": "bdnb-bg-X"}]
+    async def fake_risks(lon, lat): return {}
+    monkeypatch.setattr(main, "_cached_get_json", fake_bdnb)
+    monkeypatch.setattr(main, "_area_risks", fake_risks)
+    monkeypatch.setattr(main, "DVF_RPC_URL", "")  # real _dvf_prices short-circuits
+    assert client.get("/v1/buildings/bdnb-bg-X").json()["prices"] is None
+
+
+def test_report_pdf_with_prices():
+    from app.report import build_report_pdf
+    pdf = build_report_pdf({**BUILDING_FIXTURE, "prices": PRICES_FIXTURE})
+    assert pdf.startswith(b"%PDF") and len(pdf) > 5000

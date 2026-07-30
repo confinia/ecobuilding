@@ -13,8 +13,14 @@ services:
       POSTGRES_USER: bdnb
     env_file:
       - ../deploy/secrets.env   # POSTGRES_PASSWORD (= BDNB_DB_PASSWORD)
+    # This DB is a rebuildable mirror of the public BDNB dump (never a source of
+    # truth), so durability is disposable: fsync/synchronous_commit off gives a
+    # large speedup on the one-time 168 GB bulk load and on index builds, and a
+    # crash just means re-running deploy/bdnb-import.sh.
     command: ["postgres", "-c", "max_connections=100", "-c", "shared_buffers=2GB",
-              "-c", "work_mem=64MB", "-c", "maintenance_work_mem=1GB"]
+              "-c", "work_mem=64MB", "-c", "maintenance_work_mem=2GB",
+              "-c", "fsync=off", "-c", "synchronous_commit=off",
+              "-c", "full_page_writes=off", "-c", "autovacuum=off"]
     volumes:
       - bdnb_pgdata:/var/lib/postgresql/data
     restart: unless-stopped
@@ -24,10 +30,14 @@ services:
   # via the PGRST_DB_SCHEMAS env in secrets.env).
   bdnb-rest:
     image: docker.io/postgrest/postgrest:v12.2.3
+    # Connects as the authenticator (bdnb) from secrets.env's PGRST_DB_URI, then
+    # switches to bdnb_anon for every request (NOLOGIN, EXECUTE only on the
+    # exposed RPCs). Exposes schema "dvf": the prices_for_building RPC (#89).
+    env_file:
+      - ../deploy/secrets.env    # PGRST_DB_URI=postgres://bdnb:<pwd>@bdnb-db:5432/bdnb
     environment:
-      PGRST_DB_URI: postgres://bdnb_anon@bdnb-db:5432/bdnb
       PGRST_DB_ANON_ROLE: bdnb_anon
-      PGRST_DB_SCHEMAS: ${PGRST_DB_SCHEMAS:-public}
+      PGRST_DB_SCHEMAS: dvf
       PGRST_DB_POOL: "20"
       PGRST_SERVER_PORT: "3005"
     ports:
