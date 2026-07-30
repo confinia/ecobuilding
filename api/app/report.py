@@ -6,8 +6,13 @@ via the ecobuilding_reports metric.
 """
 
 from datetime import datetime, timezone
+from urllib.parse import quote
 
 from weasyprint import HTML
+
+# Dataset versions surfaced in the traceability annex (#93). Update on refresh.
+BDNB_MILLESIME = "2026_02 (open data)"
+DVF_WINDOW = "2021-2025"
 
 DPE_COLORS = {"A": "#009036", "B": "#52b153", "C": "#a5cc74", "D": "#f4e70f",
               "E": "#f0b40f", "F": "#eb8235", "G": "#d7221f"}
@@ -76,6 +81,99 @@ def _prices_html(p: dict | None) -> str:
             f'<p>Prix médian dans la commune : <strong>{med_txt}</strong></p>{sales_tbl}'
             f'<p class="meta">€/m² indicatif, calculé sur les ventes d\'un seul local. '
             f'Transactions réelles enregistrées par la DGFiP.</p>')
+
+
+def _prov(source, version, key, date, link_url) -> str:
+    """One provenance card. Empty rows are omitted; the verify link is real
+    (never fabricated) — a URL only when we actually have a reproducible one."""
+    link = f'<a href="{link_url}">{link_url}</a>' if link_url and link_url != "—" else "—"
+    rows = "".join(_row(k, v) for k, v in [
+        ("Source", source), ("Version / licence", version),
+        ("Clé de recherche", key), ("Date de référence", date),
+        ("Vérifier à la source", link)])
+    return f"<table>{rows}</table>" if rows else ""
+
+
+def _traceability_annex(data: dict, photos: list | None) -> str:
+    """Annex page (#93): for each datum, its source, version, the exact key used
+    to fetch it, a reference date and a verifiable upstream link — so the reader
+    checks against the origin instead of trusting EcoBuilding. Only categories
+    actually present are listed; no empty rows, no fake links."""
+    b = (data.get("buildings") or [{}])[0]
+    q = data.get("query", {})
+    e = b.get("energy") or {}
+    risks = data.get("area_risks") or {}
+    prices = data.get("prices") or {}
+    photos = [p for p in (photos or []) if p.get("id")]
+    now = datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M UTC")
+    bdnb_id = b.get("bdnb_id") or q.get("bdnb_id")
+    lon, lat = q.get("lon"), q.get("lat")
+    commune = risks.get("commune") or prices.get("commune_code")
+    addr = q.get("address") or b.get("address")
+
+    cards = []
+    if addr:
+        key = addr + (f" · id BAN {q['ban_id']}" if q.get("ban_id") else "")
+        cards.append(("Adresse", _prov(
+            "Base Adresse Nationale (BAN)", "Licence Ouverte",
+            key, "Référentiel courant",
+            f"https://api-adresse.data.gouv.fr/search/?q={quote(addr)}")))
+    if bdnb_id:
+        cards.append(("Bâtiment, énergie (DPE), solaire", _prov(
+            "BDNB — Base de Données Nationale des Bâtiments (CSTB)",
+            f"Millésime {BDNB_MILLESIME} · Licence Ouverte 2.0",
+            f"batiment_groupe_id = {bdnb_id}",
+            ((e.get("dpe_date") or "")[:10] + " (date du DPE)")
+            if e.get("dpe_date") else f"Millésime {BDNB_MILLESIME}",
+            "https://api.bdnb.io/v1/bdnb/donnees/batiment_groupe_complet"
+            f"?batiment_groupe_id=eq.{bdnb_id}")))
+    if risks.get("report_url") or lon is not None:
+        key = ((f"lat/lon = {lat}, {lon}" if lon is not None else "")
+               + (f" · commune INSEE {commune}" if commune else "")) or "—"
+        cards.append(("Risques", _prov(
+            "Géorisques (BRGM / Ministère de la Transition écologique)",
+            "Licence Ouverte", key, f"Consultation du {now}",
+            risks.get("report_url") or "https://www.georisques.gouv.fr")))
+    if prices:
+        if prices.get("available"):
+            yrs = sorted(s["date"][:4] for s in (prices.get("sales") or []) if s.get("date"))
+            dref = (f"ventes {yrs[0]}–{yrs[-1]}" if yrs else f"fenêtre {DVF_WINDOW}")
+            cards.append(("Prix (DVF)", _prov(
+                "DVF géolocalisé — Demandes de Valeurs Foncières (DGFiP / Etalab)",
+                f"Fenêtre {DVF_WINDOW} · Licence Ouverte 2.0",
+                f"parcelle cadastrale du bâtiment · commune INSEE {prices.get('commune_code') or '—'}",
+                dref, "https://app.dvf.etalab.gouv.fr")))
+        else:
+            cards.append(("Prix (DVF)", _prov(
+                "DVF (DGFiP / Etalab)", f"Fenêtre {DVF_WINDOW} · Licence Ouverte 2.0",
+                "indisponible : l'Alsace-Moselle et Mayotte ne sont pas couvertes par la DVF",
+                "—", "https://app.dvf.etalab.gouv.fr")))
+    if photos:
+        ids = ", ".join(str(p["id"])[:8] for p in photos[:3])
+        dref = next((str(p["date"])[:10] for p in photos if p.get("date")), "voir la visionneuse")
+        cards.append(("Photos (contexte)", _prov(
+            "Panoramax", "CC-BY-SA 4.0", f"photo id(s) : {ids}", dref,
+            photos[0].get("viewer") or "https://panoramax.xyz")))
+
+    sections = "".join(f"<h2>{t}</h2>{c}" for t, c in cards if c)
+    if not sections:
+        return ""
+    return f"""
+<div style="page-break-before: always;"></div>
+<header>
+  <div class="brand">EcoBuilding</div>
+  <div class="doctitle">Annexe — traçabilité des données</div>
+</header>
+<h1>D'où vient chaque donnée</h1>
+<p class="meta">Ce rapport agrège des données ouvertes. Pour chaque donnée : la source,
+la version, la clé de recherche exacte et un lien pour vérifier directement à la source,
+sans avoir à faire confiance à EcoBuilding. Généré le {now}.</p>
+{sections}
+<footer>
+  Sources publiques (Licence Ouverte, CC-BY-SA, ODbL). Les identifiants ci-dessus
+  permettent de retrouver la donnée d'origine. Document informatif, non contractuel.
+</footer>
+"""
 
 
 def build_report_pdf(data: dict, photos: list | None = None) -> bytes:
@@ -183,6 +281,7 @@ def build_report_pdf(data: dict, photos: list | None = None) -> bytes:
   réglementaire. Version bêta gratuite.
 </footer>
 {_context_page(data, photos)}
+{_traceability_annex(data, photos)}
 """
     return HTML(string=html).write_pdf()
 
