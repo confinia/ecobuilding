@@ -54,6 +54,15 @@ def test_me_requires_auth():
     assert r.status_code == 401  # auth enforced against the sandbox realm
 
 
+def test_building_carries_dvf_prices():
+    # #89: the self-hosted DVF price block reaches the public building record.
+    r = httpx.get(f"{API}/v1/buildings/bdnb-bg-LT4B-YEAJ-XXF1", timeout=25)
+    assert r.status_code == 200, r.text
+    p = r.json().get("prices")
+    assert p and p["available"] is True
+    assert p["commune_eur_m2"], "commune median €/m² missing"
+
+
 @pytest.mark.skipif(
     not os.environ.get("SANDBOX_TEST_TOKEN"),
     reason="set SANDBOX_TEST_TOKEN (a token from a real sandbox sign-up) to assert the org claim",

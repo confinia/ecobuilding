@@ -49,6 +49,35 @@ def _row(label, value, unit=""):
     return f'<tr><td class="k">{label}</td><td>{value}{unit}</td></tr>'
 
 
+def _eur(n) -> str:
+    return f"{round(n):,}".replace(",", " ") if n not in (None, "") else "—"
+
+
+def _prices_html(p: dict | None) -> str:
+    """DVF home-price section (recent parcelle sales + commune median €/m²).
+    Honest about the DVF coverage gap (Alsace-Moselle, Mayotte)."""
+    if not p:
+        return ""
+    if not p.get("available"):
+        return ('<h2>Prix de vente (DVF)</h2><p class="meta">Données de prix indisponibles pour '
+                "ce secteur : la base DVF ne couvre pas l'Alsace-Moselle ni Mayotte.</p>")
+    med = {t: v for t, v in (p.get("commune_eur_m2") or {}).items() if v.get("median")}
+    med_txt = " · ".join(f"{t} {_eur(v['median'])} €/m² (n={v['n']})" for t, v in med.items()) or "—"
+    rows = ""
+    for s in (p.get("sales") or [])[:6]:
+        surf = f"{round(s['surface_m2'])} m²" if s.get("surface_m2") else "—"
+        em = f"{_eur(s['eur_m2'])} €/m²" if s.get("eur_m2") else "—"
+        rows += (f'<tr><td>{(s.get("date") or "")[:10]}</td><td>{s.get("type_local") or "—"}</td>'
+                 f'<td>{surf}</td><td>{_eur(s.get("valeur_fonciere"))} €</td><td>{em}</td></tr>')
+    sales_tbl = (f'<table><tr><td class="k">Date</td><td class="k">Type</td><td class="k">Surface</td>'
+                 f'<td class="k">Montant</td><td class="k">€/m²</td></tr>{rows}</table>'
+                 if rows else '<p class="meta">Aucune vente récente enregistrée sur la parcelle.</p>')
+    return (f'<h2>Prix de vente (DVF)</h2>'
+            f'<p>Prix médian dans la commune : <strong>{med_txt}</strong></p>{sales_tbl}'
+            f'<p class="meta">€/m² indicatif, calculé sur les ventes d\'un seul local. '
+            f'Transactions réelles enregistrées par la DGFiP.</p>')
+
+
 def build_report_pdf(data: dict, photos: list | None = None) -> bytes:
     b = (data.get("buildings") or [{}])[0]
     e = b.get("energy") or {}
@@ -144,6 +173,8 @@ def build_report_pdf(data: dict, photos: list | None = None) -> bytes:
   {_row("Favorable au solaire thermique", {True: "oui", False: "non"}.get(solar.get("thermal_favourable")))}
   {_row("Potentiel annuel estimé", solar.get("thermal_potential_kwh_y"), " kWh/an")}
 </table>
+
+{_prices_html(data.get("prices"))}
 
 <footer>
   Sources : BDNB (CSTB), Base Adresse Nationale, Géorisques — Licence Ouverte, attributions requises.
