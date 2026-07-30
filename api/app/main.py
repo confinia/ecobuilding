@@ -788,6 +788,7 @@ async def _nearby_photos(lon: float, lat: float, radius: float = 0.0006) -> list
         if thumb:
             photos.append({"id": f["id"], "thumb": thumb, "sd": sd, "viewer": viewer,
                            "is_360": fov == 360,
+                           "date": (f.get("properties") or {}).get("datetime"),  # provenance (#93)
                            "coordinates": f.get("geometry", {}).get("coordinates")})
     return photos
 
