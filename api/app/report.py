@@ -91,7 +91,7 @@ def _prov(source, version, key, date, link_url) -> str:
         ("Source", source), ("Version / licence", version),
         ("Clé de recherche", key), ("Date de référence", date),
         ("Vérifier à la source", link)])
-    return f"<table>{rows}</table>" if rows else ""
+    return f'<table class="prov">{rows}</table>' if rows else ""
 
 
 def _traceability_annex(data: dict, photos: list | None) -> str:
@@ -159,6 +159,12 @@ def _traceability_annex(data: dict, photos: list | None) -> str:
     if not sections:
         return ""
     return f"""
+<style>
+  table.prov {{ table-layout: fixed; }}
+  table.prov td {{ overflow-wrap: anywhere; word-break: break-word; }}
+  table.prov td.k {{ width: 26%; }}
+  table.prov a {{ word-break: break-all; }}
+</style>
 <div style="page-break-before: always;"></div>
 <header>
   <div class="brand">EcoBuilding</div>
