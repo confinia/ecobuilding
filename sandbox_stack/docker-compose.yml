@@ -60,6 +60,8 @@ services:
       OIDC_REALM: sandbox-ecobuilding
       # DVF home prices (#89) via the shared BDNB PostgREST RPC (ufw-blocked 3005).
       DVF_RPC_URL: http://host.containers.internal:3005/rpc/prices_for_building
+      # DPE-3D map render for the PDF (#88) via the shared render service (8040).
+      RENDER_URL: http://host.containers.internal:8040/shot
       # Polar SANDBOX (token/org/product/webhook secret live in ./secrets.env).
       POLAR_ENV: sandbox
       POLAR_BASE_URL: https://sandbox-api.polar.sh

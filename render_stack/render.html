@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet"/>
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<style>html,body{margin:0;padding:0}#map{width:960px;height:540px}</style>
+</head>
+<body>
+<div id="map"></div>
+<script>
+// Server-side twin of the web map (frontend/site/app.js): OpenFreeMap liberty +
+// public BDNB vector tiles, extruded and colored by DPE class. Camera + target
+// building come from the query string; puppeteer waits for window.__ready.
+const q = new URLSearchParams(location.search);
+const lon = +q.get('lon'), lat = +q.get('lat');
+const zoom = +(q.get('zoom') || 18), pitch = +(q.get('pitch') || 60),
+      bearing = +(q.get('bearing') || -25), bid = q.get('bdnb_id') || '';
+const DPE = ["match", ["get", "classe_bilan_dpe"],
+  "A", "#009036", "B", "#52b153", "C", "#a5cc74", "D", "#f4e70f",
+  "E", "#f0b40f", "F", "#eb8235", "G", "#d7221f", "#d5cdc0"];
+const map = new maplibregl.Map({
+  container: 'map', style: 'https://tiles.openfreemap.org/styles/liberty',
+  center: [lon, lat], zoom, pitch, bearing,
+  interactive: false, attributionControl: false, fadeDuration: 0, preserveDrawingBuffer: true,
+});
+map.on('load', () => {
+  for (const l of map.getStyle().layers) {
+    if (/building/i.test(l.id)) map.removeLayer(l.id);   // only BDNB extrudes
+  }
+  map.addSource('bdnb', { type: 'vector',
+    tiles: ['https://api.bdnb.io/v1/bdnb/tuiles/batiment_groupe/{z}/{x}/{y}.pbf'],
+    minzoom: 13, maxzoom: 14 });
+  const height = ['coalesce', ['get', 'hauteur_mean'], 6];
+  // All buildings dimmed; the target rendered full-opacity so it stands out.
+  map.addLayer({ id: 'bdnb-all', source: 'bdnb', 'source-layer': 'sql_statement',
+    type: 'fill-extrusion', minzoom: 13,
+    paint: { 'fill-extrusion-color': DPE, 'fill-extrusion-height': height,
+             'fill-extrusion-opacity': 0.55 } });
+  if (bid) map.addLayer({ id: 'bdnb-target', source: 'bdnb', 'source-layer': 'sql_statement',
+    type: 'fill-extrusion', minzoom: 13,
+    filter: ['==', ['get', 'batiment_groupe_id'], bid],
+    paint: { 'fill-extrusion-color': DPE, 'fill-extrusion-height': height,
+             'fill-extrusion-opacity': 1 } });
+  map.once('idle', () => { window.__ready = true; });
+});
+map.on('error', (e) => { window.__error = String((e && e.error) || e); });
+</script>
+</body>
+</html>
