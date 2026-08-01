@@ -91,7 +91,7 @@ def _prov(source, version, key, date, link_url) -> str:
         ("Source", source), ("Version / licence", version),
         ("Clé de recherche", key), ("Date de référence", date),
         ("Vérifier à la source", link)])
-    return f"<table>{rows}</table>" if rows else ""
+    return f'<table class="prov">{rows}</table>' if rows else ""
 
 
 def _traceability_annex(data: dict, photos: list | None) -> str:
@@ -159,6 +159,12 @@ def _traceability_annex(data: dict, photos: list | None) -> str:
     if not sections:
         return ""
     return f"""
+<style>
+  table.prov {{ table-layout: fixed; }}
+  table.prov td {{ overflow-wrap: anywhere; word-break: break-word; }}
+  table.prov td.k {{ width: 26%; }}
+  table.prov a {{ word-break: break-all; }}
+</style>
 <div style="page-break-before: always;"></div>
 <header>
   <div class="brand">EcoBuilding</div>
@@ -176,7 +182,7 @@ sans avoir à faire confiance à EcoBuilding. Généré le {now}.</p>
 """
 
 
-def build_report_pdf(data: dict, photos: list | None = None) -> bytes:
+def build_report_pdf(data: dict, photos: list | None = None, map_img: str | None = None) -> bytes:
     b = (data.get("buildings") or [{}])[0]
     e = b.get("energy") or {}
     ban = e.get("rental_ban") or {}
@@ -280,14 +286,16 @@ def build_report_pdf(data: dict, photos: list | None = None) -> bytes:
   diagnostic de performance énergétique (DPE) officiel, ni un état des risques et pollutions (ERP)
   réglementaire. Version bêta gratuite.
 </footer>
-{_context_page(data, photos)}
+{_context_page(data, photos, map_img)}
 {_traceability_annex(data, photos)}
 """
     return HTML(string=html).write_pdf()
 
 
-def _context_page(data: dict, photos: list | None) -> str:
-    """Second PDF page: third-party context (Panoramax imagery + OSM link)."""
+def _context_page(data: dict, photos: list | None, map_img: str | None = None) -> str:
+    """Second PDF page: third-party context — a rendered DPE-3D map of the
+    building (#88) + Panoramax imagery. Falls back to an OSM link when the map
+    render is unavailable."""
     q = data.get("query", {})
     lon, lat = q.get("lon"), q.get("lat")
     address = q.get("address") or "ce bâtiment"
@@ -317,13 +325,19 @@ def _context_page(data: dict, photos: list | None) -> str:
 <h1>{address}</h1>
 <h2>Vue au sol (Panoramax)</h2>
 {('<div class="pics">' + pics + '</div>') if pics else '<p class="meta">Aucune photo Panoramax à proximité.</p>'}
-<h2>OpenStreetMap</h2>
-<table><tr><td class="k" style="width:30%">Voir la zone sur OSM</td><td>{osm}</td></tr></table>
+<h2>{"Localisation — carte 3D (DPE)" if map_img else "OpenStreetMap"}</h2>
+{(f'<img class="map3d" src="{map_img}"/>'
+  '<div class="cap">Bâtiment ciblé en pleine opacité (voisins atténués), coloré par classe DPE. '
+  'Zoom 18, inclinaison 60°. Fond : OpenStreetMap et contributeurs (ODbL) · Bâtiments &amp; DPE : BDNB (CSTB).</div>')
+ if map_img else
+ f'<table><tr><td class="k" style="width:30%">Voir la zone sur OSM</td><td>{osm}</td></tr></table>'}
 <footer>
   Imagerie : Panoramax (CC-BY-SA 4.0). Cartographie : OpenStreetMap et contributeurs (ODbL).
   Informations de contexte, non contractuelles.
 </footer>
 <style>
+  .map3d {{ width: 100%; border-radius: 4pt; margin-bottom: 3pt; }}
+  .map3d + .cap {{ font-size: 7.5pt; color: #888; margin-bottom: 4pt; }}
   .pics {{ display: flex; gap: 8pt; flex-wrap: wrap; }}
   .pic img.flat {{ width: 240pt; border-radius: 4pt; }}
   /* Central forward crop of an equirectangular 360 (2:1 image): box shows the

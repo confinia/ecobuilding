@@ -34,6 +34,9 @@ BDNB_BASE_URL = os.environ.get(
 # self-hosted stack is live; when set, building records carry a `prices` block
 # (recent parcelle sales + commune median €/m²).
 DVF_RPC_URL = os.environ.get("DVF_RPC_URL", "")
+# Headless DPE-3D map render for the PDF context page (#88). Empty in prod until
+# the render service is wired; when set, the report shows the rendered building.
+RENDER_URL = os.environ.get("RENDER_URL", "")
 GEORISQUES_URL = "https://georisques.gouv.fr/api/v1/resultats_rapport_risque"
 
 # Rental-ban calendar, loi Climat et Résilience (verified 2026-07-20).
@@ -238,6 +241,24 @@ async def _dvf_prices(bdnb_id: str):
         return await _cached_get_json(DVF_RPC_URL, {"bdnb_id": bdnb_id}, ttl=86400)
     except Exception as e:
         log.warning("DVF prices failed for %s: %s", bdnb_id, e)
+        return None
+
+
+async def _building_map_png(lon, lat, bdnb_id, bearing: float = -30.0):
+    """Rendered DPE-3D map (PNG data URI) centered on the building, via the
+    headless render service (#88). None when not wired or on error, so the
+    report always generates."""
+    if not RENDER_URL or lon is None or lat is None:
+        return None
+    try:
+        r = await _client.get(RENDER_URL, params={
+            "lon": lon, "lat": lat, "zoom": 18, "pitch": 60,
+            "bearing": bearing, "bdnb_id": bdnb_id}, timeout=45.0)
+        r.raise_for_status()
+        import base64
+        return "data:image/png;base64," + base64.b64encode(r.content).decode()
+    except Exception as e:
+        log.warning("building map render failed for %s: %s", bdnb_id, e)
         return None
 
 
@@ -759,7 +780,8 @@ async def report(
             photos = await _nearby_photos(q["lon"], q["lat"])
         except httpx.HTTPError:
             pass
-    pdf = build_report_pdf(data, photos=photos)
+    map_img = await _building_map_png(q.get("lon"), q.get("lat"), bdnb_id)
+    pdf = build_report_pdf(data, photos=photos, map_img=map_img)
     M_REPORTS.add(1, {"has_dpe": str(bool((data["buildings"][0].get("energy") or {}).get("dpe_class"))).lower()})
     return Response(
         pdf,
