@@ -6,7 +6,7 @@ USER root
 WORKDIR /app
 COPY package.json ./
 RUN npm install --omit=dev && chown -R pptruser:pptruser /app
-COPY server.js render.html ./
+COPY server.js render.html geo.js ./
 USER pptruser
 EXPOSE 8040
 CMD ["node", "server.js"]
