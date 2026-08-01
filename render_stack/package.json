@@ -1,0 +1,11 @@
+{
+  "name": "ecobuilding-render",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Headless MapLibre DPE-3D map renderer for the PDF report (#88)",
+  "main": "server.js",
+  "dependencies": {
+    "express": "^4.21.0",
+    "puppeteer": "^22.15.0"
+  }
+}

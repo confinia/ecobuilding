@@ -157,3 +157,40 @@ def test_traceability_annex_dvf_unavailable_is_named_not_faked():
             "prices": {"available": False}}
     h = _traceability_annex(data, [])
     assert "DVF" in h and "indisponible" in h
+
+
+# --- 3D building map render on the context page (issue #88) -------------------
+MAP_URI = ("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1Pe"
+           "AAAADElEQVR4nGP4z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==")
+
+
+def test_context_page_embeds_map_when_provided():
+    from app.report import _context_page
+    h = _context_page(BUILDING_FIXTURE, [], map_img=MAP_URI)
+    assert 'class="map3d"' in h and MAP_URI in h and "Localisation" in h
+
+
+def test_context_page_falls_back_to_osm_without_map():
+    from app.report import _context_page
+    h = _context_page(BUILDING_FIXTURE, [], map_img=None)
+    assert "OpenStreetMap" in h and '<img class="map3d"' not in h
+
+
+def test_report_pdf_with_map_render():
+    import base64
+    import io
+
+    from PIL import Image
+
+    from app.report import build_report_pdf
+    buf = io.BytesIO()
+    Image.new("RGB", (8, 8), "green").save(buf, "PNG")
+    uri = "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+    pdf = build_report_pdf(BUILDING_FIXTURE, map_img=uri)
+    assert pdf.startswith(b"%PDF") and len(pdf) > 5000
+
+
+def test_building_map_disabled_returns_none(monkeypatch):
+    import asyncio
+    monkeypatch.setattr(main, "RENDER_URL", "")   # not wired -> no map, no error
+    assert asyncio.run(main._building_map_png(2.3, 48.8, "bdnb-bg-X")) is None
