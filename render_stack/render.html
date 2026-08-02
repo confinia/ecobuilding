@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet"/>
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="geo.js"></script>
 <style>html,body{margin:0;padding:0}#map{width:960px;height:540px}</style>
 </head>
 <body>
@@ -42,7 +43,23 @@ map.on('load', () => {
     filter: ['==', ['get', 'batiment_groupe_id'], bid],
     paint: { 'fill-extrusion-color': DPE, 'fill-extrusion-height': height,
              'fill-extrusion-opacity': 1 } });
-  map.once('idle', () => { window.__ready = true; });
+  // Once tiles are in, recenter the camera on the target building's footprint
+  // (the BAN address point leaves it off-centre). Fall back to the address
+  // point when the feature isn't in the loaded tiles.
+  map.once('idle', () => {
+    let recentred = false;
+    if (bid) {
+      const feats = map.querySourceFeatures('bdnb',
+        { sourceLayer: 'sql_statement', filter: ['==', ['get', 'batiment_groupe_id'], bid] });
+      const c = ecoGeo.featuresCenter(feats);
+      if (c) {
+        map.setCenter(c);   // building footprint -> container centre
+        recentred = true;
+      }
+    }
+    if (recentred) map.once('idle', () => { window.__ready = true; });
+    else window.__ready = true;
+  });
 });
 map.on('error', (e) => { window.__error = String((e && e.error) || e); });
 </script>
