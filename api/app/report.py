@@ -135,6 +135,11 @@ def _traceability_annex(data: dict, photos: list | None) -> str:
             "Licence Ouverte", key, f"Consultation du {now}",
             risks.get("report_url") or "https://www.georisques.gouv.fr")))
     if prices:
+        # Deep-link straight to the property on the official DVF explorer (#98):
+        # verified that explore.data.gouv.fr/immobilier reads lat/lng/zoom and
+        # centres the map there. Fall back to the app home if we lack coords.
+        dvf_url = (f"https://explore.data.gouv.fr/fr/immobilier?onglet=carte&lat={lat}&lng={lon}&zoom=18"
+                   if (lon is not None and lat is not None) else "https://app.dvf.etalab.gouv.fr")
         if prices.get("available"):
             yrs = sorted(s["date"][:4] for s in (prices.get("sales") or []) if s.get("date"))
             dref = (f"ventes {yrs[0]}–{yrs[-1]}" if yrs else f"fenêtre {DVF_WINDOW}")
@@ -142,12 +147,12 @@ def _traceability_annex(data: dict, photos: list | None) -> str:
                 "DVF géolocalisé — Demandes de Valeurs Foncières (DGFiP / Etalab)",
                 f"Fenêtre {DVF_WINDOW} · Licence Ouverte 2.0",
                 f"parcelle cadastrale du bâtiment · commune INSEE {prices.get('commune_code') or '—'}",
-                dref, "https://app.dvf.etalab.gouv.fr")))
+                dref, dvf_url)))
         else:
             cards.append(("Prix (DVF)", _prov(
                 "DVF (DGFiP / Etalab)", f"Fenêtre {DVF_WINDOW} · Licence Ouverte 2.0",
                 "indisponible : l'Alsace-Moselle et Mayotte ne sont pas couvertes par la DVF",
-                "—", "https://app.dvf.etalab.gouv.fr")))
+                "—", dvf_url)))
     if photos:
         ids = ", ".join(str(p["id"])[:8] for p in photos[:3])
         dref = next((str(p["date"])[:10] for p in photos if p.get("date")), "voir la visionneuse")
