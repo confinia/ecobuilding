@@ -159,6 +159,15 @@ def test_traceability_annex_dvf_unavailable_is_named_not_faked():
     assert "DVF" in h and "indisponible" in h
 
 
+def test_annex_dvf_link_is_a_deep_link(monkeypatch):
+    from app.report import _traceability_annex
+    data = {**BUILDING_FIXTURE, "prices": PRICES_FIXTURE}  # query has lon 2.3 / lat 48.8
+    h = _traceability_annex(data, [])
+    assert "explore.data.gouv.fr/fr/immobilier" in h
+    assert "lat=48.8" in h and "lng=2.3" in h   # deep-linked to the property
+    assert "app.dvf.etalab.gouv.fr" not in h    # not the bare app home
+
+
 # --- 3D building map render on the context page (issue #88) -------------------
 MAP_URI = ("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1Pe"
            "AAAADElEQVR4nGP4z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==")
