@@ -1,0 +1,165 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 880" font-family="-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif">
+  <defs>
+    <marker id="arr" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L7,3 L0,6 Z" fill="#334155"/>
+    </marker>
+    <style>
+      .bg   { fill:#ffffff; }
+      .h1   { fill:#1f6f43; font-size:22px; font-weight:700; }
+      .h2   { fill:#334155; font-size:14px; font-weight:700; }
+      .lab  { fill:#475569; font-size:12px; }
+      .sm   { fill:#64748b; font-size:11px; }
+      .wt   { fill:#ffffff; font-size:12.5px; font-weight:600; }
+      .wts  { fill:#e2e8f0; font-size:10.5px; }
+      .dk   { fill:#0f172a; font-size:12.5px; font-weight:600; }
+      .box  { rx:7; }
+      .edge { fill:#475569; }
+      .gh   { fill:#24292f; }
+      .amber{ fill:#f59e0b; } .amberL{ fill:#fef3c7; stroke:#f59e0b; }
+      .blue { fill:#2563eb; } .blueL { fill:#dbeafe; stroke:#2563eb; }
+      .green{ fill:#16a34a; } .greenL{ fill:#dcfce7; stroke:#16a34a; }
+      .grey { fill:#f3f4f6; stroke:#9ca3af; }
+      .flow { stroke:#334155; stroke-width:1.6; fill:none; }
+      .flowD{ stroke:#334155; stroke-width:1.6; fill:none; stroke-dasharray:4 3; }
+    </style>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1200" height="880"/>
+  <text class="h1" x="30" y="38">EcoBuilding — deployment stack (template)</text>
+  <text class="sm" x="30" y="58">One VM · rootless podman per tenant · Caddy in 3 tiers · code-state → environment · blue/green prod</text>
+
+  <!-- ============ 1 · GitHub / CI flow ============ -->
+  <text class="h2" x="30" y="92">1 · GitHub flow  (issue → branch/PR → merge → promote)</text>
+  <g>
+    <rect class="gh box" x="30"  y="104" width="150" height="46"/>
+    <text class="wt" x="105" y="126" text-anchor="middle">Issue</text>
+    <text class="wts" x="105" y="141" text-anchor="middle">describe change</text>
+
+    <rect class="gh box" x="215" y="104" width="170" height="46"/>
+    <text class="wt" x="300" y="126" text-anchor="middle">Branch + PR</text>
+    <text class="wts" x="300" y="141" text-anchor="middle">Closes #N</text>
+
+    <rect class="gh box" x="420" y="104" width="170" height="46"/>
+    <text class="wt" x="505" y="126" text-anchor="middle">Merge → main</text>
+    <text class="wts" x="505" y="141" text-anchor="middle">squash</text>
+
+    <rect class="gh box" x="625" y="104" width="180" height="46"/>
+    <text class="wt" x="715" y="126" text-anchor="middle">Promote</text>
+    <text class="wts" x="715" y="141" text-anchor="middle">workflow_dispatch</text>
+
+    <path class="flow" d="M180,127 L213,127" marker-end="url(#arr)"/>
+    <path class="flow" d="M385,127 L418,127" marker-end="url(#arr)"/>
+    <path class="flow" d="M590,127 L623,127" marker-end="url(#arr)"/>
+
+    <rect class="grey box" x="845" y="100" width="325" height="54"/>
+    <text class="dk" x="860" y="120">CI: GitHub Actions</text>
+    <text class="sm" x="860" y="137">self-hosted runner on the VM (#112).</text>
+    <text class="sm" x="860" y="150">Today: manual rsync via deploy/*.sh (break-glass).</text>
+  </g>
+
+  <!-- ============ env chips ============ -->
+  <g>
+    <path class="flow" d="M300,150 L300,182" marker-end="url(#arr)"/>
+    <path class="flow" d="M505,150 L505,182" marker-end="url(#arr)"/>
+    <path class="flow" d="M715,150 L715,182" marker-end="url(#arr)"/>
+
+    <rect class="amberL box" x="215" y="184" width="170" height="40" stroke-width="1.5"/>
+    <text class="dk" x="300" y="202" text-anchor="middle">SANDBOX</text>
+    <text class="sm" x="300" y="217" text-anchor="middle">sandbox.…confinia.io</text>
+
+    <rect class="blueL box" x="420" y="184" width="170" height="40" stroke-width="1.5"/>
+    <text class="dk" x="505" y="202" text-anchor="middle">STAGING</text>
+    <text class="sm" x="505" y="217" text-anchor="middle">staging.…confinia.io</text>
+
+    <rect class="greenL box" x="625" y="184" width="180" height="40" stroke-width="1.5"/>
+    <text class="dk" x="715" y="202" text-anchor="middle">PRODUCTION</text>
+    <text class="sm" x="715" y="217" text-anchor="middle">ecobuilding.confinia.io</text>
+
+    <text class="sm" x="30"  y="205">open PR →</text>
+    <text class="sm" x="30"  y="219">a branch</text>
+    <text class="sm" x="845" y="205">Env is chosen by code state:</text>
+    <text class="sm" x="845" y="219">branch=sandbox · main=staging · promoted=prod</text>
+  </g>
+
+  <!-- ============ 2 · Request path ============ -->
+  <text class="h2" x="30" y="262">2 · Request path — Caddy tiers</text>
+
+  <!-- internet + dns -->
+  <rect class="grey box" x="30" y="276" width="140" height="42"/>
+  <text class="dk" x="100" y="302" text-anchor="middle">Internet (HTTPS)</text>
+  <rect class="grey box" x="30" y="336" width="140" height="52"/>
+  <text class="dk" x="100" y="357" text-anchor="middle">DNS wildcard</text>
+  <text class="sm" x="100" y="373" text-anchor="middle">*.ecobuilding</text>
+  <text class="sm" x="100" y="385" text-anchor="middle">.confinia.io → VM</text>
+  <path class="flow" d="M100,318 L100,334" marker-end="url(#arr)"/>
+
+  <!-- TIER 1 platform edge -->
+  <rect class="edge box" x="200" y="276" width="250" height="126"/>
+  <text class="wt"  x="215" y="298">TIER 1 · Platform edge</text>
+  <text class="wts" x="215" y="315">container: platform_caddy_1</text>
+  <text class="wts" x="215" y="331">user: debian · repo: confinia/platform</text>
+  <text class="wts" x="215" y="347">TLS / ACME · SHARED, multi-tenant</text>
+  <text class="wts" x="215" y="363">maps public hostname → local port</text>
+  <text class="wts" x="215" y="386">⚠ edit in the repo, never on the VM</text>
+  <path class="flow" d="M170,357 L198,357" marker-end="url(#arr)"/>
+
+  <!-- TIER 2 project router -->
+  <rect class="edge box" x="500" y="276" width="270" height="126"/>
+  <text class="wt"  x="515" y="298">TIER 2 · Project edge router</text>
+  <text class="wts" x="515" y="315">ecobuilding-edge_caddy_1 · :8020</text>
+  <text class="wts" x="515" y="331">user: ecobuilding · dir: caddy_server/</text>
+  <text class="wts" x="515" y="347">host-routing · /auth→KC · block_scanners</text>
+  <text class="wts" x="515" y="363">state: deploy/.active (blue | green)</text>
+  <text class="wts" x="515" y="386">apex→ACTIVE · staging.→CANDIDATE (flips)</text>
+
+  <path class="flow"  d="M450,320 L498,300" marker-end="url(#arr)"/>
+  <text class="sm" x="455" y="300">apex + staging.</text>
+  <text class="sm" x="455" y="312">→ :8020</text>
+
+  <!-- TIER 3 blue / green -->
+  <rect class="greenL box" x="820" y="276" width="350" height="52" stroke-width="2"/>
+  <text class="dk" x="835" y="297">TIER 3 · BLUE stack — :8021</text>
+  <text class="sm" x="835" y="315">caddy · api · frontend · otel     (ACTIVE = PROD)</text>
+
+  <rect class="blueL box" x="820" y="338" width="350" height="52" stroke-width="2"/>
+  <text class="dk" x="835" y="359">TIER 3 · GREEN stack — :8022</text>
+  <text class="sm" x="835" y="377">caddy · api · frontend · otel   (CANDIDATE = STAGING)</text>
+
+  <path class="flow"  d="M770,312 L818,302" marker-end="url(#arr)"/>
+  <text class="sm" x="775" y="300">active</text>
+  <path class="flowD" d="M770,352 L818,362" marker-end="url(#arr)"/>
+  <text class="sm" x="775" y="372">candidate</text>
+
+  <!-- sandbox path -->
+  <rect class="amberL box" x="500" y="430" width="670" height="56" stroke-width="2"/>
+  <text class="dk" x="515" y="452">SANDBOX stack — sandbox-caddy :8030   (fully isolated)</text>
+  <text class="sm" x="515" y="470">sandbox-api · sandbox-frontend · OWN Keycloak + db + realm (sandbox-ecobuilding)</text>
+  <path class="flow" d="M325,402 C325,470 360,458 498,458" marker-end="url(#arr)"/>
+  <text class="sm" x="240" y="440">sandbox.</text>
+  <text class="sm" x="240" y="452">→ :8030</text>
+
+  <!-- ============ 3 · shared services ============ -->
+  <text class="h2" x="30" y="524">3 · Shared services  (ecobuilding user · outside blue/green · survive promote)</text>
+  <rect class="grey box" x="30" y="536" width="1140" height="86"/>
+  <text class="dk" x="50" y="562">Keycloak :8181  (+ kc-db, realm “confinia”)</text>
+  <text class="dk" x="430" y="562">bdnb-rest :3005  (read mirror, rebuildable)</text>
+  <text class="dk" x="800" y="562">render :8040  (stateless PDF/3D map)</text>
+  <text class="dk" x="50" y="592">monitoring : prometheus :9090 · grafana :3000 · podman-exporter :9882</text>
+  <text class="sm" x="50" y="610">Prod blue+green SHARE these (incl. one prod DB) → promote is a router flip, no DB copy, instant rollback.</text>
+
+  <path class="flow" d="M995,390 C995,470 600,470 470,534" marker-end="url(#arr)"/>
+
+  <!-- ============ 4 · VM users ============ -->
+  <text class="h2" x="30" y="656">4 · VM users  (rootless podman, subuid-isolated — one per SaaS tenant)</text>
+  <rect class="grey box" x="30" y="668" width="1140" height="92"/>
+  <text class="dk"  x="50" y="694">debian</text>
+  <text class="lab" x="120" y="694">platform edge (Tier 1) + all sudo/root ops · owns confinia/platform</text>
+  <text class="dk"  x="50" y="718">ecobuilding</text>
+  <text class="lab" x="160" y="718">every app stack: edge router, blue, green, sandbox, auth, bdnb, render, monitoring</text>
+  <text class="dk"  x="50" y="742">confinia</text>
+  <text class="lab" x="130" y="742">legacy / empty — do NOT deploy here (old target, decommissioned)</text>
+  <text class="sm"  x="720" y="742">Other tenants reuse Tier 1: overwatch, mapmax, indoorequal, …</text>
+
+  <text class="sm" x="30" y="788">Ports: 8020 router · 8021 blue · 8022 green · 8030 sandbox · 8040 render · 8181 keycloak · 3005 bdnb-rest · 9090/3000 prom/grafana</text>
+  <text class="sm" x="30" y="806">Deploy scripts (user=ecobuilding): deploy.sh → candidate · promote.sh → flip · rollback.sh → flip back · sandbox.sh → PR env · test.sh → gate</text>
+</svg>
