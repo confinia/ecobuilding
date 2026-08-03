@@ -186,6 +186,27 @@ map.on("load", () => {
 });
 
 let marker = null;
+const MARKER_COLOR = "#2b7a4b";
+
+// Identifying pin (issue #113): drop it at a point immediately, then re-anchor
+// onto the target building's footprint centroid once its tile is loaded, so the
+// pin sits on top of the building instead of the off-centre BAN address point.
+// Same helper (ecoGeo.featuresCenter) and color as the PDF render for parity.
+function placeMarker(lon, lat) {
+  if (marker) marker.remove();
+  marker = new maplibregl.Marker({ color: MARKER_COLOR }).setLngLat([lon, lat]).addTo(map);
+}
+function anchorMarkerToBuilding(id) {
+  if (!marker || !id) return;
+  const tryAnchor = () => {
+    const feats = map.querySourceFeatures("bdnb",
+      { sourceLayer: "sql_statement", filter: ["==", ["get", "batiment_groupe_id"], id] });
+    const c = ecoGeo.featuresCenter(feats);
+    if (c) { marker.setLngLat(c); return true; }
+    return false;
+  };
+  if (!tryAnchor()) map.once("idle", tryAnchor);   // retry after the building's tile loads
+}
 
 // --- Search / autocomplete ------------------------------------------------------
 const input = document.getElementById("search");
@@ -229,11 +250,12 @@ async function select(s) {
 
   // Full address: fly to the building and open its record.
   map.flyTo({ center: [s.lon, s.lat], zoom: 17.5, pitch: 55, bearing: -18, duration: 2500 });
-  marker = new maplibregl.Marker({ color: "#2b7a4b" }).setLngLat([s.lon, s.lat]).addTo(map);
+  placeMarker(s.lon, s.lat);
   showPanel('<p class="hint">Chargement des données du bâtiment…</p>');
   try {
     const r = await fetch(`${API}/lookup?ban_id=${encodeURIComponent(s.ban_id)}&lon=${s.lon}&lat=${s.lat}`);
     const data = await r.json();
+    anchorMarkerToBuilding(data.buildings?.[0]?.bdnb_id);   // pin onto the building footprint
     renderPanel(s, data);
     track("lookup", data.buildings?.length ? "ok" : "no_building");
   } catch {
@@ -263,6 +285,8 @@ async function loadStreetview(lon, lat) {
 }
 
 async function openBuildingById(id, lon, lat) {
+  placeMarker(lon, lat);
+  anchorMarkerToBuilding(id);   // id is the tile's batiment_groupe_id -> pin on the footprint
   showPanel('<p class="hint">Chargement des données du bâtiment…</p>');
   try {
     const r = await fetch(`${API}/buildings/${encodeURIComponent(id)}?lon=${lon}&lat=${lat}`);

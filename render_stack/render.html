@@ -48,21 +48,24 @@ map.on('load', () => {
     paint: { 'fill-extrusion-color': DPE, 'fill-extrusion-height': height,
              'fill-extrusion-opacity': 1 } });
   // Once tiles are in, recenter the camera on the target building's footprint
-  // (the BAN address point leaves it off-centre). Fall back to the address
-  // point when the feature isn't in the loaded tiles.
+  // (the BAN address point leaves it off-centre) and drop a pin identifying it.
+  // Fall back to the address point when the feature isn't in the loaded tiles.
   map.once('idle', () => {
-    let recentred = false;
+    let center = null;
     if (bid) {
       const feats = map.querySourceFeatures('bdnb',
         { sourceLayer: 'sql_statement', filter: ['==', ['get', 'batiment_groupe_id'], bid] });
-      const c = ecoGeo.featuresCenter(feats);
-      if (c) {
-        map.setCenter(c);   // building footprint -> container centre
-        recentred = true;
-      }
+      center = ecoGeo.featuresCenter(feats);   // building footprint centre
     }
-    if (recentred) map.once('idle', () => { window.__ready = true; });
-    else window.__ready = true;
+    // Pin identifying the target building (issue #113): its tip sits on the
+    // footprint centroid, so the printed 3D map clearly points at the building.
+    new maplibregl.Marker({ color: '#2b7a4b' }).setLngLat(center || [lon, lat]).addTo(map);
+    if (center) {
+      map.setCenter(center);   // building footprint -> container centre
+      map.once('idle', () => { window.__ready = true; });
+    } else {
+      window.__ready = true;
+    }
   });
 });
 map.on('error', (e) => { window.__error = String((e && e.error) || e); });
