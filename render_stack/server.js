@@ -8,6 +8,18 @@ const puppeteer = require('puppeteer');
 const path = require('path');
 
 const app = express();
+
+// MapLibre 6.x is ESM-only and its tile-worker chunk MUST be served same-origin
+// (loading it from a CDN like esm.sh silently breaks the worker → the map never
+// fires load/idle). So we serve render.html + the vendored maplibre dist over
+// http from this same server, and puppeteer navigates to http://localhost, not
+// file://. render.html and geo.js live in __dirname; the dist ships in
+// node_modules via the maplibre-gl dependency.
+const MAPLIBRE_DIST = path.join(__dirname, 'node_modules', 'maplibre-gl', 'dist');
+app.use('/vendor/maplibre', express.static(MAPLIBRE_DIST));
+app.get('/render.html', (_req, res) => res.sendFile(path.join(__dirname, 'render.html')));
+app.get('/geo.js', (_req, res) => res.sendFile(path.join(__dirname, 'geo.js')));
+
 let browserP;
 function browser() {
   if (!browserP) browserP = puppeteer.launch({
@@ -27,7 +39,7 @@ app.get('/shot', async (req, res) => {
   const qs = allowed.filter(k => req.query[k] != null)
     .map(k => `${k}=${encodeURIComponent(req.query[k])}`).join('&');
   if (req.query.lon == null || req.query.lat == null) return res.status(400).send('lon/lat required');
-  const url = 'file://' + path.join(__dirname, 'render.html') + '?' + qs;
+  const url = 'http://127.0.0.1:8040/render.html?' + qs;   // same-origin (see MAPLIBRE_DIST note)
   let page;
   try {
     page = await (await browser()).newPage();
