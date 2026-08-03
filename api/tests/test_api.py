@@ -203,3 +203,32 @@ def test_building_map_disabled_returns_none(monkeypatch):
     import asyncio
     monkeypatch.setattr(main, "RENDER_URL", "")   # not wired -> no map, no error
     assert asyncio.run(main._building_map_png(2.3, 48.8, "bdnb-bg-X")) is None
+
+
+def test_building_map_enabled_returns_datauri(monkeypatch):
+    # When RENDER_URL is wired (as in prod), the render bytes are returned as a
+    # PNG data URI for embedding in the report's context page (#88).
+    import asyncio
+    import base64
+    import io
+
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new("RGB", (8, 8), "green").save(buf, "PNG")
+    png = buf.getvalue()
+
+    class _Resp:
+        content = png
+
+        def raise_for_status(self):
+            pass
+
+    async def _fake_get(url, params=None, timeout=None):
+        assert url == "http://render/shot" and params["bdnb_id"] == "bdnb-bg-X"
+        return _Resp()
+
+    monkeypatch.setattr(main, "RENDER_URL", "http://render/shot")
+    monkeypatch.setattr(main._client, "get", _fake_get)
+    out = asyncio.run(main._building_map_png(2.3, 48.8, "bdnb-bg-X"))
+    assert out.startswith("data:image/png;base64,")
+    assert base64.b64decode(out.split(",", 1)[1]) == png
