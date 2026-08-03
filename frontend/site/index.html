@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>EcoBuilding — la carte d'identité écologique de chaque bâtiment</title>
   <meta name="description" content="DPE, interdiction de location, risques naturels, potentiel solaire : toutes les données ouvertes d'un bâtiment français, en 3D.">
-  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+  <link rel="stylesheet" href="vendor/maplibre/maplibre-gl.css">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -42,8 +42,17 @@
     </footer>
   </aside>
 
-  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
   <script src="env.js"></script>
-  <script src="app.js"></script>
+  <!-- MapLibre 6.x is ESM-only and its tile-worker chunk must be served
+       same-origin (a CDN like esm.sh silently breaks the worker → the map never
+       loads). So we vendor the dist (vendor/maplibre/) and import it here,
+       expose the classic `maplibregl` global app.js expects, then boot app.js. -->
+  <script type="module">
+    import * as maplibregl from './vendor/maplibre/maplibre-gl.mjs';
+    window.maplibregl = maplibregl;
+    const s = document.createElement('script');
+    s.src = 'app.js';
+    document.body.appendChild(s);
+  </script>
 </body>
 </html>
