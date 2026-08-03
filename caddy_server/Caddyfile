@@ -11,7 +11,7 @@ http://ecobuilding.confinia.io {
 	reverse_proxy 127.0.0.1:8021
 }
 
-http://next.ecobuilding.confinia.io {
+http://staging.ecobuilding.confinia.io {
 	reverse_proxy 127.0.0.1:8022
 }
 

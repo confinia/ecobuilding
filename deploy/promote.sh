@@ -4,7 +4,7 @@
 # keeps running untouched -> ./deploy/rollback.sh is instant.
 set -eu
 
-HOST=confinia
+HOST=ecobuilding
 
 ssh "$HOST" 'bash -s' <<'EOF'
 set -eu

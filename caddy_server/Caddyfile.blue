@@ -1,4 +1,4 @@
-# ACTIVE = BLUE. prod -> blue stack (8021), next -> green stack (8022).
+# ACTIVE = BLUE. prod -> blue stack (8021), staging -> green stack (8022).
 # Installed as ./Caddyfile by deploy/promote.sh (or deploy.sh from .active).
 {
 	admin 127.0.0.1:2030
@@ -37,7 +37,7 @@ http://ecobuilding.confinia.io {
 	reverse_proxy 127.0.0.1:8021
 }
 
-http://next.ecobuilding.confinia.io {
+http://staging.ecobuilding.confinia.io {
 	log {
 		output stdout
 		format json
