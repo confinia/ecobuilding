@@ -28,6 +28,10 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
       OTEL_SERVICE_NAME: ecobuilding-api
       GEOIP_DB: /geoip/dbip-country-lite.mmdb
+      # 3D DPE building map in the PDF report via the headless render service
+      # (#88), reached over the host gateway like Keycloak/bdnb. Must be the
+      # full /shot endpoint (the API GETs it directly with lon/lat/... params).
+      RENDER_URL: http://host.containers.internal:8040/shot
       # Reach Keycloak internally over the shared network (see auth_stack).
       KC_ADMIN_BASE: http://host.containers.internal:8181/auth
       OIDC_JWKS_URL: http://host.containers.internal:8181/auth/realms/confinia/protocol/openid-connect/certs
