@@ -1,6 +1,9 @@
 # MOVE — relocate the EcoBuilding stack to a dedicated rootless user
 
-**Status: proposal for review. Nothing here has been applied.**
+**Status: ✅ APPLIED (2026-08-02).** The stack runs under the `ecobuilding` rootless
+user; `debian` is used only for sudo / the shared platform edge; the `confinia`
+user is legacy/empty. The old debian stack was kept for rollback then decommissioned.
+Kept for reference; see `STACK_ecobuilding.md` for the current topology.
 
 Goal: move the EcoBuilding stack on the VM from
 `/home/debian/projects/ecobuilding` (running under the shared `debian` user) to

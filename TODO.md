@@ -50,7 +50,7 @@ Status: `[ ]` todo · `[~]` in progress · `[x]` done
 
 ## Marketing / visibility
 
-- [ ] Pre-announce: add /lookup response cache (BDNB quota guard) — ~1h work
+- [x] Pre-announce: add /lookup response cache (BDNB quota guard) — done (`_cached_get_json`, TTL+LRU) + per-IP ANON_DAILY_CAP + friendly 429 page; launch guard cleared
 - [ ] Set launch success thresholds in writing (see BUSINESS.md §8 launch plan), then post
 - [ ] Show HN draft: "3D map of every French building's energy class (open data, solo side project)" — countdown framing
 - [ ] LinkedIn FR post (agencies/notaires angle: interdiction de location 2028/2034)
@@ -59,6 +59,25 @@ Status: `[ ]` todo · `[~]` in progress · `[x]` done
 - [ ] Publish the FPS demo publicly (HN, OSM community, r/openstreetmap, LinkedIn)
 - [ ] Write a technical blog post on the photosphere↔OSM pipeline
 - [ ] Present at a local OSM / geo meetup (SOTM-FR?)
+
+## 2026-08-03 session
+
+Product / infra shipped (see git history + closed PRs):
+- [x] MapLibre GL JS → **6.1.0**, vendored **same-origin** (esm.sh breaks the 6.x worker; served from `frontend/site/assets/maplibre/`) — PRs #103, #108. Dropped the map CDN. (memory: maplibre-pin-5-24)
+- [x] Fixed the blue/green **deploy pipeline** post-migration: `HOST` confinia→ecobuilding, `next`→`staging`, dropped the broken platform-append block — PR #106.
+- [x] **3D DPE map in the prod PDF report** (set `RENDER_URL`) — PR #110. DVF prices still OFF (no DVF service on the VM yet).
+- [~] **Marker on the target building** (web + PDF render), anchored on the footprint centroid — PR #114 (open, sandbox-validated). To finish: merge → deploy → **rebuild the shared render container** (render is shared, no blue/green).
+- [x] `STACK_ecobuilding.md` + `STACK_template.md` + `stack-architecture.svg` (deploy architecture, template for the next SaaS) — issue #115.
+
+Open deploy / infra (filed):
+- [ ] **GitHub Actions CI/CD** — self-hosted runner on the VM; branch→sandbox, merge→staging, promote (rule 14) — **#112**. Until then deploys use `deploy/*.sh` (rsync, break-glass).
+- [ ] **Dedicated staging stack + independent DB** (isolate from prod) — **#111**.
+- [ ] **Fix staging routing** — `staging.ecobuilding.confinia.io` is broken: the Tier-1 platform edge (repo `confinia/platform`) reverted a manual `next→staging` VM edit. Fix = PR to `confinia/platform` (see STACK_ecobuilding.md §10).
+- [ ] Add the `staging.` redirect URI to the live Keycloak `confinia` realm (staging login).
+
+Business / distribution (the priority — rule 10):
+- [x] **Launch readiness = GREEN** (cache guard cleared; product live + polished). LinkedIn/Show HN/OSM copy ready in LAUNCH.md — not yet posted.
+- [~] **Customer discovery** with warm contacts in **real-estate + diagnostic** (memory: warm-leads-realestate-diagnostic). First outreach sent: **Alice Galzin, Immovance Montpellier** (a.galzin@immovance.fr) with a fiche of her own agency (7 rue Frédéric Bazille). Capture replies: current tool/price · specific use moment · willingness-to-pay.
 
 ## Done
 

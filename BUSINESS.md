@@ -300,3 +300,24 @@ wildfire, water reserves, ZAN dashboards, BIM integration, and all public-procur
    (the verified distribution channel) — differentiate by 3D, don't compete on commodity PDFs.
 3. White-label BDNB map layers for small collectivités (⚠ collectivité WTP unproven; B2G sales
    effort conflicts with side-project constraint).
+
+---
+
+## 11. Progress log
+
+### 2026-08-03
+
+**Product state (live at https://ecobuilding.confinia.io):** 3D DPE map (MapLibre 6.1.0,
+BDNB tiles), free address lookup + per-building record, and a **per-address PDF fiche**
+(street view, 3D DPE map centred on the building with a marker, rental-ban deadline, risks,
+prices deep-link, traceability annex). No account, public JSON API. Free-tier guard in place
+(upstream cache + per-IP daily cap). Monetization still parked until a ≥10k€ signal (RULES §7).
+
+**Distribution move — customer discovery started (the priority, RULES §10).**
+Rather than lead with the cold public launch, using warm contacts in the two verified buyer
+personas (real-estate agents + **diagnostiqueurs** — the channel play #2 above). First outreach
+sent to **Alice Galzin, Immovance Montpellier**, with a fiche of her own agency for an instant
+accuracy check. Goal of each conversation: current tool/price, the specific moment they'd use it,
+and willingness-to-pay (per-fiche vs subscription). These answers, across ~5-6 chats, are the
+go/no-go on a paid tier — stronger signal than the launch. Public launch copy (LinkedIn/Show
+HN/OSM) is ready in LAUNCH.md and can follow once the messaging is validated.

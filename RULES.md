@@ -60,3 +60,12 @@
     it as a hyperlink to the issue/PR
     (https://github.com/confinia/ecobuilding/pull/103 or `/issues/N`), not bare
     text.
+14. **Deploy only via GitHub Actions** (rule set 2026-08-03): all deployments run
+    through GitHub Actions CI/CD — never manual `rsync`/`deploy.sh` (those are
+    reserved for maintenance / break-glass only). The pipeline mirrors code state:
+    - open or updated **PR on a branch** → auto-deploy to **sandbox**
+      (https://sandbox.ecobuilding.confinia.io);
+    - **PR merged to `main`** → auto-deploy to **staging** (the blue/green
+      candidate, https://staging.ecobuilding.confinia.io);
+    - **promote** → switch staging ↔ production so the change reaches end users
+      (https://ecobuilding.confinia.io).
