@@ -5,7 +5,7 @@
    - work happens on a **branch**, submitted as a **PR** referencing the issue
      (`Closes #N`);
    - merge → deploy to the candidate stack (`./deploy/deploy.sh`) → validate on
-     https://next.ecobuilding.confinia.io → `./deploy/promote.sh`.
+     https://staging.ecobuilding.confinia.io → `./deploy/promote.sh`.
    Direct commits to `main` are reserved for emergency production fixes
    (document them in an issue afterwards).
 2. Dev code lives in this repo (`confinia/ecobuilding`, private); Dockerfile +
@@ -40,3 +40,23 @@
     leads/community, talk to buyers, SEO, pricing). Engineering is a means, not
     the goal: flag when we are over-building features while demand/distribution
     actions sit undone.
+11. **Submit GitHub prose for approval first** (rule set 2026-08-03): any comment
+    or description posted to a GitHub issue or PR (issue/PR body, review comment,
+    reply, close comment) must be shown to the operator in full and approved
+    before it is submitted. Never post to GitHub without explicit validation.
+    Creating the issue/PR itself and code are fine; the prose that becomes public
+    is what needs sign-off.
+12. **Always link the environment** (rule set 2026-08-03): whenever a reply
+    mentions the sandbox, staging, or production environment, include the
+    hyperlink to the live SaaS app. The pre-prod host follows the code's state:
+    - production — https://ecobuilding.confinia.io (promoted, live)
+    - staging — https://staging.ecobuilding.confinia.io (code already merged on
+      `main`; the blue/green candidate validated before promote)
+    - sandbox — https://sandbox.ecobuilding.confinia.io (code on a branch / open
+      PR, validated before merge)
+    `next.ecobuilding.confinia.io` must not exist.
+13. **Hyperlink every issue/PR reference** (rule set 2026-08-03): whenever a reply
+    or document exposes a reference to a GitHub issue or PR (e.g. `#103`), render
+    it as a hyperlink to the issue/PR
+    (https://github.com/confinia/ecobuilding/pull/103 or `/issues/N`), not bare
+    text.

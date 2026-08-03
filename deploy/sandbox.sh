@@ -1,7 +1,7 @@
 #!/bin/bash
 # EcoBuilding SANDBOX (issue #90) — bring up the isolated sandbox stack and route
 # its hostnames through the platform edge. Idempotent; safe to re-run.
-#   ssh confinia 'cd ~/projects/ecobuilding && ./deploy/sandbox.sh'
+#   ssh ecobuilding 'cd ~/projects/ecobuilding && ./deploy/sandbox.sh'
 set -eu
 cd "$(dirname "$0")/.."
 S=sandbox_stack

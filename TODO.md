@@ -37,7 +37,7 @@ Status: `[ ]` todo · `[~]` in progress · `[x]` done
 ## Product / tech
 
 - [x] Minimal MapLibre 3D demo (2026-07-20: whole France, OpenFreeMap + fill-extrusion — https://ecobuilding.confinia.io)
-- [x] MVP deployed: frontend + versioned API (/api/v1/docs) + dedicated Grafana (/grafana) + blue/green staging (next.ecobuilding.confinia.io)
+- [x] MVP deployed: frontend + versioned API (/api/v1/docs) + dedicated Grafana (/grafana) + blue/green staging (staging.ecobuilding.confinia.io)
 - [ ] Evaluate OSM2World output quality vs plain MapLibre fill-extrusion for target buildings
 - [ ] Pipeline: OSM Simple Indoor Tagging → per-floor indoor rendering in MapLibre
 - [ ] Georeference existing photospheres against OSM indoor data for one showcase building

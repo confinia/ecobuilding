@@ -66,7 +66,7 @@ human presence. Model: **open-core** — a free open-data commons version
 
 - **Zero-downtime**: two complete blue/green stacks; deploys touch only the
   candidate; production switches only via `promote.sh` after manual validation
-  on next.ecobuilding.confinia.io; instant rollback (previous stack keeps
+  on staging.ecobuilding.confinia.io; instant rollback (previous stack keeps
   running); router config applied by graceful reload.
 - **Autonomy** (departure-ready checklist): self-serve payments + key
   auto-provisioning; lead auto-response; alerting (push, not dashboards);

@@ -1,16 +1,16 @@
 #!/bin/bash
 # EcoBuilding — deploy the current code to the CANDIDATE stack (the one NOT
 # serving production). Production stack is never touched: validate on
-# https://next.ecobuilding.confinia.io then run ./deploy/promote.sh.
+# https://staging.ecobuilding.confinia.io then run ./deploy/promote.sh.
 #
 # Model: two complete independent stacks from the same docker-compose.yml
 #   ecobuilding-blue  (entry 127.0.0.1:8021)
 #   ecobuilding-green (entry 127.0.0.1:8022)
 # plus the router (caddy_server/, project ecobuilding-edge, 127.0.0.1:8020)
-# which maps prod/next hostnames to the stacks. State: deploy/.active on VM.
+# which maps prod/staging hostnames to the stacks. State: deploy/.active on VM.
 set -eu
 
-HOST=confinia
+HOST=ecobuilding
 cd "$(dirname "$0")/.."
 SHA=$(git rev-parse --short HEAD 2>/dev/null || echo dev)
 
@@ -21,9 +21,10 @@ rsync -az --delete \
   --exclude caddy_server/Caddyfile --exclude data/ \
   ./ "$HOST:~/projects/ecobuilding/"
 
-# Upstream edge = platform repo (github.com/confinia/platform): its Caddyfile
-# already forwards ecobuilding.confinia.io -> 127.0.0.1:8020 (our router).
-# Only next. may be missing; ensured idempotently on the VM below.
+# Upstream edge = platform repo (github.com/confinia/platform), run by the
+# 'debian' user: its Caddyfile forwards both ecobuilding.confinia.io and
+# staging.ecobuilding.confinia.io -> 127.0.0.1:8020 (our router). Managed once,
+# out of band (needs sudo); this deploy does not touch it.
 
 echo "== remote: stacks"
 ssh "$HOST" 'bash -s' <<'EOF'
@@ -91,13 +92,10 @@ cp "caddy_server/Caddyfile.$ACTIVE" caddy_server/Caddyfile
 podman exec ecobuilding-edge_caddy_1 caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile 2>/dev/null \
   || podman restart ecobuilding-edge_caddy_1 >/dev/null
 
-# Upstream (platform) edge: prod host is already routed to 8020 by the
-# platform Caddyfile; ensure next. is too (idempotent append + reload).
-if ! grep -q "next.ecobuilding.confinia.io" ~/projects/platform/caddy/Caddyfile 2>/dev/null; then
-  printf '\n# next.ecobuilding — staging du routeur ecobuilding (ajout auto par le deploy ecobuilding)\nnext.ecobuilding.confinia.io {\n\treverse_proxy 127.0.0.1:8020\n}\n' >> ~/projects/platform/caddy/Caddyfile
-  podman exec platform_caddy_1 caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile 2>/dev/null \
-    || echo "   WARN: platform edge reload failed — next. will load on its next reload"
-fi
+# Upstream (platform) edge is managed separately under the 'debian' user (it
+# runs platform_caddy_1 and needs sudo): both ecobuilding.confinia.io and
+# staging.ecobuilding.confinia.io are routed there to 127.0.0.1:8020. This
+# deploy runs as the unprivileged 'ecobuilding' user and does NOT touch it.
 
 # Hard health gate on the candidate, via its local entry port.
 if [ "$CANDIDATE" = blue ]; then PORT=8021; else PORT=8022; fi
@@ -107,7 +105,7 @@ EOF
 
 echo "== public smoke (staging)"
 sleep 2
-curl -fsS -m 10 https://next.ecobuilding.confinia.io/api/v1/healthz && echo || echo "WARN: public staging check failed (main edge may be mid-churn)"
+curl -fsS -m 10 https://staging.ecobuilding.confinia.io/api/v1/healthz && echo || echo "WARN: public staging check failed (main edge may be mid-churn)"
 echo
-echo "Version $SHA is on the CANDIDATE stack: https://next.ecobuilding.confinia.io"
+echo "Version $SHA is on the CANDIDATE stack: https://staging.ecobuilding.confinia.io"
 echo "Validate it, then run:  ./deploy/promote.sh"
