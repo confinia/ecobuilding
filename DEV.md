@@ -18,7 +18,7 @@ Internet ──▶ MAIN edge caddy (confinia_caddy_1, owns 80/443, TLS, volatile
              loopback) — maps hostnames to stacks; PROMOTE = swap one config
              file (Caddyfile.blue|green) + graceful reload
                  ├── ecobuilding.confinia.io      ──▶ ACTIVE stack
-                 └── next.ecobuilding.confinia.io ──▶ CANDIDATE stack
+                 └── staging.ecobuilding.confinia.io ──▶ CANDIDATE stack
                         │
                         ▼ 127.0.0.1:8021 (blue) / 8022 (green)
              STACK caddy (stack_caddy/Caddyfile, single published port of the
@@ -40,7 +40,7 @@ Each stack (ecobuilding-blue, ecobuilding-green) is COMPLETE & independent:
 - **Upstream edge = the `platform` project** (github.com/confinia/platform,
   `~/projects/platform` on the VM): sole owner of 80/443 and certificates.
   Its Caddyfile contains our minimal contract block —
-  `ecobuilding.confinia.io, next.ecobuilding.confinia.io { reverse_proxy 127.0.0.1:8020 }` —
+  `ecobuilding.confinia.io, staging.ecobuilding.confinia.io { reverse_proxy 127.0.0.1:8020 }` —
   and nothing else of ours. All app routing lives in THIS repo (router + stack
   caddies). If the upstream block ever disappears (platform churn), symptom is
   TLS alert/502 on both hosts while `curl -H "Host: ecobuilding.confinia.io"
@@ -66,7 +66,7 @@ state recorded in `deploy/.active` on the VM (not in git, survives rsync).
 - `./deploy/deploy.sh` → builds fresh images, **fully recreates the CANDIDATE
   stack only** (the active one is never touched), ensures router + main-edge
   stanza, hard health gate on the candidate's local port.
-- **You validate on https://next.ecobuilding.confinia.io**, then
+- **You validate on https://staging.ecobuilding.confinia.io**, then
   `./deploy/promote.sh` → health-checks the candidate, copies the matching
   router Caddyfile, graceful reload. **The previous stack keeps running.**
 - `./deploy/rollback.sh` → same flip, back — instant (the old stack never
@@ -150,7 +150,7 @@ docker compose up --build          # then http://localhost:8011 / :8010/v1/docs
                                    # (create deploy/secrets.env from the .example first)
 
 # 1. deploy current code to the CANDIDATE stack — prod untouched
-./deploy/deploy.sh                 # -> https://next.ecobuilding.confinia.io
+./deploy/deploy.sh                 # -> https://staging.ecobuilding.confinia.io
 
 # 2. validate manually on next., then flip production to the candidate
 ./deploy/promote.sh                # -> https://ecobuilding.confinia.io

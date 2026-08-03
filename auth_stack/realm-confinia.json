@@ -39,17 +39,17 @@
       "baseUrl": "/",
       "redirectUris": [
         "https://ecobuilding.confinia.io/*",
-        "https://next.ecobuilding.confinia.io/*",
+        "https://staging.ecobuilding.confinia.io/*",
         "http://localhost:8011/*"
       ],
       "webOrigins": [
         "https://ecobuilding.confinia.io",
-        "https://next.ecobuilding.confinia.io",
+        "https://staging.ecobuilding.confinia.io",
         "http://localhost:8011"
       ],
       "attributes": {
         "pkce.code.challenge.method": "S256",
-        "post.logout.redirect.uris": "https://ecobuilding.confinia.io/*##https://next.ecobuilding.confinia.io/*##http://localhost:8011/*"
+        "post.logout.redirect.uris": "https://ecobuilding.confinia.io/*##https://staging.ecobuilding.confinia.io/*##http://localhost:8011/*"
       },
       "protocolMappers": [
         {

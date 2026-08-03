@@ -5,7 +5,7 @@
 # any host with podman/docker.
 #
 #   ./deploy/test.sh              # local (needs podman)
-#   ssh confinia 'cd ~/projects/ecobuilding && ./deploy/test.sh'
+#   ssh ecobuilding 'cd ~/projects/ecobuilding && ./deploy/test.sh'
 set -eu
 cd "$(dirname "$0")/../api"
 

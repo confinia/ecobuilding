@@ -4,7 +4,7 @@
 # refuse to route prod to a dead stack.
 set -eu
 
-HOST=confinia
+HOST=ecobuilding
 
 ssh "$HOST" 'bash -s' <<'EOF'
 set -eu
