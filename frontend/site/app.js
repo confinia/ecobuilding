@@ -359,9 +359,15 @@ function renderPanel(s, data) {
     ${b.cooling?.has_cooling ? `<h3>Climatisation</h3>
     ${kv("Générateur", b.cooling.generator_type)}
     ${kv("Ancienneté", b.cooling.generator_age)}` : ""}
+    ${data.groundwater?.available ? `<h3>Eau souterraine</h3>
+    ${kv("Profondeur de la nappe", data.groundwater.water_table_depth_m != null ? data.groundwater.water_table_depth_m + " m sous le sol" : null)}
+    ${kv("Piézomètre le plus proche", data.groundwater.station_distance_m != null ? `à ${data.groundwater.station_distance_m} m` + (data.groundwater.station_commune ? ` (${data.groundwater.station_commune})` : "") : null)}
+    ${kv("Mesuré le", data.groundwater.measured_on ? String(data.groundwater.measured_on).slice(0, 10) : null)}
+    <p class="hint">${data.groundwater.note || ""} ${data.groundwater.well_regulation || ""}</p>` : ""}
     <h3>Solaire</h3>
     ${kv("Favorable au solaire thermique", b.solar?.thermal_favourable === true ? "oui" : b.solar?.thermal_favourable === false ? "non" : null)}
     ${kv("Potentiel annuel", b.solar?.thermal_potential_kwh_y ? b.solar.thermal_potential_kwh_y + " kWh/an" : null)}
+    ${kv("Productible photovoltaïque", data.solar_pv?.yield_kwh_per_kwc_y ? Math.round(data.solar_pv.yield_kwh_per_kwc_y) + " kWh/an par kWc (PVGIS)" : null)}
     <p><a class="report-link" href="${API}/report/${encodeURIComponent(b.bdnb_id)}.pdf${data.query?.lon != null ? `?lon=${data.query.lon}&lat=${data.query.lat}` : ""}" target="_blank" rel="noopener">📄 Fiche PDF normalisée — gratuit (bêta)</a></p>
     <div id="streetview"></div>
     <p class="hint">ID BDNB : ${b.bdnb_id}</p>
