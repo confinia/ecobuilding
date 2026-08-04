@@ -69,3 +69,9 @@
       candidate, https://staging.ecobuilding.confinia.io);
     - **promote** → switch staging ↔ production so the change reaches end users
       (https://ecobuilding.confinia.io).
+15. **Keep ISSUES.md in sync** (rule set 2026-08-04): every working session that
+    creates or advances a GitHub issue or PR also updates the `ISSUES.md`
+    tracker in the same session — one row per issue with its lifecycle status
+    (filed → PR open → merged, on staging → promoted, in production → closed)
+    and where it can be checked (environment links per rule 12). Recently
+    shipped issues stay listed until promoted to production.
