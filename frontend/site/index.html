@@ -43,6 +43,9 @@
   </aside>
 
   <script src="env.js"></script>
+  <!-- Pure geometry helper (window.ecoGeo.featuresCenter), shared with the PDF
+       render (render_stack/geo.js) so the building marker anchors identically. -->
+  <script src="geo.js"></script>
   <!-- MapLibre 6.x is ESM-only and its tile-worker chunk must be served
        same-origin (a CDN like esm.sh silently breaks the worker → the map never
        loads). So we vendor the dist (assets/maplibre/) and import it here,
