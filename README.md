@@ -13,6 +13,7 @@ solar potential — all from open data (BDNB/CSTB, BAN, Géorisques).
 | Doc | Purpose |
 |---|---|
 | [DEV.md](DEV.md) | Architecture, deploy, observability, conventions |
+| [DATA.md](DATA.md) | Datasets: how each is loaded, where it lives, how it is updated |
 | [BUSINESS.md](BUSINESS.md) | Market analysis, strategy, decision log |
 | [TODO.md](TODO.md) | Actions (business + product) |
 
