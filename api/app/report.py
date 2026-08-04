@@ -74,7 +74,7 @@ def _prices_html(p: dict | None) -> str:
         em = f"{_eur(s['eur_m2'])} €/m²" if s.get("eur_m2") else "—"
         rows += (f'<tr><td>{(s.get("date") or "")[:10]}</td><td>{s.get("type_local") or "—"}</td>'
                  f'<td>{surf}</td><td>{_eur(s.get("valeur_fonciere"))} €</td><td>{em}</td></tr>')
-    sales_tbl = (f'<table><tr><td class="k">Date</td><td class="k">Type</td><td class="k">Surface</td>'
+    sales_tbl = (f'<table class="sales"><tr><td class="k">Date</td><td class="k">Type</td><td class="k">Surface</td>'
                  f'<td class="k">Montant</td><td class="k">€/m²</td></tr>{rows}</table>'
                  if rows else '<p class="meta">Aucune vente récente enregistrée sur la parcelle.</p>')
     return (f'<h2>Prix de vente (DVF)</h2>'
@@ -153,6 +153,22 @@ def _traceability_annex(data: dict, photos: list | None) -> str:
                 "DVF (DGFiP / Etalab)", f"Fenêtre {DVF_WINDOW} · Licence Ouverte 2.0",
                 "indisponible : l'Alsace-Moselle et Mayotte ne sont pas couvertes par la DVF",
                 "—", dvf_url)))
+    gw = data.get("groundwater") or {}
+    if gw.get("available"):
+        cards.append(("Eau souterraine (nappe)", _prov(
+            "Hub'Eau piézométrie — ADES (BRGM / OFB)", "Licence Ouverte",
+            f"code BSS {gw.get('station_code_bss')} · station à {gw.get('station_distance_m')} m du bâtiment",
+            (gw.get("measured_on") or "—")[:10] + " (dernière mesure)",
+            "https://hubeau.eaufrance.fr/api/v1/niveaux_nappes/chroniques"
+            f"?code_bss={quote(gw.get('station_code_bss') or '')}&size=1&sort=desc")))
+    pv = data.get("solar_pv") or {}
+    if pv and lon is not None:
+        cards.append(("Solaire photovoltaïque", _prov(
+            "PVGIS v5.2 (Joint Research Centre, Commission européenne)",
+            "© Union européenne", f"lat/lon = {lat}, {lon} · {pv.get('assumptions') or ''}",
+            "base climatique PVGIS-SARAH2",
+            f"https://re.jrc.ec.europa.eu/api/v5_2/PVcalc?lat={lat}&lon={lon}"
+            "&peakpower=1&loss=14&optimalinclination=1&outputformat=json")))
     if photos:
         ids = ", ".join(str(p["id"])[:8] for p in photos[:3])
         dref = next((str(p["date"])[:10] for p in photos if p.get("date")), "voir la visionneuse")
@@ -187,12 +203,41 @@ sans avoir à faire confiance à EcoBuilding. Généré le {now}.</p>
 """
 
 
+def _groundwater_html(gw: dict) -> str:
+    """Water-table section (#119). Honest-data: measurement is at the nearest
+    piezometer, never presented as on-parcel; absent block -> no section."""
+    if not gw:
+        return ""
+    if not gw.get("available"):
+        return f'<h2>Eau souterraine</h2><p class="meta">{gw.get("note") or "Donnée indisponible."}</p>'
+    station = gw.get("station_code_bss") or "—"
+    if gw.get("station_commune"):
+        station += f" ({gw['station_commune']})"
+    dist = gw.get("station_distance_m")
+    return f"""
+<h2>Eau souterraine</h2>
+<table>
+  {_row("Profondeur de la nappe", gw.get("water_table_depth_m"), " m sous le sol")}
+  {_row("Niveau piézométrique", gw.get("level_masl"), " m NGF")}
+  {_row("Mesuré le", (gw.get("measured_on") or "")[:10] or None)}
+  {_row("Piézomètre le plus proche", station)}
+  {_row("Distance du bâtiment", dist, " m")}
+</table>
+<p class="meta">{gw.get("note") or ""} {gw.get("well_regulation") or ""}</p>"""
+
+
 def build_report_pdf(data: dict, photos: list | None = None, map_img: str | None = None) -> bytes:
+    return HTML(string=_report_html(data, photos, map_img)).write_pdf()
+
+
+def _report_html(data: dict, photos: list | None = None, map_img: str | None = None) -> str:
     b = (data.get("buildings") or [{}])[0]
     e = b.get("energy") or {}
     ban = e.get("rental_ban") or {}
     risks = data.get("area_risks") or {}
     solar = b.get("solar") or {}
+    gw = data.get("groundwater") or {}
+    pv = data.get("solar_pv") or {}
     cls = (e.get("dpe_class") or "?").upper()
     color = DPE_COLORS.get(cls, "#999")
     now = datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M UTC")
@@ -227,9 +272,14 @@ def build_report_pdf(data: dict, photos: list | None = None, map_img: str | None
   .ban.ok {{ background: #e8f5e9; color: #2b7a4b; }}
   h2 {{ font-size: 10pt; text-transform: uppercase; letter-spacing: .05em; color: #2b7a4b;
        border-bottom: 1px solid #ddd; padding-bottom: 2pt; margin: 14pt 0 6pt; }}
-  table {{ width: 100%; border-collapse: collapse; }}
-  td {{ padding: 3pt 4pt; border-bottom: 0.5pt dashed #eee; vertical-align: top; }}
+  table {{ width: 100%; border-collapse: collapse; table-layout: fixed; }}
+  td {{ padding: 3pt 4pt; border-bottom: 0.5pt dashed #eee; vertical-align: top;
+       overflow-wrap: anywhere; word-break: break-word; }}
   td.k {{ color: #666; width: 45%; }}
+  /* Multi-column tables: the 45% key width is per-cell and would overflow a
+     fixed layout — let the auto algorithm size them. */
+  table.sales {{ table-layout: auto; }}
+  table.sales td.k {{ width: auto; }}
   footer {{ margin-top: 18pt; font-size: 7.5pt; color: #888; border-top: 0.5pt solid #ccc; padding-top: 6pt; }}
   .labels {{ margin: 8pt 0 2pt; }}
   .labels td {{ width: 50%; border: none; padding: 0 8pt 0 0; }}
@@ -277,11 +327,16 @@ def build_report_pdf(data: dict, photos: list | None = None, map_img: str | None
   {_row("Rapport Géorisques", risks.get("report_url"))}
 </table>
 
+{_groundwater_html(gw)}
+
 <h2>Solaire</h2>
 <table>
   {_row("Favorable au solaire thermique", {True: "oui", False: "non"}.get(solar.get("thermal_favourable")))}
   {_row("Potentiel annuel estimé", solar.get("thermal_potential_kwh_y"), " kWh/an")}
+  {_row("Productible photovoltaïque (PVGIS)", round(pv["yield_kwh_per_kwc_y"]) if pv.get("yield_kwh_per_kwc_y") else None, " kWh/an par kWc installé")}
+  {_row("Irradiation (inclinaison optimale)", round(pv["irradiation_kwh_m2_y"]) if pv.get("irradiation_kwh_m2_y") else None, " kWh/m²/an")}
 </table>
+{f'<p class="meta">{pv["assumptions"]}</p>' if pv.get("assumptions") else ""}
 
 {_prices_html(data.get("prices"))}
 
@@ -294,7 +349,7 @@ def build_report_pdf(data: dict, photos: list | None = None, map_img: str | None
 {_context_page(data, photos, map_img)}
 {_traceability_annex(data, photos)}
 """
-    return HTML(string=html).write_pdf()
+    return html
 
 
 def _context_page(data: dict, photos: list | None, map_img: str | None = None) -> str:

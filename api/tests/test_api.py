@@ -1,5 +1,6 @@
 """Hermetic tests for the existing public API (no network calls)."""
 
+import asyncio
 import json
 
 import pytest
@@ -125,6 +126,106 @@ def test_report_pdf_with_prices():
     from app.report import build_report_pdf
     pdf = build_report_pdf({**BUILDING_FIXTURE, "prices": PRICES_FIXTURE})
     assert pdf.startswith(b"%PDF") and len(pdf) > 5000
+
+
+# --- Groundwater + solar PV (issue #119) --------------------------------------
+GW_FIXTURE = {
+    "available": True, "station_code_bss": "01837A0096/F2",
+    "station_commune": "Paris 13e Arrondissement", "station_distance_m": 740,
+    "water_table_depth_m": 0.39, "level_masl": 38.06, "measured_on": "2026-08-01",
+    "note": "Profondeur mesurée au piézomètre le plus proche, pas sur la parcelle.",
+    "well_regulation": "Déclaration en mairie (décret n° 2008-652).",
+}
+PV_FIXTURE = {
+    "yield_kwh_per_kwc_y": 1146.21, "irradiation_kwh_m2_y": 1432.37,
+    "optimal_tilt_deg": 39,
+    "assumptions": "1 kWc, pertes système 14 %, inclinaison fixe optimale (PVGIS v5.2)",
+}
+
+
+def _route_fake(routes):
+    """Fake _cached_get_json dispatching on URL substring."""
+    async def fake(url, params, ttl):
+        for frag, resp in routes.items():
+            if frag in url:
+                if isinstance(resp, Exception):
+                    raise resp
+                return resp
+        raise AssertionError(f"unexpected upstream call: {url}")
+    return fake
+
+
+def test_groundwater_picks_nearest_active_station(monkeypatch):
+    stations = {"data": [
+        {"code_bss": "FAR/1", "x": 2.45, "y": 48.95, "nom_commune": "Loin"},
+        {"code_bss": "NEAR/1", "x": 2.351, "y": 48.851, "nom_commune": "Près"},
+    ]}
+    chron = {"data": [{"profondeur_nappe": 3.2, "niveau_nappe_eau": 30.1,
+                       "date_mesure": "2026-08-01"}]}
+    monkeypatch.setattr(main, "_cached_get_json", _route_fake({
+        "niveaux_nappes/stations": stations, "niveaux_nappes/chroniques": chron}))
+    gw = asyncio.run(main._groundwater(2.35, 48.85))
+    assert gw["available"] is True
+    assert gw["station_code_bss"] == "NEAR/1"       # nearest wins
+    assert gw["water_table_depth_m"] == 3.2
+    assert gw["station_distance_m"] < 200            # honest distance, in metres
+
+
+def test_groundwater_honest_when_no_active_station(monkeypatch):
+    monkeypatch.setattr(main, "_cached_get_json",
+                        _route_fake({"niveaux_nappes/stations": {"data": []}}))
+    gw = asyncio.run(main._groundwater(2.35, 48.85))
+    assert gw["available"] is False and "piézomètre" in gw["note"]
+
+
+def test_solar_pv_block(monkeypatch):
+    pvgis = {"inputs": {"mounting_system": {"fixed": {"slope": {"value": 39, "optimal": True}}}},
+             "outputs": {"totals": {"fixed": {"E_y": 1146.21, "H(i)_y": 1432.37}}}}
+    monkeypatch.setattr(main, "_cached_get_json", _route_fake({"PVcalc": pvgis}))
+    pv = asyncio.run(main._solar_pv(2.35, 48.85))
+    assert pv["yield_kwh_per_kwc_y"] == 1146.21 and pv["optimal_tilt_deg"] == 39
+
+
+def test_building_includes_water_and_pv_and_degrades(monkeypatch):
+    """A Hub'Eau/PVGIS failure never breaks the building record (#119)."""
+    async def fake(url, params, ttl):
+        if "PVcalc" in url or "niveaux_nappes" in url:
+            raise RuntimeError("upstream down")
+        return [{"batiment_groupe_id": "bdnb-bg-X", "libelle_adr_principale_ban": "1 rue X"}]
+    async def fake_risks(lon, lat): return {}
+    monkeypatch.setattr(main, "_cached_get_json", fake)
+    monkeypatch.setattr(main, "_area_risks", fake_risks)
+    monkeypatch.setattr(main, "DVF_RPC_URL", "")
+    body = client.get("/v1/buildings/bdnb-bg-X", params={"lon": 2.35, "lat": 48.85}).json()
+    assert body["buildings"][0]["bdnb_id"] == "bdnb-bg-X"
+    assert body["groundwater"] is None and body["solar_pv"] is None
+    assert not any("Hub'Eau" in s or "PVGIS" in s for s in body["sources"])
+
+
+def test_groundwater_html_honest_wording():
+    from app.report import _groundwater_html
+    h = _groundwater_html(GW_FIXTURE)
+    assert "0.39" in h and "740" in h and "pas sur la parcelle" in h
+    assert _groundwater_html({}) == ""
+
+
+def test_report_pdf_with_water_and_pv():
+    from app.report import build_report_pdf
+    pdf = build_report_pdf({**BUILDING_FIXTURE, "groundwater": GW_FIXTURE,
+                            "solar_pv": PV_FIXTURE})
+    assert pdf.startswith(b"%PDF") and len(pdf) > 5000
+
+
+def test_report_tables_wrap_long_values():
+    """Long unbroken values (Géorisques URL, risk lists) must wrap, not run off
+    the page edge (reported on the prod fiche, Tournefeuille)."""
+    from app.report import _report_html
+    long_url = "https://www.georisques.gouv.fr/mes-risques/connaitre?" + "x" * 300
+    html = _report_html({**BUILDING_FIXTURE,
+                         "area_risks": {**BUILDING_FIXTURE["area_risks"], "report_url": long_url}})
+    style = html.split("</style>")[0]
+    assert "table-layout: fixed" in style and "overflow-wrap" in style
+    assert long_url in html
 
 
 # --- Traceability annex (issue #93) ------------------------------------------
