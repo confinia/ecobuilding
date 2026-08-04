@@ -10,7 +10,9 @@ Data sources (all open, keyless):
   - Géorisques (georisques.gouv.fr)   — natural/technological risks, Licence Ouverte
 """
 
+import asyncio
 import logging
+import math
 import os
 import time
 from collections import OrderedDict
@@ -38,6 +40,13 @@ DVF_RPC_URL = os.environ.get("DVF_RPC_URL", "")
 # the render service is wired; when set, the report shows the rendered building.
 RENDER_URL = os.environ.get("RENDER_URL", "")
 GEORISQUES_URL = "https://georisques.gouv.fr/api/v1/resultats_rapport_risque"
+# Groundwater (#119): Hub'Eau piezometry (ADES/BRGM) — nearest active station's
+# water-table depth. Keyless, Licence Ouverte.
+HUBEAU_STATIONS_URL = "https://hubeau.eaufrance.fr/api/v1/niveaux_nappes/stations"
+HUBEAU_CHRONIQUES_URL = "https://hubeau.eaufrance.fr/api/v1/niveaux_nappes/chroniques"
+# Solar PV (#119): PVGIS (EU JRC) — yearly yield per kWc at the location.
+# Keyless, Europe-wide (reusable for the country-expansion work, #118).
+PVGIS_URL = "https://re.jrc.ec.europa.eu/api/v5_2/PVcalc"
 
 # Rental-ban calendar, loi Climat et Résilience (verified 2026-07-20).
 DPE_BAN_DATES = {"G": "2025-01-01", "F": "2028-01-01", "E": "2034-01-01"}
@@ -376,6 +385,87 @@ async def _area_risks(lon, lat):
         return None
 
 
+def _haversine_m(lon1, lat1, lon2, lat2) -> float:
+    r = 6371000.0
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    a = (math.sin((p2 - p1) / 2) ** 2
+         + math.cos(p1) * math.cos(p2) * math.sin(math.radians(lon2 - lon1) / 2) ** 2)
+    return 2 * r * math.asin(math.sqrt(a))
+
+
+async def _groundwater(lon, lat):
+    """Water-table block (#119): nearest ACTIVE piezometer (Hub'Eau niveaux_nappes,
+    ADES/BRGM) + its latest measured depth. Honest-data: the measurement is at a
+    station, not on the parcel — the station distance is always returned and the
+    depth is never interpolated. None on failure so a Hub'Eau hiccup never breaks
+    a building record."""
+    if lon is None or lat is None:
+        return None
+    try:
+        d = 0.15  # ~11-17 km search box around the building
+        st = await _cached_get_json(HUBEAU_STATIONS_URL, {
+            "bbox": f"{lon - d},{lat - d},{lon + d},{lat + d}",
+            # Only stations still in service with a real history: central Paris
+            # e.g. holds 1300+ piezometers of which almost all are historical.
+            "date_recherche": time.strftime("%Y-%m-%d"),
+            "nb_mesures_piezo_min": "50",
+            "size": "200", "format": "json"}, ttl=86400)
+        stations = [s for s in (st.get("data") or [])
+                    if s.get("x") is not None and s.get("y") is not None]
+        if not stations:
+            return {"available": False,
+                    "note": "Aucun piézomètre actif à proximité (réseau Hub'Eau/ADES)"}
+        near = min(stations, key=lambda s: _haversine_m(lon, lat, s["x"], s["y"]))
+        chron = await _cached_get_json(HUBEAU_CHRONIQUES_URL, {
+            "code_bss": near["code_bss"], "size": "1", "sort": "desc",
+            "format": "json"}, ttl=86400)
+        m = (chron.get("data") or [{}])[0]
+        return {
+            "available": True,
+            "station_code_bss": near.get("code_bss"),
+            "station_commune": near.get("nom_commune"),
+            "station_distance_m": round(_haversine_m(lon, lat, near["x"], near["y"])),
+            "water_table_depth_m": m.get("profondeur_nappe"),
+            "level_masl": m.get("niveau_nappe_eau"),
+            "measured_on": m.get("date_mesure"),
+            "note": ("Profondeur mesurée au piézomètre le plus proche, pas sur la "
+                     "parcelle: la nappe varie localement."),
+            "well_regulation": ("Tout puits ou forage à usage domestique (< 1000 m³/an) "
+                                "doit être déclaré en mairie (décret n° 2008-652)."),
+        }
+    except Exception as e:
+        log.warning("Hub'Eau groundwater failed for %s,%s: %s", lon, lat, e)
+        return None
+
+
+async def _solar_pv(lon, lat):
+    """PV yield block (#119): PVGIS (EU JRC, keyless) — yearly production of a
+    1 kWc system at optimal fixed tilt, plus plane-of-array irradiation. None on
+    failure, same graceful pattern as DVF."""
+    if lon is None or lat is None:
+        return None
+    try:
+        pv = await _cached_get_json(PVGIS_URL, {
+            "lat": round(lat, 4), "lon": round(lon, 4), "peakpower": "1",
+            "loss": "14", "optimalinclination": "1", "outputformat": "json"},
+            ttl=86400)
+        tot = ((pv.get("outputs") or {}).get("totals") or {}).get("fixed") or {}
+        if tot.get("E_y") is None:
+            return None
+        angle = ((((pv.get("inputs") or {}).get("mounting_system") or {})
+                  .get("fixed") or {}).get("slope") or {}).get("value")
+        return {
+            "yield_kwh_per_kwc_y": tot.get("E_y"),
+            "irradiation_kwh_m2_y": tot.get("H(i)_y"),
+            "optimal_tilt_deg": angle,
+            "assumptions": ("1 kWc, pertes système 14 %, inclinaison fixe optimale "
+                            "(PVGIS v5.2)"),
+        }
+    except Exception as e:
+        log.warning("PVGIS failed for %s,%s: %s", lon, lat, e)
+        return None
+
+
 async def _do_lookup(q, ban_id, address, lon, lat):
     rows = await _cached_get_json(
         BDNB_URL, {"cle_interop_adr": f"eq.{ban_id}", "limit": "5"}, ttl=86400
@@ -384,18 +474,26 @@ async def _do_lookup(q, ban_id, address, lon, lat):
         log.warning("BDNB error: %s", rows)
         rows = []
 
-    risks = await _area_risks(lon, lat)
+    risks, groundwater, solar_pv = await asyncio.gather(
+        _area_risks(lon, lat), _groundwater(lon, lat), _solar_pv(lon, lat))
 
     M_LOOKUPS.add(1, {"status": "ok" if rows else "no_building"})
+    sources = [
+        "BDNB (CSTB) — Licence Ouverte v2.0",
+        "BAN — Licence Ouverte",
+        "Géorisques — Licence Ouverte",
+    ]
+    if groundwater:
+        sources.append("Hub'Eau piézométrie (ADES/BRGM) — Licence Ouverte")
+    if solar_pv:
+        sources.append("PVGIS (JRC) — © Union européenne")
     return {
         "query": {"q": q, "ban_id": ban_id, "address": address, "lon": lon, "lat": lat},
         "buildings": [_normalize_building(r) for r in rows],
         "area_risks": risks,
-        "sources": [
-            "BDNB (CSTB) — Licence Ouverte v2.0",
-            "BAN — Licence Ouverte",
-            "Géorisques — Licence Ouverte",
-        ],
+        "groundwater": groundwater,
+        "solar_pv": solar_pv,
+        "sources": sources,
     }
 
 
@@ -453,14 +551,22 @@ async def building(
         raise HTTPException(404, "Unknown building id")
     row = rows[0]
     M_LOOKUPS.add(1, {"status": "by_id"})
-    prices = await _dvf_prices(bdnb_id)
+    prices, risks, groundwater, solar_pv = await asyncio.gather(
+        _dvf_prices(bdnb_id), _area_risks(lon, lat),
+        _groundwater(lon, lat), _solar_pv(lon, lat))
     sources = ["BDNB (CSTB) — Licence Ouverte v2.0", "Géorisques — Licence Ouverte"]
     if prices:
         sources.append("DVF (DGFiP) / Etalab — Licence Ouverte")
+    if groundwater:
+        sources.append("Hub'Eau piézométrie (ADES/BRGM) — Licence Ouverte")
+    if solar_pv:
+        sources.append("PVGIS (JRC) — © Union européenne")
     return {
         "query": {"bdnb_id": bdnb_id, "address": row.get("libelle_adr_principale_ban"), "lon": lon, "lat": lat},
         "buildings": [_normalize_building(row)],
-        "area_risks": await _area_risks(lon, lat),
+        "area_risks": risks,
+        "groundwater": groundwater,
+        "solar_pv": solar_pv,
         "prices": prices,
         "sources": sources,
     }
