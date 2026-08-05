@@ -407,7 +407,10 @@ async def _groundwater(lon, lat):
             "bbox": f"{lon - d},{lat - d},{lon + d},{lat + d}",
             # Only stations still in service with a real history: central Paris
             # e.g. holds 1300+ piezometers of which almost all are historical.
-            "date_recherche": time.strftime("%Y-%m-%d"),
+            # "In service" = debut <= date <= fin, and fin lags weeks behind the
+            # last real measurement — asking for "today" excludes everything, so
+            # ask for "active 60 days ago" (verified live on Hub'Eau, #119).
+            "date_recherche": time.strftime("%Y-%m-%d", time.gmtime(time.time() - 60 * 86400)),
             "nb_mesures_piezo_min": "50",
             "size": "200", "format": "json"}, ttl=86400)
         stations = [s for s in (st.get("data") or [])
