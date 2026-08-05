@@ -143,9 +143,11 @@ PV_FIXTURE = {
 }
 
 
-def _route_fake(routes):
+def _route_fake(routes, calls=None):
     """Fake _cached_get_json dispatching on URL substring."""
     async def fake(url, params, ttl):
+        if calls is not None:
+            calls.append((url, params))
         for frag, resp in routes.items():
             if frag in url:
                 if isinstance(resp, Exception):
@@ -162,9 +164,15 @@ def test_groundwater_picks_nearest_active_station(monkeypatch):
     ]}
     chron = {"data": [{"profondeur_nappe": 3.2, "niveau_nappe_eau": 30.1,
                        "date_mesure": "2026-08-01"}]}
+    calls = []
     monkeypatch.setattr(main, "_cached_get_json", _route_fake({
-        "niveaux_nappes/stations": stations, "niveaux_nappes/chroniques": chron}))
+        "niveaux_nappes/stations": stations, "niveaux_nappes/chroniques": chron}, calls))
     gw = asyncio.run(main._groundwater(2.35, 48.85))
+    # Hub'Eau's "in service at date" lags weeks behind reality: asking for
+    # today's date returns zero stations everywhere — the filter must look back.
+    import time as _time
+    asked = [p["date_recherche"] for u, p in calls if "stations" in u][0]
+    assert asked < _time.strftime("%Y-%m-%d", _time.gmtime(_time.time() - 30 * 86400))
     assert gw["available"] is True
     assert gw["station_code_bss"] == "NEAR/1"       # nearest wins
     assert gw["water_table_depth_m"] == 3.2
