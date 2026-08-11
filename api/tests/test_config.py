@@ -37,9 +37,21 @@ def test_grafana_alerting_provisioned_as_code():
 
 @needs_repo
 def test_keycloak_email_is_code():
+    """Keycloak email as code, two versioned layers: realm-confinia.json is the
+    SAFE bootstrap (SMTP sans password, verifyEmail off — a fresh import can
+    never strand registrations), kc-smtp.sh is the reconciler that injects the
+    secret and flips verifyEmail once the relay accepts the creds."""
+    import json
+    realm = json.loads((ROOT / "auth_stack/realm-confinia.json").read_text())
+    smtp = realm.get("smtpServer") or {}
+    assert smtp.get("host") == "ssl0.ovh.net" and smtp.get("from") == "alert@confinia.io"
+    assert "password" not in smtp              # secrets never in git
+    assert realm.get("verifyEmail") is False   # safe bootstrap; script promotes
+    assert realm.get("registrationAllowed") is True
     sh = (ROOT / "deploy/kc-smtp.sh").read_text()
     assert "verifyEmail=true" in sh            # registration confirmation flow
     assert "smtpServer.password=$SMTP_PASSWORD" in sh  # creds from secrets.env
+    assert "pre-flight" in sh.lower()          # never enabled with bad creds
     deploy = (ROOT / "deploy/deploy.sh").read_text()
     assert "kc-smtp.sh" in deploy              # applied on every deploy
     assert "set -a; . deploy/secrets.env" in deploy  # compose substitution source
