@@ -21,7 +21,7 @@ Last updated: 2026-08-05 (post-promote).
 
 | Issue | Status | Next step |
 |---|---|---|
-| [#128](https://github.com/confinia/ecobuilding/issues/128) Email via alert@confinia.io (Keycloak verify + Grafana alerts) | Filed 2026-08-05; constraint added: Grafana setup fully as code (provisioned alerting, no UI click-ops) | Settle the SMTP relay + SPF/DKIM first; creds go in `deploy/secrets.env` |
+| [#128](https://github.com/confinia/ecobuilding/issues/128) Email via alert@confinia.io (Keycloak verify + Grafana alerts) | Relay picked: OVH MX Plan (`ssl0.ovh.net:587`, SPF already valid). Implemented as code on `feat/smtp-email` (Grafana SMTP env + provisioned contact point/policy/rule, `kc-smtp.sh` for the realm, config tests). **Blocked: SMTP auth 535** — mailbox password to fix in the OVH manager | Fix creds → rerun the VM smtp test → PR → deploy → promote |
 | [#125](https://github.com/confinia/ecobuilding/issues/125) Hub'Eau date_recherche lag excluded all stations | **In production** (PR [#126](https://github.com/confinia/ecobuilding/pull/126), promoted 2026-08-05) | — |
 | [#122](https://github.com/confinia/ecobuilding/issues/122) ISSUES.md tracker + rule 15 | **Merged** (PR [#124](https://github.com/confinia/ecobuilding/pull/124)) — docs-only | — |
 | [#121](https://github.com/confinia/ecobuilding/issues/121) PDF text clipped at page edge | **In production** (PR [#123](https://github.com/confinia/ecobuilding/pull/123), promoted 2026-08-05; verified on the Tournefeuille fiche) | — |
