@@ -38,6 +38,12 @@ if [ ! -f deploy/secrets.env ]; then
 fi
 systemctl --user is-active --quiet podman.socket || systemctl --user enable --now podman.socket
 
+# secrets.env is shell-sourced: every line must be KEY=single-token (no spaces,
+# no quotes). Fail fast with LINE NUMBERS ONLY — never echo values (a malformed
+# SMTP_PASSWORD once aborted mid-deploy and leaked a fragment to the terminal).
+BAD=$(grep -vnE '^([A-Za-z_][A-Za-z_0-9]*=[^ "'"'"']*|#.*)$|^$' deploy/secrets.env | cut -d: -f1 | tr '\n' ' ')
+[ -z "$BAD" ] || { echo "ERROR: deploy/secrets.env malformed at line(s): $BAD (values must be single tokens, no spaces/quotes)"; exit 1; }
+
 # Export the secrets so compose files can substitute ${SMTP_*} etc. (#128).
 set -a; . deploy/secrets.env; set +a
 
