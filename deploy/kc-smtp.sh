@@ -14,6 +14,33 @@ if [ -z "${SMTP_HOST:-}" ] || [ -z "${SMTP_PASSWORD:-}" ]; then
   exit 0
 fi
 
+# Pre-flight: never enable verifyEmail with creds the relay rejects — that
+# would strand new registrations behind a mail that can't be sent (#128).
+if ! python3 - <<'PY'
+import os, smtplib, ssl, sys
+env = {}
+for line in open("deploy/secrets.env"):
+    if "=" in line and not line.startswith("#"):
+        k, _, v = line.strip().partition("=")
+        env[k] = v
+try:
+    port = int(env.get("SMTP_PORT", "587"))
+    if port == 465:
+        s = smtplib.SMTP_SSL(env["SMTP_HOST"], port, timeout=20)
+    else:
+        s = smtplib.SMTP(env["SMTP_HOST"], port, timeout=20)
+        s.starttls(context=ssl.create_default_context())
+    s.login(env["SMTP_USER"], env["SMTP_PASSWORD"])
+    s.quit()
+except Exception as e:
+    print(f"kc-smtp: SMTP pre-flight failed ({e})", file=sys.stderr)
+    sys.exit(1)
+PY
+then
+  echo "kc-smtp: relay rejects the creds — skipping (realm unchanged, fix SMTP_PASSWORD then re-run)"
+  exit 0
+fi
+
 KC=ecobuilding-auth_keycloak_1
 KCADM="podman exec -i $KC /opt/keycloak/bin/kcadm.sh"
 
