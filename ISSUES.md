@@ -31,7 +31,7 @@ Last updated: 2026-08-05 (post-promote).
 | [#117](https://github.com/confinia/ecobuilding/issues/117) DATA.md data lifecycle | **Merged** (PR [#120](https://github.com/confinia/ecobuilding/pull/120)) — docs-only | Add Hub'Eau + PVGIS rows (new sources of [#119](https://github.com/confinia/ecobuilding/issues/119)) |
 | [#115](https://github.com/confinia/ecobuilding/issues/115) STACK_template.md | **Closed** (shipped via [#116](https://github.com/confinia/ecobuilding/pull/116)) | — |
 | [#113](https://github.com/confinia/ecobuilding/issues/113) Building marker (web + PDF) | **In production** (PR [#114](https://github.com/confinia/ecobuilding/pull/114), promoted 2026-08-05; marker verified in the prod PDF render) | — |
-| [#112](https://github.com/confinia/ecobuilding/issues/112) CI/CD via GitHub Actions | Filed | Self-hosted runner on the VM; until then `deploy/*.sh` is break-glass (rule 14) |
+| [#112](https://github.com/confinia/ecobuilding/issues/112) CI/CD via GitHub Actions | Runner `ecobuilding-vm` online (user service); workflows on `feat/gha-cicd`: PR→sandbox, main→staging+tests, dispatch→promote; scripts split into on-VM logic + break-glass wrappers | PR review → merge → pipeline self-validates |
 | [#111](https://github.com/confinia/ecobuilding/issues/111) Dedicated staging stack + DB | Filed | Order against [#112](https://github.com/confinia/ecobuilding/issues/112) |
 | [#35](https://github.com/confinia/ecobuilding/issues/35) Polar.sh checkout | Backlog | Gated by rule 7 (no company / paid tier below a 10k€ deal) |
 | [#33](https://github.com/confinia/ecobuilding/issues/33) Product v2 on own domain | Backlog | Revisit after launch metrics |

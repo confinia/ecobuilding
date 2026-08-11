@@ -1,0 +1,38 @@
+# Rule 14: PR opened/updated -> the branch auto-deploys to the SANDBOX stack.
+# Runs on the VM itself (self-hosted runner, ecobuilding user) — the checkout
+# is synced into ~/projects/ecobuilding exactly like the break-glass rsync.
+name: sandbox
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: vm-deploy            # one VM, one deploy at a time (shared with staging)
+  cancel-in-progress: false
+
+jobs:
+  sandbox:
+    runs-on: [self-hosted, vm, ecobuilding]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sync branch tree to ~/projects/ecobuilding
+        run: |
+          rsync -az --delete \
+            --exclude .git --exclude __pycache__ --exclude .venv --exclude node_modules \
+            --exclude deploy/secrets.env --exclude deploy/.active \
+            --exclude caddy_server/Caddyfile --exclude data/ \
+            --exclude sandbox_stack/secrets.env --exclude sandbox_stack/data/ \
+            ./ ~/projects/ecobuilding/
+
+      - name: Deploy the sandbox stack
+        run: cd ~/projects/ecobuilding && ./deploy/sandbox.sh
+
+      - name: Test suite (hermetic container)
+        run: cd ~/projects/ecobuilding && ./deploy/test.sh
+
+      - name: Public smoke
+        run: |
+          sleep 2
+          curl -fsS -m 20 https://sandbox.ecobuilding.confinia.io/api/v1/healthz
+          echo "sandbox: https://sandbox.ecobuilding.confinia.io"

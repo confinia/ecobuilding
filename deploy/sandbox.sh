@@ -38,13 +38,9 @@ for i in $(seq 1 72); do
   sleep 5
 done
 
-# 4. platform edge: route both sandbox hostnames to the sandbox caddy (:8030).
-#    Additive block (prod routing untouched); TLS auto-issued by the edge.
-if ! grep -q "sandbox.ecobuilding.confinia.io" ~/projects/platform/caddy/Caddyfile 2>/dev/null; then
-  printf '\n# sandbox ecobuilding — env isolé (ajout auto par deploy/sandbox.sh)\nsandbox.ecobuilding.confinia.io, sandbox.api.ecobuilding.confinia.io {\n\treverse_proxy 127.0.0.1:8030\n}\n' >> ~/projects/platform/caddy/Caddyfile
-  podman exec platform_caddy_1 caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile 2>/dev/null \
-    || echo "   WARN: platform edge reload failed — sandbox hosts load on its next reload"
-fi
+# 4. The platform edge routes sandbox.ecobuilding.confinia.io -> :8030 IN THE
+#    confinia/platform REPO (its PR #3) — never hand-edit the edge from here:
+#    a platform redeploy reverts it, and a duplicate site block breaks reload.
 
 # 5. health
 sleep 3
