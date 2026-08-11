@@ -28,6 +28,16 @@ services:
       GF_SERVER_SERVE_FROM_SUB_PATH: "true"
       GF_USERS_ALLOW_SIGN_UP: "false"
       GF_ANALYTICS_REPORTING_ENABLED: "false"
+      # Ops alert emails (#128) as code: SMTP_* come from deploy/secrets.env,
+      # exported by deploy.sh (set -a) so compose substitutes them here. The
+      # contact point/policy/rules are file-provisioned (provisioning/alerting).
+      GF_SMTP_ENABLED: "true"
+      GF_SMTP_HOST: "${SMTP_HOST:-ssl0.ovh.net}:${SMTP_PORT:-587}"
+      GF_SMTP_USER: "${SMTP_USER:-}"
+      GF_SMTP_PASSWORD: "${SMTP_PASSWORD:-}"
+      GF_SMTP_FROM_ADDRESS: "${SMTP_FROM:-alert@confinia.io}"
+      GF_SMTP_FROM_NAME: "Confinia Ops"
+      GF_SMTP_STARTTLS_POLICY: "MandatoryStartTLS"
     volumes:
       - grafana_data:/var/lib/grafana
       - ../monitoring/grafana-shared/provisioning:/etc/grafana/provisioning:ro

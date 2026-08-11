@@ -1,6 +1,9 @@
 apiVersion: 1
 datasources:
   - name: Prometheus
+    # Stable uid: the provisioned alert rules (alerting/ops-email.yaml)
+    # reference the datasource by uid, never by name.
+    uid: prometheus
     type: prometheus
     access: proxy
     # Shared monitoring runs on the HOST network: the shared prometheus

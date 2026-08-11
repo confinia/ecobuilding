@@ -38,6 +38,9 @@ if [ ! -f deploy/secrets.env ]; then
 fi
 systemctl --user is-active --quiet podman.socket || systemctl --user enable --now podman.socket
 
+# Export the secrets so compose files can substitute ${SMTP_*} etc. (#128).
+set -a; . deploy/secrets.env; set +a
+
 # Persistent lead storage (offer page), outside git/rsync.
 mkdir -p data/leads
 
@@ -61,6 +64,8 @@ LEGACY=$(podman ps -a --format '{{.Names}}' | grep -E '^ecobuilding_' || true)
 if ! grep -q KC_DB_PASSWORD deploy/secrets.env; then P=$(openssl rand -hex 24); echo "KC_DB_PASSWORD=$P" >> deploy/secrets.env; echo "POSTGRES_PASSWORD=$P" >> deploy/secrets.env; fi
 grep -q KC_BOOTSTRAP_ADMIN_PASSWORD deploy/secrets.env || echo "KC_BOOTSTRAP_ADMIN_PASSWORD=$(openssl rand -base64 18)" >> deploy/secrets.env
 ( cd auth_stack && podman-compose -p ecobuilding-auth -f docker-compose.yml up -d )
+# Realm email (SMTP + verify-email) as code — idempotent, skips if no creds (#128).
+./deploy/kc-smtp.sh || echo "   WARN: kc-smtp failed (realm email unchanged)"
 
 # Shared monitoring (promote-proof): prometheus + grafana + podman-exporter.
 ( cd monitoring_stack && podman-compose -p ecobuilding-monitoring -f docker-compose.yml up -d )
