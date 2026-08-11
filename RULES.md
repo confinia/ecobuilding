@@ -75,3 +75,9 @@
     (filed → PR open → merged, on staging → promoted, in production → closed)
     and where it can be checked (environment links per rule 12). Recently
     shipped issues stay listed until promoted to production.
+16. **Always hand off the next move** (rule set 2026-08-11): every time an
+    action finishes (issue closed, PR merged, deploy validated), the session's
+    wrap-up ends by recommending the next GitHub issue or PR to work on — one
+    concrete pick from the ISSUES.md tracker with a one-line why, hyperlinked
+    per rule 13. Business/marketing actions may override the engineering pick
+    (rule 10).

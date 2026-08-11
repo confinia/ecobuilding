@@ -52,9 +52,9 @@ def test_keycloak_email_is_code():
     assert "verifyEmail=true" in sh            # registration confirmation flow
     assert "smtpServer.password=$SMTP_PASSWORD" in sh  # creds from secrets.env
     assert "pre-flight" in sh.lower()          # never enabled with bad creds
-    deploy = (ROOT / "deploy/deploy.sh").read_text()
-    assert "kc-smtp.sh" in deploy              # applied on every deploy
-    assert "set -a; . deploy/secrets.env" in deploy  # compose substitution source
+    stack = (ROOT / "deploy/stack-up.sh").read_text()
+    assert "kc-smtp.sh" in stack               # applied on every deploy
+    assert "set -a; . deploy/secrets.env" in stack  # compose substitution source
 
 
 @needs_repo
@@ -69,7 +69,28 @@ def test_keycloak_client_uris_are_code():
     assert not any("next.ecobuilding" in u for u in client["redirectUris"])
     sh = (ROOT / "deploy/kc-client.sh").read_text()
     assert "realm-confinia.json" in sh and "redirectUris" in sh
-    assert "kc-client.sh" in (ROOT / "deploy/deploy.sh").read_text()
+    assert "kc-client.sh" in (ROOT / "deploy/stack-up.sh").read_text()
+
+
+@needs_repo
+def test_cicd_pipeline_is_code():
+    """Rule 14: the pipeline mirrors code state — PR→sandbox, main→staging,
+    dispatch→promote — on the VM's own runner; the wrappers stay break-glass."""
+    wf = ROOT / ".github/workflows"
+    sandbox = (wf / "sandbox.yml").read_text()
+    staging = (wf / "staging.yml").read_text()
+    promote = (wf / "promote.yml").read_text()
+    assert "pull_request" in sandbox and "deploy/sandbox.sh" in sandbox
+    assert "main" in staging and "deploy/stack-up.sh" in staging and "deploy/test.sh" in staging
+    assert "workflow_dispatch" in promote and "deploy/promote-up.sh" in promote
+    for y in (sandbox, staging, promote):
+        assert "self-hosted" in y and "ecobuilding" in y
+        assert "group: vm-deploy" in y          # one VM: deploys serialized
+    assert "stack-up.sh" in (ROOT / "deploy/deploy.sh").read_text()      # wrapper
+    assert "promote-up.sh" in (ROOT / "deploy/promote.sh").read_text()   # wrapper
+    # The sandbox script must never hand-edit the platform edge again
+    # (reverted-on-redeploy + duplicate-site-block footgun).
+    assert ">> ~/projects/platform" not in (ROOT / "deploy/sandbox.sh").read_text()
 
 
 @pytest.mark.skip(reason="e2e email delivery: needs live SMTP creds + a mailbox check")

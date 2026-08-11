@@ -1,0 +1,24 @@
+# Rule 14: manual promote — flip the router so the validated CANDIDATE stack
+# becomes production (rule 3: only after validation on staging). Instant
+# rollback stays available (deploy/rollback.sh).
+name: promote
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: vm-deploy
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: [self-hosted, vm, ecobuilding]
+    steps:
+      - name: Flip router to the candidate stack
+        run: cd ~/projects/ecobuilding && ./deploy/promote-up.sh
+
+      - name: Public smoke (production)
+        run: |
+          sleep 2
+          curl -fsS -m 10 https://ecobuilding.confinia.io/api/v1/healthz
+          curl -fsS -m 10 -o /dev/null -w "prod frontend: %{http_code}\n" https://ecobuilding.confinia.io/
+          echo "OK — https://ecobuilding.confinia.io"
