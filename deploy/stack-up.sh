@@ -52,7 +52,22 @@ grep -q KC_BOOTSTRAP_ADMIN_PASSWORD deploy/secrets.env || echo "KC_BOOTSTRAP_ADM
 ./deploy/kc-client.sh || echo "   WARN: kc-client failed (client URIs unchanged)"
 
 # Shared monitoring (promote-proof): prometheus + grafana + podman-exporter.
-( cd monitoring_stack && podman-compose -p ecobuilding-monitoring -f docker-compose.yml up -d )
+# CREATE-ONLY from the pipeline: host-network containers (re)created under the
+# Actions runner's systemd session come up with a broken netns — the process
+# binds inside the container but no listener appears on the host (observed
+# 2026-08-11: grafana IPv6-only, prometheus invisible on :9095 → 4h metrics
+# outage). Until understood, config changes to this stack are applied from an
+# interactive ssh session only.
+if podman container exists ecobuilding-monitoring_grafana_1 2>/dev/null; then
+  echo "   monitoring stack present — left untouched (recreate via ssh only; runner netns issue)"
+else
+  ( cd monitoring_stack && podman-compose -p ecobuilding-monitoring -f docker-compose.yml up -d )
+fi
+# Host-listener sanity: monitoring must actually be reachable from the host.
+for p in 3002 9095; do
+  curl -fsS -m 3 -o /dev/null "http://127.0.0.1:$p/" 2>/dev/null \
+    || echo "   WARN: no host listener on :$p (monitoring degraded — recreate via ssh)"
+done
 
 # Remove per-stack monitoring leftovers from the pre-shared-monitoring layout.
 for c in grafana prometheus podman-exporter; do
