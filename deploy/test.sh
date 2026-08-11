@@ -7,10 +7,12 @@
 #   ./deploy/test.sh              # local (needs podman)
 #   ssh ecobuilding 'cd ~/projects/ecobuilding && ./deploy/test.sh'
 set -eu
-cd "$(dirname "$0")/../api"
+cd "$(dirname "$0")/.."
 
+# Mount the whole repo (read: api tests also assert infra config-as-code files,
+# e.g. Grafana SMTP/alerting provisioning, #128) but run from api/.
 ENGINE=$(command -v podman || command -v docker)
-"$ENGINE" run --rm -v "$PWD":/w -w /w -e OTEL_SDK_DISABLED=true \
+"$ENGINE" run --rm -v "$PWD":/w -w /w/api -e OTEL_SDK_DISABLED=true \
   docker.io/library/python:3.12-slim bash -c '
     apt-get update -qq >/dev/null &&
     apt-get install -y -qq --no-install-recommends \
