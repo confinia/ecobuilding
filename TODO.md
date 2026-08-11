@@ -51,7 +51,7 @@ Status: `[ ]` todo · `[~]` in progress · `[x]` done
 ## Marketing / visibility
 
 - [x] Pre-announce: add /lookup response cache (BDNB quota guard) — done (`_cached_get_json`, TTL+LRU) + per-IP ANON_DAILY_CAP + friendly 429 page; launch guard cleared
-- [ ] Set launch success thresholds in writing (see BUSINESS.md §8 launch plan), then post
+- [x] Set launch success thresholds in writing (done 2026-08-11 — BUSINESS.md §8 "Launch success thresholds"); next: post
 - [ ] Show HN draft: "3D map of every French building's energy class (open data, solo side project)" — countdown framing
 - [ ] LinkedIn FR post (agencies/notaires angle: interdiction de location 2028/2034)
 - [ ] OSM forum + r/openstreetmap + geo Mastodon (community + backlinks)

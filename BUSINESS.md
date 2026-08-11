@@ -196,6 +196,35 @@ map: "see every building that becomes illegal to rent in 2028/2034, in 3D."
 Pre-announce guard: cache /lookup responses (BDNB 10k calls/month); tiles already go
 browser→BDNB directly (spike-safe for us); attribution displayed (Licence Ouverte ✓).
 
+### Launch success thresholds (set 2026-08-11, before posting — fixed, no goalpost moves)
+
+**Window:** 7 full days from the first public post (timestamp each channel in LAUNCH.md).
+**Sources:** /grafana events (`page_view`, `search`, `lookup`, `geolocate`, fiche
+downloads), Keycloak account count, `data/leads/leads.jsonl`. Totals over the window,
+all channels combined.
+
+**GREEN — product pull, green-light step 3** (any ONE of):
+- ≥ 500 lookups, or
+- ≥ 1 inbound pro/portfolio request (lead form, email/LinkedIn reply), or
+- ≥ 10 unprompted account creations, or
+- ≥ 50 PDF fiches generated.
+→ Action: build the per-address SEO pages (2–3 communes, honest-data gate first) and
+start the monetization ladder the strongest signal points to (§8 table).
+
+**YELLOW — traffic without pull:** 100–499 lookups, zero inbound, < 10 accounts.
+→ Action: **no new features.** Five customer-discovery conversations (warm real-estate +
+diagnostic contacts) before any code; one more channel attempt (r/france or geo
+Mastodon) with sharper countdown framing.
+
+**RED — no resonance:** < 100 lookups, zero inbound.
+→ Action: stop feature work on distribution hope; run the discovery panel anyway (the
+warm leads exist regardless); decide by **2026-09-15** whether the DPE vertical remains
+the bet or a §10.2 alternative gets a hands-on look. The map stays live either way
+(≈0€ infra).
+
+**Week-2 bonus signal (counts toward GREEN):** ≥ 20 returning sessions in the week after
+the window with no new posts — the "organic return traffic" test made measurable.
+
 ## 9. KPIs to track (once live)
 
 - Buildings captured / modeled
