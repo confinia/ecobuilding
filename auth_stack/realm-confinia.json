@@ -7,6 +7,17 @@
   "resetPasswordAllowed": true,
   "rememberMe": true,
   "verifyEmail": false,
+  "smtpServer": {
+    "host": "ssl0.ovh.net",
+    "port": "587",
+    "starttls": "true",
+    "ssl": "false",
+    "auth": "true",
+    "user": "alert@confinia.io",
+    "from": "alert@confinia.io",
+    "fromDisplayName": "EcoBuilding",
+    "replyTo": "contact@confinia.io"
+  },
   "sslRequired": "external",
   "internationalizationEnabled": true,
   "supportedLocales": ["fr", "en"],
