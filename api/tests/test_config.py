@@ -57,6 +57,21 @@ def test_keycloak_email_is_code():
     assert "set -a; . deploy/secrets.env" in deploy  # compose substitution source
 
 
+@needs_repo
+def test_keycloak_client_uris_are_code():
+    """The live client's URI surface is replayed from realm-confinia.json on
+    every deploy (kc-client.sh) — pre-prod is staging., next. must not exist
+    anywhere (rule 12)."""
+    import json
+    realm = json.loads((ROOT / "auth_stack/realm-confinia.json").read_text())
+    client = next(c for c in realm["clients"] if c["clientId"] == "ecobuilding-web")
+    assert any("staging.ecobuilding" in u for u in client["redirectUris"])
+    assert not any("next.ecobuilding" in u for u in client["redirectUris"])
+    sh = (ROOT / "deploy/kc-client.sh").read_text()
+    assert "realm-confinia.json" in sh and "redirectUris" in sh
+    assert "kc-client.sh" in (ROOT / "deploy/deploy.sh").read_text()
+
+
 @pytest.mark.skip(reason="e2e email delivery: needs live SMTP creds + a mailbox check")
 def test_registration_email_delivered_e2e():
     """Register a throwaway user on sandbox -> a verification email arrives

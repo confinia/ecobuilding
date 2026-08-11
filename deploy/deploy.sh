@@ -72,6 +72,8 @@ grep -q KC_BOOTSTRAP_ADMIN_PASSWORD deploy/secrets.env || echo "KC_BOOTSTRAP_ADM
 ( cd auth_stack && podman-compose -p ecobuilding-auth -f docker-compose.yml up -d )
 # Realm email (SMTP + verify-email) as code — idempotent, skips if no creds (#128).
 ./deploy/kc-smtp.sh || echo "   WARN: kc-smtp failed (realm email unchanged)"
+# Client URIs replayed from the bootstrap JSON (import never updates a live realm).
+./deploy/kc-client.sh || echo "   WARN: kc-client failed (client URIs unchanged)"
 
 # Shared monitoring (promote-proof): prometheus + grafana + podman-exporter.
 ( cd monitoring_stack && podman-compose -p ecobuilding-monitoring -f docker-compose.yml up -d )
