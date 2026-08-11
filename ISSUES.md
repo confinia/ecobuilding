@@ -14,13 +14,14 @@ Last updated: 2026-08-05 (post-promote).
 | Environment | Runs | Note |
 |---|---|---|
 | [Production](https://ecobuilding.confinia.io) | `main` @ `55c2a18` — **promoted 2026-08-05** (green stack; blue kept for rollback) | Includes [#113](https://github.com/confinia/ecobuilding/issues/113), [#119](https://github.com/confinia/ecobuilding/issues/119), [#121](https://github.com/confinia/ecobuilding/issues/121), [#125](https://github.com/confinia/ecobuilding/issues/125); shared render container rebuilt (marker) |
-| [Staging](https://staging.ecobuilding.confinia.io) | candidate = blue (pre-promote prod) | **Routing broken**: Tier-1 platform edge still routes `next.`; fix = PR to `confinia/platform` (STACK_ecobuilding.md §10) |
-| [Sandbox](https://sandbox.ecobuilding.confinia.io) | `feat/building-marker` ([#114](https://github.com/confinia/ecobuilding/pull/114)) | Stale — branch merged; next PR will replace it |
+| [Staging](https://staging.ecobuilding.confinia.io) | candidate = blue (pre-promote prod) | **Routing fixed 2026-08-11** (platform PR [#3](https://github.com/confinia/platform/pull/3)) — validate-on-staging gate restored |
+| [Sandbox](https://sandbox.ecobuilding.confinia.io) | sandbox stack (:8030) | Publicly routed again (platform PR [#3](https://github.com/confinia/platform/pull/3)) |
 
 ## Open / recently shipped issues
 
 | Issue | Status | Next step |
 |---|---|---|
+| [platform#2](https://github.com/confinia/platform/issues/2) + [#136](https://github.com/confinia/ecobuilding/issues/136) staging/sandbox routing + KC client URIs | **Done & validated 2026-08-11** (platform PR [#3](https://github.com/confinia/platform/pull/3), eco PR [#137](https://github.com/confinia/ecobuilding/pull/137)): staging + sandbox live over TLS, live realm replays URIs from the bootstrap JSON on deploy | — |
 | [#128](https://github.com/confinia/ecobuilding/issues/128) Email via alert@confinia.io (Keycloak verify + Grafana alerts) | **Done & validated 2026-08-11**: SMTP relay live (OVH MX Plan, `ssl0.ovh.net:587`); Keycloak realm SMTP + `verifyEmail` applied by `kc-smtp.sh` (pre-flight passed); registration verify-email e2e delivered; Grafana contact point/rule provisioned with matching creds; DKIM enabled. All as code. **Closed** | — |
 | [#125](https://github.com/confinia/ecobuilding/issues/125) Hub'Eau date_recherche lag excluded all stations | **In production** (PR [#126](https://github.com/confinia/ecobuilding/pull/126), promoted 2026-08-05) | — |
 | [#122](https://github.com/confinia/ecobuilding/issues/122) ISSUES.md tracker + rule 15 | **Merged** (PR [#124](https://github.com/confinia/ecobuilding/pull/124)) — docs-only | — |
@@ -38,4 +39,4 @@ Last updated: 2026-08-05 (post-promote).
 
 ## To file (prose awaiting approval, rule 11)
 
-- Staging routing broken (`next.` → `staging.`) — belongs to `confinia/platform`.
+- (none)
