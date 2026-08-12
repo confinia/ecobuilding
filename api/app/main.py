@@ -32,6 +32,10 @@ BDNB_URL = os.environ.get(
     "BDNB_URL", "https://api.bdnb.io/v1/bdnb/donnees/batiment_groupe_complet/adresse")
 BDNB_BASE_URL = os.environ.get(
     "BDNB_BASE_URL", "https://api.bdnb.io/v1/bdnb/donnees/batiment_groupe_complet")
+# Group <-> addresses relation (#152): a bâtiment groupe can span several
+# streets; this lists every address attached to it.
+BDNB_REL_ADR_URL = os.environ.get(
+    "BDNB_REL_ADR_URL", "https://api.bdnb.io/v1/bdnb/donnees/rel_batiment_groupe_adresse")
 # DVF home prices via the local PostgREST RPC (#89). Empty in prod until the
 # self-hosted stack is live; when set, building records carry a `prices` block
 # (recent parcelle sales + commune median €/m²).
@@ -540,6 +544,32 @@ async def reverse(
     return await _do_lookup(None, p["id"], p["label"], lon, lat)
 
 
+async def _click_address(bdnb_id: str, lon, lat):
+    """Address at the clicked point (#152): BAN-reverse the coordinates and
+    keep the result ONLY if that address belongs to the clicked group
+    (rel_batiment_groupe_adresse) — a group can span several streets, and the
+    principal address then reads as the wrong building. None on any miss or
+    failure, so the caller falls back to the principal address."""
+    if lon is None or lat is None:
+        return None
+    try:
+        geo = await _cached_get_json(
+            BAN_REVERSE_URL, {"lon": lon, "lat": lat, "type": "housenumber"}, ttl=86400)
+        feats = geo.get("features", [])
+        if not feats:
+            return None
+        p = feats[0]["properties"]
+        rel = await _cached_get_json(
+            BDNB_REL_ADR_URL, {"batiment_groupe_id": f"eq.{bdnb_id}", "limit": "200"},
+            ttl=86400)
+        members = {r.get("cle_interop_adr") for r in rel} if isinstance(rel, list) else set()
+        if p.get("id") in members:
+            return p.get("label")
+    except Exception as e:
+        log.warning("click-address failed for %s: %s", bdnb_id, e)
+    return None
+
+
 @app.get("/v1/buildings/{bdnb_id}", tags=["buildings"])
 async def building(
     bdnb_id: str,
@@ -554,9 +584,10 @@ async def building(
         raise HTTPException(404, "Unknown building id")
     row = rows[0]
     M_LOOKUPS.add(1, {"status": "by_id"})
-    prices, risks, groundwater, solar_pv = await asyncio.gather(
+    prices, risks, groundwater, solar_pv, click_addr = await asyncio.gather(
         _dvf_prices(bdnb_id), _area_risks(lon, lat),
-        _groundwater(lon, lat), _solar_pv(lon, lat))
+        _groundwater(lon, lat), _solar_pv(lon, lat),
+        _click_address(bdnb_id, lon, lat))
     sources = ["BDNB (CSTB) — Licence Ouverte v2.0", "Géorisques — Licence Ouverte"]
     if prices:
         sources.append("DVF (DGFiP) / Etalab — Licence Ouverte")
@@ -565,7 +596,11 @@ async def building(
     if solar_pv:
         sources.append("PVGIS (JRC) — © Union européenne")
     return {
-        "query": {"bdnb_id": bdnb_id, "address": row.get("libelle_adr_principale_ban"), "lon": lon, "lat": lat},
+        # Prefer the group-member address at the clicked point (#152); the
+        # principal address stays on buildings[0].address for the UI's row.
+        "query": {"bdnb_id": bdnb_id,
+                  "address": click_addr or row.get("libelle_adr_principale_ban"),
+                  "lon": lon, "lat": lat},
         "buildings": [_normalize_building(row)],
         "area_risks": risks,
         "groundwater": groundwater,
