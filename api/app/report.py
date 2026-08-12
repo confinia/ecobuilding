@@ -203,6 +203,18 @@ sans avoir à faire confiance à EcoBuilding. Généré le {now}.</p>
 """
 
 
+def _principal_address_note(shown_address: str, b: dict) -> str:
+    """When the fiche is titled with the searched address but the BDNB
+    'bâtiment groupe' has a different principal address (a group can span
+    several streets, #146), say so instead of silently looking wrong."""
+    principal = b.get("address")
+    if not principal or principal == shown_address:
+        return ""
+    n = f" ({b['dwellings']} logements)" if b.get("dwellings") else ""
+    return (f'<p class="meta">Bâtiment groupe BDNB{n} — '
+            f'adresse principale : {principal}</p>')
+
+
 def _groundwater_html(gw: dict) -> str:
     """Water-table section (#119). Honest-data: measurement is at the nearest
     piezometer, never presented as on-parcel; absent block -> no section."""
@@ -295,6 +307,7 @@ def _report_html(data: dict, photos: list | None = None, map_img: str | None = N
   <div class="doctitle">Fiche bâtiment normalisée — données ouvertes</div>
 </header>
 <h1>{address}</h1>
+{_principal_address_note(address, b)}
 <p class="meta">Identifiant BDNB : {b.get("bdnb_id") or "—"} · Générée le {now} · ecobuilding.confinia.io</p>
 
 <h2>Énergie (DPE)</h2>

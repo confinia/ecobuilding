@@ -339,8 +339,16 @@ function renderPanel(s, data) {
         <div class="risk-chips">${risks.map((r) => `<span class="chip">${humanizeRisk(r)}</span>`).join("")}</div></div>`
     : "";
 
+  // Title with the address the user searched — a BDNB "bâtiment groupe" can
+  // span several streets and its principal address then reads as the wrong
+  // building (#146). The principal address stays visible as its own row.
+  const searched = data.query?.address || s.label || b.address;
+  const reportParams = [];
+  if (data.query?.lon != null) reportParams.push(`lon=${data.query.lon}`, `lat=${data.query.lat}`);
+  if (searched && searched !== b.address) reportParams.push(`address=${encodeURIComponent(searched)}`);
   showPanel(`
-    <h2>${b.address || s.label}</h2>
+    <h2>${searched}</h2>
+    ${b.address && b.address !== searched ? kv(`Adresse principale (groupe BDNB${b.dwellings ? `, ${b.dwellings} logements` : ""})`, b.address) : ""}
     <h3>Énergie (DPE)</h3>
     <p>${dpeBadge} ${b.energy?.consumption_kwh_m2y ? `&nbsp;${Math.round(b.energy.consumption_kwh_m2y)} kWh/m²/an` : ""}</p>
     ${banHtml}
@@ -368,7 +376,7 @@ function renderPanel(s, data) {
     ${kv("Favorable au solaire thermique", b.solar?.thermal_favourable === true ? "oui" : b.solar?.thermal_favourable === false ? "non" : null)}
     ${kv("Potentiel annuel", b.solar?.thermal_potential_kwh_y ? b.solar.thermal_potential_kwh_y + " kWh/an" : null)}
     ${kv("Productible photovoltaïque", data.solar_pv?.yield_kwh_per_kwc_y ? Math.round(data.solar_pv.yield_kwh_per_kwc_y) + " kWh/an par kWc (PVGIS)" : null)}
-    <p><a class="report-link" href="${API}/report/${encodeURIComponent(b.bdnb_id)}.pdf${data.query?.lon != null ? `?lon=${data.query.lon}&lat=${data.query.lat}` : ""}" target="_blank" rel="noopener">📄 Fiche PDF normalisée — gratuit (bêta)</a></p>
+    <p><a class="report-link" href="${API}/report/${encodeURIComponent(b.bdnb_id)}.pdf${reportParams.length ? "?" + reportParams.join("&") : ""}" target="_blank" rel="noopener">📄 Fiche PDF normalisée — gratuit (bêta)</a></p>
     <div id="streetview"></div>
     <p class="hint">ID BDNB : ${b.bdnb_id}</p>
   `);
