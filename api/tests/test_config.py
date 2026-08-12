@@ -88,9 +88,13 @@ def test_cicd_pipeline_is_code():
         assert "group: vm-deploy" in y          # one VM: deploys serialized
     assert "stack-up.sh" in (ROOT / "deploy/deploy.sh").read_text()      # wrapper
     assert "promote-up.sh" in (ROOT / "deploy/promote.sh").read_text()   # wrapper
+    sandbox_sh = (ROOT / "deploy/sandbox.sh").read_text()
     # The sandbox script must never hand-edit the platform edge again
     # (reverted-on-redeploy + duplicate-site-block footgun).
-    assert ">> ~/projects/platform" not in (ROOT / "deploy/sandbox.sh").read_text()
+    assert ">> ~/projects/platform" not in sandbox_sh
+    # ...and must force-recreate: podman-compose keeps a running container on
+    # a rebuilt image, silently serving stale code otherwise.
+    assert "--force-recreate" in sandbox_sh
 
 
 @pytest.mark.skip(reason="e2e email delivery: needs live SMTP creds + a mailbox check")
