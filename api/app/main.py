@@ -594,8 +594,15 @@ async def _click_address(bdnb_id: str, lon, lat):
         geo = await _cached_get_json(
             BAN_REVERSE_URL, {"lon": lon, "lat": lat, "type": "housenumber"}, ttl=86400)
         feats = geo.get("features", [])
-        if feats and feats[0]["properties"].get("id") in members:
-            return feats[0]["properties"].get("label")
+        if feats:
+            p = feats[0]["properties"]
+            if p.get("id") in members:
+                return p.get("label")
+            # BDNB's relation can be plain wrong (observed: every member point
+            # 200+ m from the footprint) while BAN's reverse sits ON the
+            # building — trust the ground truth when it is that close.
+            if (p.get("distance") or 9999) <= 30:
+                return p.get("label")
         best, best_d = None, 150.0  # never label with an address >150 m away
         for r in rows:
             coords = ((r.get("geom_adresse") or {}).get("coordinates"))

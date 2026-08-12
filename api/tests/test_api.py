@@ -263,18 +263,25 @@ def test_l93_to_wgs84_against_ban_reference():
 def test_click_address_falls_back_to_nearest_group_address(monkeypatch):
     """#152 step 2: reverse hits a non-member (misleading street label case) ->
     title with the group's OWN nearest address instead."""
-    async def fake(url, params, ttl):
-        if "reverse" in url:
-            return {"features": [{"properties": {"id": "NOT_A_MEMBER",
-                                                 "label": "8 Allée des Peupliers"}}]}
-        return [{"cle_interop_adr": "78575_0142_00001",
-                 "libelle_adresse": "1 Allée des Châtaigniers 78470 Saint-Rémy-lès-Chevreuse",
-                 "geom_adresse": {"coordinates": [632314.41, 6844868.25]}}]
-    monkeypatch.setattr(main, "_cached_get_json", fake)
+    def fake_with(dist):
+        async def fake(url, params, ttl):
+            if "reverse" in url:
+                return {"features": [{"properties": {"id": "NOT_A_MEMBER",
+                                                     "label": "8 Allée des Peupliers",
+                                                     "distance": dist}}]}
+            return [{"cle_interop_adr": "78575_0142_00001",
+                     "libelle_adresse": "1 Allée des Châtaigniers 78470 Saint-Rémy-lès-Chevreuse",
+                     "geom_adresse": {"coordinates": [632314.41, 6844868.25]}}]
+        return fake
+    # Reverse ON the building (9 m) beats an unreliable BDNB relation.
+    monkeypatch.setattr(main, "_cached_get_json", fake_with(9))
+    assert asyncio.run(main._click_address("bdnb-bg-X", 2.0805, 48.7005)) == "8 Allée des Peupliers"
+    # Reverse 80 m off -> fall back to the group's own nearest address.
+    monkeypatch.setattr(main, "_cached_get_json", fake_with(80))
     got = asyncio.run(main._click_address("bdnb-bg-X", 2.0805, 48.7005))
     assert got == "1 Allée des Châtaigniers 78470 Saint-Rémy-lès-Chevreuse"
-    # Too far away (> 150 m) -> no label rather than a wrong one.
-    far = asyncio.run(main._click_address("bdnb-bg-X", 2.09, 48.71))
+    # Everything far away -> no label rather than a wrong one.
+    far = asyncio.run(main._click_address("bdnb-bg-X", 2.12, 48.75))
     assert far is None
 
 
