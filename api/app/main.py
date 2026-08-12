@@ -858,6 +858,10 @@ async def report(
     bdnb_id: str,
     lon: float | None = Query(None),
     lat: float | None = Query(None),
+    address: str | None = Query(None, max_length=250, description=(
+        "The address the user actually searched. A BDNB 'bâtiment groupe' can "
+        "span several streets: without this, the fiche titles with the group's "
+        "principal address (#146), which reads as the wrong building.")),
 ):
     """Normalized one-page PDF fiche of a building (free during beta).
 
@@ -872,6 +876,8 @@ async def report(
     _quota_gate(request, "report")
     data = await building(bdnb_id, lon, lat)
     q = data.get("query", {})
+    if address:
+        q["address"] = address  # title with the searched address (#146)
     # Self-resolve coordinates from the building's address if the caller did not
     # pass them, so the Panoramax context page works regardless of entry point.
     if q.get("lon") is None and (data.get("buildings") or [{}])[0].get("address"):

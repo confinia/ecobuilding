@@ -224,6 +224,37 @@ def test_report_pdf_with_water_and_pv():
     assert pdf.startswith(b"%PDF") and len(pdf) > 5000
 
 
+def test_report_titles_with_searched_address_and_keeps_principal():
+    """#146: a bâtiment groupe can span several streets. The fiche titles with
+    the searched address and keeps BDNB's principal address visible."""
+    from app.report import _report_html
+    data = {**BUILDING_FIXTURE,
+            "query": {**BUILDING_FIXTURE["query"], "address": "2 Allée des Peupliers 78470 X"}}
+    html = _report_html(data)
+    assert "<h1>2 Allée des Peupliers 78470 X</h1>" in html
+    assert "adresse principale : 1 Rue de Test 75001 Paris" in html
+    # Same address on both sides -> no redundant note.
+    html2 = _report_html(BUILDING_FIXTURE)
+    assert "adresse principale" not in html2
+
+
+def test_report_endpoint_accepts_searched_address(monkeypatch):
+    async def fake_upstream(url, params, ttl):
+        if "api-adresse" in url:
+            return {"features": []}
+        return [{"batiment_groupe_id": "bdnb-bg-X",
+                 "libelle_adr_principale_ban": "5 Allée des Marronniers"}]
+    async def none3(*a, **k): return None
+    monkeypatch.setattr(main, "_cached_get_json", fake_upstream)
+    for h in ("_area_risks", "_groundwater", "_solar_pv", "_dvf_prices",
+              "_building_map_png"):
+        monkeypatch.setattr(main, h, none3)
+    monkeypatch.setattr(main, "_nearby_photos", none3)
+    r = client.get("/v1/report/bdnb-bg-X.pdf",
+                   params={"address": "2 Allée des Peupliers"})
+    assert r.status_code == 200 and r.content[:5] == b"%PDF-"
+
+
 def test_report_tables_wrap_long_values():
     """Long unbroken values (Géorisques URL, risk lists) must wrap, not run off
     the page edge (reported on the prod fiche, Tournefeuille)."""
