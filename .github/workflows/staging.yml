@@ -25,8 +25,11 @@ jobs:
             --exclude sandbox_stack/secrets.env --exclude sandbox_stack/data/ \
             ./ ~/projects/ecobuilding/
 
+      # systemd-run: see #144 — helpers spawned in the job cgroup are killed
+      # post-job (rootlessport died after the smoke passed); a transient user
+      # unit detaches them from the runner's process tree.
       - name: Deploy the candidate stack
-        run: cd ~/projects/ecobuilding && ./deploy/stack-up.sh
+        run: systemd-run --user --quiet --collect --pipe --working-directory="$HOME/projects/ecobuilding" ./deploy/stack-up.sh
 
       - name: Test suite (promotion gate, rule 9)
         run: cd ~/projects/ecobuilding && ./deploy/test.sh

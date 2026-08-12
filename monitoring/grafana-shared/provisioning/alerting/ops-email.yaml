@@ -40,6 +40,10 @@ groups:
           summary: >-
             At least one Prometheus scrape target is down on the ecobuilding VM
             (min(up) < 1). Check Grafana -> Explore -> `up` to see which.
+          # Alert emails render these as "Go to dashboard/panel" buttons with
+          # the alert's time range — service detail + history in one click.
+          __dashboardUid__: ecobuilding-main
+          __panelId__: "6"  # "Scrape targets up" stat on the usage dashboard
         labels:
           severity: critical
         data:
