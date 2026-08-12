@@ -97,6 +97,22 @@ def test_cicd_pipeline_is_code():
     assert "--force-recreate" in sandbox_sh
 
 
+@needs_repo
+def test_frontend_loading_feedback_is_wired():
+    """#150: every loading path shows a spinner, and the PDF button walks the
+    staged labels in order (honest staging — no fake percent for a single
+    server-side render)."""
+    app = (ROOT / "frontend/site/app.js").read_text()
+    css = (ROOT / "frontend/site/style.css").read_text()
+    assert app.count('hint loading') >= 3          # geolocate + search + click
+    order = [app.index(s) for s in
+             ("Collecte des données", "Rendu de la carte 3D", "Mise en page du PDF")]
+    assert order == sorted(order)
+    assert "downloadReport" in app and 'id="report-btn"' in app
+    assert "window.open" in app                     # popup-safe: opened in-gesture
+    assert ".hint.loading::before" in css and "@keyframes spin" in css
+
+
 @pytest.mark.skip(reason="e2e email delivery: needs live SMTP creds + a mailbox check")
 def test_registration_email_delivered_e2e():
     """Register a throwaway user on sandbox -> a verification email arrives
