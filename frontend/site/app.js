@@ -97,7 +97,7 @@ geolocate.on("geolocate", async (pos) => {
   const { longitude: lon, latitude: lat } = pos.coords;
   track("geolocate");
   map.easeTo({ zoom: 17.5, pitch: 55 });
-  showPanel('<p class="hint">Recherche du bâtiment à votre position…</p>');
+  showPanel('<p class="hint loading">Recherche du bâtiment à votre position…</p>');
   try {
     const r = await fetch(`${API}/reverse?lon=${lon}&lat=${lat}`);
     if (!r.ok) throw new Error(r.status);
@@ -251,7 +251,7 @@ async function select(s) {
   // Full address: fly to the building and open its record.
   map.flyTo({ center: [s.lon, s.lat], zoom: 17.5, pitch: 55, bearing: -18, duration: 2500 });
   placeMarker(s.lon, s.lat);
-  showPanel('<p class="hint">Chargement des données du bâtiment…</p>');
+  showPanel('<p class="hint loading">Chargement des données du bâtiment…</p>');
   try {
     const r = await fetch(`${API}/lookup?ban_id=${encodeURIComponent(s.ban_id)}&lon=${s.lon}&lat=${s.lat}`);
     const data = await r.json();
@@ -287,7 +287,7 @@ async function loadStreetview(lon, lat) {
 async function openBuildingById(id, lon, lat) {
   placeMarker(lon, lat);
   anchorMarkerToBuilding(id);   // id is the tile's batiment_groupe_id -> pin on the footprint
-  showPanel('<p class="hint">Chargement des données du bâtiment…</p>');
+  showPanel('<p class="hint loading">Chargement des données du bâtiment…</p>');
   try {
     const r = await fetch(`${API}/buildings/${encodeURIComponent(id)}?lon=${lon}&lat=${lat}`);
     if (!r.ok) throw new Error(r.status);
@@ -376,9 +376,60 @@ function renderPanel(s, data) {
     ${kv("Favorable au solaire thermique", b.solar?.thermal_favourable === true ? "oui" : b.solar?.thermal_favourable === false ? "non" : null)}
     ${kv("Potentiel annuel", b.solar?.thermal_potential_kwh_y ? b.solar.thermal_potential_kwh_y + " kWh/an" : null)}
     ${kv("Productible photovoltaïque", data.solar_pv?.yield_kwh_per_kwc_y ? Math.round(data.solar_pv.yield_kwh_per_kwc_y) + " kWh/an par kWc (PVGIS)" : null)}
-    <p><a class="report-link" href="${API}/report/${encodeURIComponent(b.bdnb_id)}.pdf${reportParams.length ? "?" + reportParams.join("&") : ""}" target="_blank" rel="noopener">📄 Fiche PDF normalisée — gratuit (bêta)</a></p>
+    <p><button id="report-btn" class="report-link" data-url="${API}/report/${encodeURIComponent(b.bdnb_id)}.pdf${reportParams.length ? "?" + reportParams.join("&") : ""}">📄 Fiche PDF normalisée — gratuit (bêta)</button></p>
     <div id="streetview"></div>
     <p class="hint">ID BDNB : ${b.bdnb_id}</p>
   `);
+  const pdfBtn = document.getElementById("report-btn");
+  if (pdfBtn) pdfBtn.onclick = () => downloadReport(pdfBtn);
   loadStreetview(data.query?.lon, data.query?.lat);
+}
+
+// --- PDF generation feedback (#150) ------------------------------------------
+// The fiche takes 10-45 s server-side (upstream data + 3D render + layout). A
+// raw link opens a blank tab for that whole time. Staged labels timed on real
+// p50 durations are honest feedback; a smooth percent bar would be fiction —
+// a single server render exposes no progress.
+const PDF_STAGES = [
+  [0, "Collecte des données…"],
+  [3000, "Rendu de la carte 3D…"],
+  [12000, "Mise en page du PDF…"],
+];
+function pdfStage(elapsedMs) {
+  let label = PDF_STAGES[0][1];
+  for (const [t, l] of PDF_STAGES) if (elapsedMs >= t) label = l;
+  return label;
+}
+
+async function downloadReport(btn) {
+  const url = btn.dataset.url;
+  const original = btn.textContent;
+  // Open the tab synchronously (inside the user gesture) so popup blockers
+  // allow it; it navigates to the PDF blob once ready.
+  const tab = window.open("", "_blank");
+  if (tab) tab.document.write(
+    '<title>Fiche EcoBuilding</title><p style="font-family:sans-serif;margin:2em">Génération de la fiche en cours…</p>');
+  btn.disabled = true;
+  const t0 = Date.now();
+  const timer = setInterval(() => { btn.textContent = "⏳ " + pdfStage(Date.now() - t0); }, 500);
+  track("report_click");
+  try {
+    const r = await fetch(url);
+    if (!r.ok) {
+      // Quota (429) and friends serve a friendly HTML page — show it as-is.
+      if (tab) tab.location = url; else window.open(url, "_blank");
+      return;
+    }
+    const blobUrl = URL.createObjectURL(await r.blob());
+    if (tab) tab.location = blobUrl; else window.open(blobUrl, "_blank");
+  } catch (e) {
+    if (tab) tab.close();
+    btn.textContent = "Erreur de génération, réessayez";
+    setTimeout(() => { btn.textContent = original; }, 4000);
+    return;
+  } finally {
+    clearInterval(timer);
+    btn.disabled = false;
+    if (btn.textContent.startsWith("⏳")) btn.textContent = original;
+  }
 }
