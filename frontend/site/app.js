@@ -407,11 +407,29 @@ async function downloadReport(btn) {
   // Open the tab synchronously (inside the user gesture) so popup blockers
   // allow it; it navigates to the PDF blob once ready.
   const tab = window.open("", "_blank");
-  if (tab) tab.document.write(
-    '<title>Fiche EcoBuilding</title><p style="font-family:sans-serif;margin:2em">Génération de la fiche en cours…</p>');
+  if (tab) tab.document.write(`<!doctype html><title>Fiche EcoBuilding</title>
+<body style="font-family:system-ui,sans-serif;display:flex;min-height:90vh;align-items:center;justify-content:center;background:#f6f8f6">
+<div style="text-align:center;max-width:26em">
+  <div style="font-size:1.3em;font-weight:700;color:#2b7a4b">EcoBuilding</div>
+  <div style="margin:1.2em auto;width:34px;height:34px;border:4px solid #2b7a4b;border-top-color:transparent;border-radius:50%;animation:s .8s linear infinite"></div>
+  <style>@keyframes s{to{transform:rotate(360deg)}}</style>
+  <div id="stage" style="font-weight:600">Collecte des données…</div>
+  <div id="elapsed" style="color:#777;font-size:.9em;margin-top:.4em"></div>
+  <p style="color:#555;font-size:.9em;margin-top:1.2em">La fiche assemble les données ouvertes, le rendu de la carte 3D
+  et les photos de rue : comptez 10 à 45 secondes.</p>
+</div></body>`);
   btn.disabled = true;
   const t0 = Date.now();
-  const timer = setInterval(() => { btn.textContent = "⏳ " + pdfStage(Date.now() - t0); }, 500);
+  const timer = setInterval(() => {
+    const ms = Date.now() - t0;
+    btn.textContent = "⏳ " + pdfStage(ms);
+    try {  // the interstitial is same-origin (about:blank): mirror progress there
+      if (tab && tab.document) {
+        tab.document.getElementById("stage").textContent = pdfStage(ms);
+        tab.document.getElementById("elapsed").textContent = Math.round(ms / 1000) + " s";
+      }
+    } catch (e) { /* tab closed or navigated: ignore */ }
+  }, 500);
   track("report_click");
   try {
     const r = await fetch(url);
