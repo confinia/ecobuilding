@@ -21,7 +21,8 @@ Last updated: 2026-08-05 (post-promote).
 
 | Issue | Status | Next step |
 |---|---|---|
-| [#144](https://github.com/confinia/ecobuilding/issues/144) Runner post-job cleanup kills podman helpers (ports die after the job) | Root cause found 2026-08-12: rootlessport/pasta spawned in the job cgroup are reaped post-job (blue's :8021 died AFTER its smoke passed). Fix: workflows run deploy scripts via `systemd-run --user` transient units (PR pending) + #145 guard stays | Validate on the next pipeline deploy |
+| [#150](https://github.com/confinia/ecobuilding/issues/150) Frontend loading feedback (panel spinner + staged PDF progress) | Filed 2026-08-12 | Implement — good next pipeline PR |
+| [#144](https://github.com/confinia/ecobuilding/issues/144) Runner post-job cleanup kills podman helpers | **Closed 2026-08-12** (PR [#149](https://github.com/confinia/ecobuilding/pull/149)): deploys run via `ssh localhost` (lingering logind session — transient units get reaped too); validated: sandbox :8030 + staging :8021 alive after job end | — |
 | [#146](https://github.com/confinia/ecobuilding/issues/146) Panel titled with BDNB principal address (Marronniers/Peupliers) | **In production 2026-08-12** (PR [#148](https://github.com/confinia/ecobuilding/pull/148); sandbox+staging via pipeline, first successful promote dispatch) | — |
 | Launch thresholds (TODO, no issue) | **Written** into BUSINESS.md §8 (2026-08-11), fixed pre-post | Post the launch (LAUNCH.md copy ready) |
 | [#141](https://github.com/confinia/ecobuilding/issues/141) /grafana 502 (IPv6-only bind after recreate) | **Fixed & validated 2026-08-11** (PR [#142](https://github.com/confinia/ecobuilding/pull/142)): `GF_SERVER_HTTP_ADDR=0.0.0.0` pinned; public /grafana 200 | Follow-up to file: scrape Grafana itself so the target-down alert emails this class of failure |
