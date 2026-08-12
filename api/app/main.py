@@ -32,6 +32,10 @@ BDNB_URL = os.environ.get(
     "BDNB_URL", "https://api.bdnb.io/v1/bdnb/donnees/batiment_groupe_complet/adresse")
 BDNB_BASE_URL = os.environ.get(
     "BDNB_BASE_URL", "https://api.bdnb.io/v1/bdnb/donnees/batiment_groupe_complet")
+# Group <-> addresses relation (#152): a bâtiment groupe can span several
+# streets; this lists every address attached to it.
+BDNB_REL_ADR_URL = os.environ.get(
+    "BDNB_REL_ADR_URL", "https://api.bdnb.io/v1/bdnb/donnees/rel_batiment_groupe_adresse")
 # DVF home prices via the local PostgREST RPC (#89). Empty in prod until the
 # self-hosted stack is live; when set, building records carry a `prices` block
 # (recent parcelle sales + commune median €/m²).
@@ -540,6 +544,80 @@ async def reverse(
     return await _do_lookup(None, p["id"], p["label"], lon, lat)
 
 
+def _l93_to_wgs84(x: float, y: float) -> tuple[float, float]:
+    """EPSG:2154 (Lambert-93, GRS80) -> (lon, lat). Exact inverse LCC — BDNB's
+    rel_batiment_groupe_adresse ships its address points in Lambert-93 and
+    pulling in pyproj for one projection is not worth the dependency."""
+    a, f = 6378137.0, 1 / 298.257222101
+    e = math.sqrt(2 * f - f * f)
+    lat0, lat1, lat2 = math.radians(46.5), math.radians(44.0), math.radians(49.0)
+    lon0, x0, y0 = math.radians(3.0), 700000.0, 6600000.0
+
+    def _m(phi):
+        return math.cos(phi) / math.sqrt(1 - (e * math.sin(phi)) ** 2)
+
+    def _t(phi):
+        return (math.tan(math.pi / 4 - phi / 2)
+                / ((1 - e * math.sin(phi)) / (1 + e * math.sin(phi))) ** (e / 2))
+
+    n = (math.log(_m(lat1)) - math.log(_m(lat2))) / (math.log(_t(lat1)) - math.log(_t(lat2)))
+    F = _m(lat1) / (n * _t(lat1) ** n)
+    rho0 = a * F * _t(lat0) ** n
+    dx, dy = x - x0, rho0 - (y - y0)
+    rho = math.copysign(math.hypot(dx, dy), n)
+    t = (rho / (a * F)) ** (1 / n)
+    lam = math.atan2(dx, dy) / n + lon0
+    phi = math.pi / 2 - 2 * math.atan(t)
+    for _ in range(6):
+        phi = math.pi / 2 - 2 * math.atan(
+            t * ((1 - e * math.sin(phi)) / (1 + e * math.sin(phi))) ** (e / 2))
+    return math.degrees(lam), math.degrees(phi)
+
+
+async def _click_address(bdnb_id: str, lon, lat):
+    """Address at the clicked point (#152), honest two-step:
+    1. BAN-reverse the click; keep it ONLY if that address belongs to the
+       clicked group (rel_batiment_groupe_adresse) — a group can span several
+       streets and the principal address then reads as the wrong building.
+    2. Else: the group's OWN address nearest to the click (<150 m) — BDNB
+       sometimes attaches a 'principal' label that is not even in the group's
+       address list (observed: principal Marronniers, members all Châtaigniers).
+    None on any miss/failure -> caller falls back to the principal address."""
+    if lon is None or lat is None:
+        return None
+    try:
+        rel = await _cached_get_json(
+            BDNB_REL_ADR_URL, {"batiment_groupe_id": f"eq.{bdnb_id}", "limit": "200"},
+            ttl=86400)
+        rows = rel if isinstance(rel, list) else []
+        members = {r.get("cle_interop_adr") for r in rows}
+        geo = await _cached_get_json(
+            BAN_REVERSE_URL, {"lon": lon, "lat": lat, "type": "housenumber"}, ttl=86400)
+        feats = geo.get("features", [])
+        if feats:
+            p = feats[0]["properties"]
+            if p.get("id") in members:
+                return p.get("label")
+            # BDNB's relation can be plain wrong (observed: every member point
+            # 200+ m from the footprint) while BAN's reverse sits ON the
+            # building — trust the ground truth when it is that close.
+            if (p.get("distance") or 9999) <= 30:
+                return p.get("label")
+        best, best_d = None, 150.0  # never label with an address >150 m away
+        for r in rows:
+            coords = ((r.get("geom_adresse") or {}).get("coordinates"))
+            if not coords or not r.get("libelle_adresse"):
+                continue
+            alon, alat = _l93_to_wgs84(coords[0], coords[1])
+            d = _haversine_m(lon, lat, alon, alat)
+            if d < best_d:
+                best, best_d = r["libelle_adresse"], d
+        return best
+    except Exception as e:
+        log.warning("click-address failed for %s: %s", bdnb_id, e)
+    return None
+
+
 @app.get("/v1/buildings/{bdnb_id}", tags=["buildings"])
 async def building(
     bdnb_id: str,
@@ -554,9 +632,10 @@ async def building(
         raise HTTPException(404, "Unknown building id")
     row = rows[0]
     M_LOOKUPS.add(1, {"status": "by_id"})
-    prices, risks, groundwater, solar_pv = await asyncio.gather(
+    prices, risks, groundwater, solar_pv, click_addr = await asyncio.gather(
         _dvf_prices(bdnb_id), _area_risks(lon, lat),
-        _groundwater(lon, lat), _solar_pv(lon, lat))
+        _groundwater(lon, lat), _solar_pv(lon, lat),
+        _click_address(bdnb_id, lon, lat))
     sources = ["BDNB (CSTB) — Licence Ouverte v2.0", "Géorisques — Licence Ouverte"]
     if prices:
         sources.append("DVF (DGFiP) / Etalab — Licence Ouverte")
@@ -565,7 +644,11 @@ async def building(
     if solar_pv:
         sources.append("PVGIS (JRC) — © Union européenne")
     return {
-        "query": {"bdnb_id": bdnb_id, "address": row.get("libelle_adr_principale_ban"), "lon": lon, "lat": lat},
+        # Prefer the group-member address at the clicked point (#152); the
+        # principal address stays on buildings[0].address for the UI's row.
+        "query": {"bdnb_id": bdnb_id,
+                  "address": click_addr or row.get("libelle_adr_principale_ban"),
+                  "lon": lon, "lat": lat},
         "buildings": [_normalize_building(row)],
         "area_risks": risks,
         "groundwater": groundwater,

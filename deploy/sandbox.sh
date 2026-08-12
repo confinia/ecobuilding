@@ -26,8 +26,10 @@ EOF
 fi
 mkdir -p "$S/data/leads"
 
-# 2. build + start the isolated stack
-( cd "$S" && podman-compose -p ecobuilding-sandbox -f docker-compose.yml up -d --build )
+# 2. build + start the isolated stack. --force-recreate matters: podman-compose
+#    1.3 rebuilds the image but keeps the RUNNING container unless forced, so
+#    the sandbox silently served stale code (#152 validation caught it).
+( cd "$S" && podman-compose -p ecobuilding-sandbox -f docker-compose.yml up -d --build --force-recreate )
 
 # 3. wait for the sandbox Keycloak realm to answer (through the sandbox caddy)
 echo "   waiting for sandbox Keycloak realm..."
