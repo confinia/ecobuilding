@@ -17,7 +17,9 @@ Pre-post guard CLEARED 2026-08-03: /lookup cache + per-IP daily cap live.
 - [x] OSM forum — relance sur le sujet 44898 : 2026-08-12 (~12h UTC) — WINDOW START; seuils jusqu'au 2026-08-19 (initial post 2026-07-21 : 111 vues, 6 likes, réponses dont cquest)
 - [ ] Mastodon — :
 - [~] Show HN — DEFERRED (2026-08-12, operator call; revisit post-window)
-- [ ] Reddit (r/InternetIsBeautiful, puis autres) — :
+- [~] r/immobilier — modmail envoyé (rule 9 du sub : outil gratuit via wiki) : 2026-08-12, en attente de la modération
+- [ ] Reddit r/InternetIsBeautiful (post direct autorisé) — :
+- [ ] GeoRezo — :
 
 ## LinkedIn (FR)
 
