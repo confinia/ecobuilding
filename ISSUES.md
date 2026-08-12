@@ -22,7 +22,7 @@ Last updated: 2026-08-05 (post-promote).
 | Issue | Status | Next step |
 |---|---|---|
 | [#152](https://github.com/confinia/ecobuilding/issues/152) Map click titled with wrong address (multi-street groupes, unreliable BDNB relations) | **In production 2026-08-12** (PR [#153](https://github.com/confinia/ecobuilding/pull/153)): BAN-reverse arbitration (member > on-building ≤30 m > nearest member <150 m > principal), exact Lambert-93 inverse, `sandbox.sh --force-recreate` fix (stale-code footgun) | — |
-| [#150](https://github.com/confinia/ecobuilding/issues/150) Frontend loading feedback (panel spinner + staged PDF progress) | Filed 2026-08-12 | Implement — good next pipeline PR |
+| [#150](https://github.com/confinia/ecobuilding/issues/150) Frontend loading feedback | **In production 2026-08-12** (PR [#158](https://github.com/confinia/ecobuilding/pull/158)): spinners on all panel loads; PDF button with honest staged labels, popup-safe, quota page preserved | — |
 | [#144](https://github.com/confinia/ecobuilding/issues/144) Runner post-job cleanup kills podman helpers | **Closed 2026-08-12** (PR [#149](https://github.com/confinia/ecobuilding/pull/149)): deploys run via `ssh localhost` (lingering logind session — transient units get reaped too); validated: sandbox :8030 + staging :8021 alive after job end | — |
 | [#146](https://github.com/confinia/ecobuilding/issues/146) Panel titled with BDNB principal address (Marronniers/Peupliers) | **In production 2026-08-12** (PR [#148](https://github.com/confinia/ecobuilding/pull/148); sandbox+staging via pipeline, first successful promote dispatch) | — |
 | Launch thresholds (TODO, no issue) | **Written** into BUSINESS.md §8 (2026-08-11), fixed pre-post | Post the launch (LAUNCH.md copy ready) |
