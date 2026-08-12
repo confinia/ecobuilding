@@ -81,3 +81,9 @@
     concrete pick from the ISSUES.md tracker with a one-line why, hyperlinked
     per rule 13. Business/marketing actions may override the engineering pick
     (rule 10).
+17. **Default-yes execution** (rule set 2026-08-12, amends rule 11): never
+    pause the work to ask a plain yes/no — the answer is YES by default:
+    scripts run, and prepared issue/PR/comment prose is posted (still drafted
+    with the same care and reported afterwards, but without waiting for
+    sign-off). Prompt the operator ONLY when there is a genuine choice between
+    alternatives, never for confirmation.
