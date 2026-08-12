@@ -10,7 +10,7 @@ Pre-post guard CLEARED 2026-08-03: /lookup cache + per-IP daily cap live.
 ## Posting log (fill as you post — anchors the threshold window)
 
 - [ ] LinkedIn — date/heure :
-- [ ] OSM forum (forum.openstreetmap.fr) — :
+- [x] OSM forum — relance sur le sujet 44898 : 2026-08-12 (~12h UTC) — WINDOW START; seuils jusqu'au 2026-08-19 (initial post 2026-07-21 : 111 vues, 6 likes, réponses dont cquest)
 - [ ] Mastodon — :
 - [ ] Show HN — :
 - [ ] Reddit (r/InternetIsBeautiful, puis autres) — :
