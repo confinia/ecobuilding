@@ -23,8 +23,9 @@ Pre-post guard CLEARED 2026-08-03: /lookup cache + per-IP daily cap live.
 
 ## LinkedIn (FR)
 
-🏢 J'ai mis en ligne EcoBuilding : la carte de France des bâtiments en 3D,
+🏢 EcoBuilding est en ligne: la carte de France des bâtiments en 3D,
 colorés par classe énergie (DPE).
+(Voix de MARQUE: la page entreprise parle, jamais « je » — séparation vie perso.)
 
 Tapez une adresse (ou cliquez sur n'importe quel bâtiment) et voyez sa classe
 énergie, son échéance loi Climat & Résilience (G interdit à la location depuis
@@ -39,8 +40,8 @@ documentée.
 
 👉 https://ecobuilding.confinia.io (essayez votre propre adresse)
 
-Projet perso, développé sur mon temps libre. Retours bienvenus, en particulier
-des agences, syndics, diagnostiqueurs et bailleurs : qu'est-ce qui vous serait
+Projet indépendant, en amélioration continue. Retours bienvenus, en particulier
+des agences, syndics, diagnostiqueurs et bailleurs: qu'est-ce qui vous serait
 réellement utile au quotidien ?
 
 ## Show HN
