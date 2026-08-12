@@ -32,6 +32,9 @@ services:
       # (#88), reached over the host gateway like Keycloak/bdnb. Must be the
       # full /shot endpoint (the API GETs it directly with lon/lat/... params).
       RENDER_URL: http://host.containers.internal:8040/shot
+      # DVF home prices (#162): self-hosted PostgREST RPC over the migrated
+      # PostGIS (bdnb_stack), reached over the host gateway like render/kc.
+      DVF_RPC_URL: http://host.containers.internal:3005/rpc/prices_for_building
       # Reach Keycloak internally over the shared network (see auth_stack).
       KC_ADMIN_BASE: http://host.containers.internal:8181/auth
       OIDC_JWKS_URL: http://host.containers.internal:8181/auth/realms/confinia/protocol/openid-connect/certs
