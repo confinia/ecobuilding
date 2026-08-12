@@ -13,7 +13,7 @@ Pre-post guard CLEARED 2026-08-03: /lookup cache + per-IP daily cap live.
 
 ## Posting log (fill as you post — anchors the threshold window)
 
-- [ ] LinkedIn — date/heure :
+- [x] LinkedIn — posté depuis la page ENTREPRISE EcoBuilding (linkedin.com/company/ecobuilding-confinia-io, séparation vie perso assumée) : 2026-08-12 (~07h30 UTC); 1re réaction en <1 h
 - [x] OSM forum — relance sur le sujet 44898 : 2026-08-12 (~12h UTC) — WINDOW START; seuils jusqu'au 2026-08-19 (initial post 2026-07-21 : 111 vues, 6 likes, réponses dont cquest)
 - [ ] Mastodon — :
 - [~] Show HN — DEFERRED (2026-08-12, operator call; revisit post-window)
