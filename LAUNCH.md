@@ -2,19 +2,30 @@
 
 Order: LinkedIn → OSM forum + Mastodon (same day) → Show HN (next weekday,
 15h–17h Paris) → Reddit (after HN). One week of Grafana measurement, then
-go/no-go on per-address SEO pages (thresholds in BUSINESS.md §8).
+go/no-go on per-address SEO pages (thresholds in BUSINESS.md §8 — the 7-day
+window starts at the FIRST post; log every post below).
 
-⚠ Pre-post guard: add /lookup response cache (BDNB 10k calls/month) BEFORE HN.
+Pre-post guard CLEARED 2026-08-03: /lookup cache + per-IP daily cap live.
+
+## Posting log (fill as you post — anchors the threshold window)
+
+- [ ] LinkedIn — date/heure :
+- [ ] OSM forum (forum.openstreetmap.fr) — :
+- [ ] Mastodon — :
+- [ ] Show HN — :
+- [ ] Reddit (r/InternetIsBeautiful, puis autres) — :
 
 ## LinkedIn (FR)
 
 🏢 J'ai mis en ligne EcoBuilding : la carte de France des bâtiments en 3D,
 colorés par classe énergie (DPE).
 
-Tapez une adresse — ou cliquez sur n'importe quel bâtiment — et voyez sa classe
+Tapez une adresse (ou cliquez sur n'importe quel bâtiment) et voyez sa classe
 énergie, son échéance loi Climat & Résilience (G interdit à la location depuis
 2025, F en 2028, E en 2034), ses risques naturels (Géorisques), son année de
-construction, ses matériaux et son potentiel solaire.
+construction, ses matériaux, la profondeur de la nappe phréatique et son
+productible solaire (PVGIS). Chaque bâtiment a aussi sa fiche PDF normalisée,
+gratuite.
 
 100 % données ouvertes : la BDNB du CSTB (32 millions de bâtiments), la Base
 Adresse Nationale et Géorisques. Gratuit, sans compte, avec une API publique
@@ -22,7 +33,7 @@ documentée.
 
 👉 https://ecobuilding.confinia.io (essayez votre propre adresse)
 
-Projet perso, développé sur mon temps libre. Retours bienvenus — en particulier
+Projet perso, développé sur mon temps libre. Retours bienvenus, en particulier
 des agences, syndics, diagnostiqueurs et bailleurs : qu'est-ce qui vous serait
 réellement utile au quotidien ?
 
@@ -40,6 +51,11 @@ I render it as a clickable 3D city: search an address or click any building to
 get its full record, including its rental-ban deadline — France progressively
 bans renting energy-inefficient homes (worst class since 2025, next tiers in
 2028 and 2034), so the red buildings have a legal countdown attached.
+
+Each building also gets a free normalized PDF report: energy label, risk
+report, groundwater depth at the nearest piezometer, PVGIS solar yield, street
+imagery and a full data-provenance annex (every value links back to its
+official source).
 
 Free, no account, no tracking (anonymous counters only). Open JSON API:
 https://ecobuilding.confinia.io/api/v1/docs
@@ -71,14 +87,16 @@ des tuiles vectorielles ouvertes de la BDNB (CSTB, Licence Ouverte, ~32 M de
 bâtiments). Fond de carte OpenFreeMap (OpenMapTiles / données © OpenStreetMap).
 Recherche d'adresse via la BAN, risques via Géorisques. En cliquant sur un
 bâtiment : classe énergie, échéance loi Climat & Résilience, année de
-construction, matériaux, aléa argiles, potentiel solaire.
+construction, matériaux, aléa argiles, profondeur de nappe (Hub'Eau) et
+productible solaire (PVGIS), plus une fiche PDF gratuite avec annexe de
+traçabilité des sources.
 
 Une API JSON publique et documentée expose la même chaîne de données :
 https://ecobuilding.confinia.io/api/v1/docs
 
 Les attributions sont en place (OSM, OpenMapTiles, OpenFreeMap, BDNB, BAN,
-Géorisques) — si vous voyez quelque chose à corriger sur ce point, je suis
-preneur. Remarques et idées bienvenues !
+Géorisques, Hub'Eau, PVGIS) ; si vous voyez quelque chose à corriger sur ce
+point, je suis preneur. Remarques et idées bienvenues !
 
 ## Mastodon (mapstodon.space ou instance geo)
 
