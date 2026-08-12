@@ -21,6 +21,7 @@ Last updated: 2026-08-05 (post-promote).
 
 | Issue | Status | Next step |
 |---|---|---|
+| [#162](https://github.com/confinia/ecobuilding/issues/162) DVF prices off in prod + no panel display | **In production 2026-08-12** (PR [#163](https://github.com/confinia/ecobuilding/pull/163)): `DVF_RPC_URL` wired (RPC was live all along), panel 'Prix de vente (DVF)' section; verified: 78575 maison 4 363 €/m², 5 sources | — |
 | [#152](https://github.com/confinia/ecobuilding/issues/152) Map click titled with wrong address (multi-street groupes, unreliable BDNB relations) | **In production 2026-08-12** (PR [#153](https://github.com/confinia/ecobuilding/pull/153)): BAN-reverse arbitration (member > on-building ≤30 m > nearest member <150 m > principal), exact Lambert-93 inverse, `sandbox.sh --force-recreate` fix (stale-code footgun) | — |
 | [#150](https://github.com/confinia/ecobuilding/issues/150) Frontend loading feedback | **In production 2026-08-12** (PR [#158](https://github.com/confinia/ecobuilding/pull/158)): spinners on all panel loads; PDF button with honest staged labels, popup-safe, quota page preserved | — |
 | [#144](https://github.com/confinia/ecobuilding/issues/144) Runner post-job cleanup kills podman helpers | **Closed 2026-08-12** (PR [#149](https://github.com/confinia/ecobuilding/pull/149)): deploys run via `ssh localhost` (lingering logind session — transient units get reaped too); validated: sandbox :8030 + staging :8021 alive after job end | — |
