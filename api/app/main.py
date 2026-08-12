@@ -544,27 +544,68 @@ async def reverse(
     return await _do_lookup(None, p["id"], p["label"], lon, lat)
 
 
+def _l93_to_wgs84(x: float, y: float) -> tuple[float, float]:
+    """EPSG:2154 (Lambert-93, GRS80) -> (lon, lat). Exact inverse LCC — BDNB's
+    rel_batiment_groupe_adresse ships its address points in Lambert-93 and
+    pulling in pyproj for one projection is not worth the dependency."""
+    a, f = 6378137.0, 1 / 298.257222101
+    e = math.sqrt(2 * f - f * f)
+    lat0, lat1, lat2 = math.radians(46.5), math.radians(44.0), math.radians(49.0)
+    lon0, x0, y0 = math.radians(3.0), 700000.0, 6600000.0
+
+    def _m(phi):
+        return math.cos(phi) / math.sqrt(1 - (e * math.sin(phi)) ** 2)
+
+    def _t(phi):
+        return (math.tan(math.pi / 4 - phi / 2)
+                / ((1 - e * math.sin(phi)) / (1 + e * math.sin(phi))) ** (e / 2))
+
+    n = (math.log(_m(lat1)) - math.log(_m(lat2))) / (math.log(_t(lat1)) - math.log(_t(lat2)))
+    F = _m(lat1) / (n * _t(lat1) ** n)
+    rho0 = a * F * _t(lat0) ** n
+    dx, dy = x - x0, rho0 - (y - y0)
+    rho = math.copysign(math.hypot(dx, dy), n)
+    t = (rho / (a * F)) ** (1 / n)
+    lam = math.atan2(dx, dy) / n + lon0
+    phi = math.pi / 2 - 2 * math.atan(t)
+    for _ in range(6):
+        phi = math.pi / 2 - 2 * math.atan(
+            t * ((1 - e * math.sin(phi)) / (1 + e * math.sin(phi))) ** (e / 2))
+    return math.degrees(lam), math.degrees(phi)
+
+
 async def _click_address(bdnb_id: str, lon, lat):
-    """Address at the clicked point (#152): BAN-reverse the coordinates and
-    keep the result ONLY if that address belongs to the clicked group
-    (rel_batiment_groupe_adresse) — a group can span several streets, and the
-    principal address then reads as the wrong building. None on any miss or
-    failure, so the caller falls back to the principal address."""
+    """Address at the clicked point (#152), honest two-step:
+    1. BAN-reverse the click; keep it ONLY if that address belongs to the
+       clicked group (rel_batiment_groupe_adresse) — a group can span several
+       streets and the principal address then reads as the wrong building.
+    2. Else: the group's OWN address nearest to the click (<150 m) — BDNB
+       sometimes attaches a 'principal' label that is not even in the group's
+       address list (observed: principal Marronniers, members all Châtaigniers).
+    None on any miss/failure -> caller falls back to the principal address."""
     if lon is None or lat is None:
         return None
     try:
-        geo = await _cached_get_json(
-            BAN_REVERSE_URL, {"lon": lon, "lat": lat, "type": "housenumber"}, ttl=86400)
-        feats = geo.get("features", [])
-        if not feats:
-            return None
-        p = feats[0]["properties"]
         rel = await _cached_get_json(
             BDNB_REL_ADR_URL, {"batiment_groupe_id": f"eq.{bdnb_id}", "limit": "200"},
             ttl=86400)
-        members = {r.get("cle_interop_adr") for r in rel} if isinstance(rel, list) else set()
-        if p.get("id") in members:
-            return p.get("label")
+        rows = rel if isinstance(rel, list) else []
+        members = {r.get("cle_interop_adr") for r in rows}
+        geo = await _cached_get_json(
+            BAN_REVERSE_URL, {"lon": lon, "lat": lat, "type": "housenumber"}, ttl=86400)
+        feats = geo.get("features", [])
+        if feats and feats[0]["properties"].get("id") in members:
+            return feats[0]["properties"].get("label")
+        best, best_d = None, 150.0  # never label with an address >150 m away
+        for r in rows:
+            coords = ((r.get("geom_adresse") or {}).get("coordinates"))
+            if not coords or not r.get("libelle_adresse"):
+                continue
+            alon, alat = _l93_to_wgs84(coords[0], coords[1])
+            d = _haversine_m(lon, lat, alon, alat)
+            if d < best_d:
+                best, best_d = r["libelle_adresse"], d
+        return best
     except Exception as e:
         log.warning("click-address failed for %s: %s", bdnb_id, e)
     return None

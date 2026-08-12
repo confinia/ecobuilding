@@ -253,6 +253,31 @@ def test_building_titles_with_click_address_when_group_member(monkeypatch):
     assert body["query"]["address"] == "5 Allée des Marronniers"  # fallback
 
 
+def test_l93_to_wgs84_against_ban_reference():
+    """BDNB rel point for '1 Allée des Châtaigniers' (Lambert-93) must land on
+    BAN's WGS84 coords for the same address (±~30 m)."""
+    lon, lat = main._l93_to_wgs84(632314.41, 6844868.25)
+    assert abs(lon - 2.080259) < 0.0005 and abs(lat - 48.700411) < 0.0005
+
+
+def test_click_address_falls_back_to_nearest_group_address(monkeypatch):
+    """#152 step 2: reverse hits a non-member (misleading street label case) ->
+    title with the group's OWN nearest address instead."""
+    async def fake(url, params, ttl):
+        if "reverse" in url:
+            return {"features": [{"properties": {"id": "NOT_A_MEMBER",
+                                                 "label": "8 Allée des Peupliers"}}]}
+        return [{"cle_interop_adr": "78575_0142_00001",
+                 "libelle_adresse": "1 Allée des Châtaigniers 78470 Saint-Rémy-lès-Chevreuse",
+                 "geom_adresse": {"coordinates": [632314.41, 6844868.25]}}]
+    monkeypatch.setattr(main, "_cached_get_json", fake)
+    got = asyncio.run(main._click_address("bdnb-bg-X", 2.0805, 48.7005))
+    assert got == "1 Allée des Châtaigniers 78470 Saint-Rémy-lès-Chevreuse"
+    # Too far away (> 150 m) -> no label rather than a wrong one.
+    far = asyncio.run(main._click_address("bdnb-bg-X", 2.09, 48.71))
+    assert far is None
+
+
 def test_report_titles_with_searched_address_and_keeps_principal():
     """#146: a bâtiment groupe can span several streets. The fiche titles with
     the searched address and keeps BDNB's principal address visible."""
