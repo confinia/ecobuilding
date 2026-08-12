@@ -113,6 +113,16 @@ def test_frontend_loading_feedback_is_wired():
     assert ".hint.loading::before" in css and "@keyframes spin" in css
 
 
+@needs_repo
+def test_dvf_prices_wired_everywhere():
+    """#162: the self-hosted DVF RPC is wired in BOTH compose files (prod
+    blue/green + sandbox) and the web panel renders the price block."""
+    assert "DVF_RPC_URL" in (ROOT / "docker-compose.yml").read_text()
+    assert (ROOT / "sandbox_stack/docker-compose.yml").read_text().count("DVF_RPC_URL") == 1
+    app = (ROOT / "frontend/site/app.js").read_text()
+    assert "Prix de vente (DVF)" in app and "commune_eur_m2" in app
+
+
 @pytest.mark.skip(reason="e2e email delivery: needs live SMTP creds + a mailbox check")
 def test_registration_email_delivered_e2e():
     """Register a throwaway user on sandbox -> a verification email arrives

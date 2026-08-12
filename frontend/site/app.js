@@ -376,6 +376,11 @@ function renderPanel(s, data) {
     ${kv("Favorable au solaire thermique", b.solar?.thermal_favourable === true ? "oui" : b.solar?.thermal_favourable === false ? "non" : null)}
     ${kv("Potentiel annuel", b.solar?.thermal_potential_kwh_y ? b.solar.thermal_potential_kwh_y + " kWh/an" : null)}
     ${kv("Productible photovoltaïque", data.solar_pv?.yield_kwh_per_kwc_y ? Math.round(data.solar_pv.yield_kwh_per_kwc_y) + " kWh/an par kWc (PVGIS)" : null)}
+    ${data.prices?.available ? `<h3>Prix de vente (DVF)</h3>
+    ${kv("Médiane commune, maison", data.prices.commune_eur_m2?.Maison?.median ? data.prices.commune_eur_m2.Maison.median.toLocaleString("fr-FR") + " €/m²" : null)}
+    ${kv("Médiane commune, appartement", data.prices.commune_eur_m2?.Appartement?.median ? data.prices.commune_eur_m2.Appartement.median.toLocaleString("fr-FR") + " €/m²" : null)}
+    ${(data.prices.sales || []).slice(0, 3).map((s) => kv(`Vente ${String(s.date || "").slice(0, 10)}`, `${(s.valeur_fonciere || 0).toLocaleString("fr-FR")} € (${s.type_local || "?"}${s.surface_m2 ? ", " + Math.round(s.surface_m2) + " m²" : ""})`)).join("")}
+    <p class="hint">Transactions réelles DGFiP (DVF) : parcelle du bâtiment et médianes communales.</p>` : ""}
     <p><button id="report-btn" class="report-link" data-url="${API}/report/${encodeURIComponent(b.bdnb_id)}.pdf${reportParams.length ? "?" + reportParams.join("&") : ""}">📄 Fiche PDF normalisée — gratuit (bêta)</button></p>
     <div id="streetview"></div>
     <p class="hint">ID BDNB : ${b.bdnb_id}</p>
