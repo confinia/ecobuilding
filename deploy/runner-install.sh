@@ -45,5 +45,13 @@ UNIT
 systemctl --user daemon-reload
 systemctl --user enable --now github-runner
 loginctl enable-linger "$USER" 2>/dev/null || true
+
+# Loopback ssh key: workflows run the deploy scripts via `ssh localhost` so
+# podman helpers live in a logind session (not the job cgroup, not a transient
+# unit — both get reaped, #144).
+if [ ! -f ~/.ssh/id_ed25519 ]; then ssh-keygen -q -t ed25519 -N "" -f ~/.ssh/id_ed25519; fi
+grep -qf ~/.ssh/id_ed25519.pub ~/.ssh/authorized_keys 2>/dev/null || cat ~/.ssh/id_ed25519.pub >> ~/.ssh/authorized_keys
+chmod 600 ~/.ssh/authorized_keys
+ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes localhost true && echo "loopback ssh OK"
 echo "== runner service:"
 systemctl --user --no-pager --lines=0 status github-runner | head -4

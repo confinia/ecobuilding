@@ -13,9 +13,9 @@ jobs:
   promote:
     runs-on: [self-hosted, vm, ecobuilding]
     steps:
-      # systemd-run: see #144 — keeps podman helpers out of the job cgroup.
+      # ssh localhost: see #144 — podman helpers run in a logind session.
       - name: Flip router to the candidate stack
-        run: systemd-run --user --quiet --collect --pipe --working-directory="$HOME/projects/ecobuilding" ./deploy/promote-up.sh
+        run: ssh -o BatchMode=yes localhost 'cd ~/projects/ecobuilding && ./deploy/promote-up.sh'
 
       - name: Public smoke (production)
         run: |

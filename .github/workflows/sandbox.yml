@@ -25,12 +25,12 @@ jobs:
             --exclude sandbox_stack/secrets.env --exclude sandbox_stack/data/ \
             ./ ~/projects/ecobuilding/
 
-      # systemd-run: podman helper processes (conmon, rootlessport, pasta)
-      # started inside the job cgroup are killed by the runner's post-job
-      # cleanup — published ports died AFTER the smoke passed (#144). A
-      # transient user unit detaches them from the job's process tree.
+      # ssh localhost: podman helpers (conmon, rootlessport, pasta) must not
+      # live in the job's cgroup (runner post-job cleanup reaps them, #144)
+      # nor in a transient unit (stop-timeout reaps them too) — a logind
+      # login session with lingering is the context that provably survives.
       - name: Deploy the sandbox stack
-        run: systemd-run --user --quiet --collect --pipe --working-directory="$HOME/projects/ecobuilding" ./deploy/sandbox.sh
+        run: ssh -o BatchMode=yes localhost 'cd ~/projects/ecobuilding && ./deploy/sandbox.sh'
 
       - name: Test suite (hermetic container)
         run: cd ~/projects/ecobuilding && ./deploy/test.sh
