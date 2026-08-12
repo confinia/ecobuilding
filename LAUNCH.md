@@ -1,9 +1,13 @@
 # EcoBuilding — launch texts & plan (2026-07-21)
 
-Order: LinkedIn → OSM forum + Mastodon (same day) → Show HN (next weekday,
-15h–17h Paris) → Reddit (after HN). One week of Grafana measurement, then
+Order (revised 2026-08-12, operator call — FR-personas first): OSM forum ✓ →
+GeoRezo → Reddit r/immobilier + r/InternetIsBeautiful → Mastodon (when the
+mapstodon approval lands) → LinkedIn via the Confinia COMPANY page (not the
+personal profile). Show HN DEFERRED: not for lack of US data (the countdown
+story carries on HN), but HN is not the buyer channel; revisit with a
+technical write-up or EU/NYC data angle. One week of Grafana measurement, then
 go/no-go on per-address SEO pages (thresholds in BUSINESS.md §8 — the 7-day
-window starts at the FIRST post; log every post below).
+window started at the first post; log every post below).
 
 Pre-post guard CLEARED 2026-08-03: /lookup cache + per-IP daily cap live.
 
@@ -12,7 +16,7 @@ Pre-post guard CLEARED 2026-08-03: /lookup cache + per-IP daily cap live.
 - [ ] LinkedIn — date/heure :
 - [x] OSM forum — relance sur le sujet 44898 : 2026-08-12 (~12h UTC) — WINDOW START; seuils jusqu'au 2026-08-19 (initial post 2026-07-21 : 111 vues, 6 likes, réponses dont cquest)
 - [ ] Mastodon — :
-- [ ] Show HN — :
+- [~] Show HN — DEFERRED (2026-08-12, operator call; revisit post-window)
 - [ ] Reddit (r/InternetIsBeautiful, puis autres) — :
 
 ## LinkedIn (FR)
