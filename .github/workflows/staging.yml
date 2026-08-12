@@ -25,8 +25,10 @@ jobs:
             --exclude sandbox_stack/secrets.env --exclude sandbox_stack/data/ \
             ./ ~/projects/ecobuilding/
 
+      # ssh localhost: see #144 — helpers must run in a logind session (not
+      # the job cgroup, not a transient unit) to survive job end.
       - name: Deploy the candidate stack
-        run: cd ~/projects/ecobuilding && ./deploy/stack-up.sh
+        run: ssh -o BatchMode=yes localhost 'cd ~/projects/ecobuilding && ./deploy/stack-up.sh'
 
       - name: Test suite (promotion gate, rule 9)
         run: cd ~/projects/ecobuilding && ./deploy/test.sh

@@ -81,3 +81,10 @@
     concrete pick from the ISSUES.md tracker with a one-line why, hyperlinked
     per rule 13. Business/marketing actions may override the engineering pick
     (rule 10).
+17. **Default-yes execution** (rule set 2026-08-12, amends rule 11): never
+    prompt when the possible answers are only yes / "yes, allow script
+    execution" / no — the default IS yes: scripts run, and prepared
+    issue/PR/comment prose is posted (still drafted with the same care and
+    reported afterwards, but without waiting for sign-off). Prompt the
+    operator ONLY when the decision is a genuine choice between alternatives
+    beyond yes/no.
