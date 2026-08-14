@@ -372,6 +372,10 @@ function renderPanel(s, data) {
     ${kv("Piézomètre le plus proche", data.groundwater.station_distance_m != null ? `à ${data.groundwater.station_distance_m} m` + (data.groundwater.station_commune ? ` (${data.groundwater.station_commune})` : "") : null)}
     ${kv("Mesuré le", data.groundwater.measured_on ? String(data.groundwater.measured_on).slice(0, 10) : null)}
     <p class="hint">${data.groundwater.note || ""} ${data.groundwater.well_regulation || ""}</p>` : ""}
+    ${data.water_network ? `<h3>Eau potable (commune)</h3>
+    ${kv(`Rendement du réseau${data.water_network.year ? ` (${data.water_network.year})` : ""}`, data.water_network.efficiency_pct != null ? data.water_network.efficiency_pct + " %" : null)}
+    ${kv("Part perdue en fuites", data.water_network.losses_pct != null ? data.water_network.losses_pct + " %" : null)}
+    ${kv("Prix de l'eau (120 m³)", data.water_network.price_eur_m3 != null ? data.water_network.price_eur_m3 + " €/m³" : null)}` : ""}
     <h3>Solaire</h3>
     ${kv("Favorable au solaire thermique", b.solar?.thermal_favourable === true ? "oui" : b.solar?.thermal_favourable === false ? "non" : null)}
     ${kv("Potentiel annuel", b.solar?.thermal_potential_kwh_y ? b.solar.thermal_potential_kwh_y + " kWh/an" : null)}

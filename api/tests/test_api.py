@@ -285,6 +285,29 @@ def test_click_address_falls_back_to_nearest_group_address(monkeypatch):
     assert far is None
 
 
+def test_water_network_picks_latest_year_with_indicator(monkeypatch):
+    """#171: SISPEA years are sporadic — take the LATEST row carrying P104.3."""
+    async def fake(url, params, ttl):
+        return {"data": [
+            {"annee": 2015, "nom_commune": "X", "indicateurs": {"P104.3": 85.8, "D102.0": 3.27}},
+            {"annee": 2021, "nom_commune": "X", "indicateurs": {"P104.3": None}},
+            {"annee": 2019, "nom_commune": "X", "indicateurs": {"P104.3": 79.4}},
+        ]}
+    monkeypatch.setattr(main, "_cached_get_json", fake)
+    wn = asyncio.run(main._water_network("78575"))
+    assert wn["year"] == 2019 and wn["efficiency_pct"] == 79.4
+    assert wn["losses_pct"] == 20.6 and wn["commune_insee"] == "78575"
+    assert asyncio.run(main._water_network(None)) is None
+
+
+def test_water_network_html_renders():
+    from app.report import _water_network_html
+    h = _water_network_html({"efficiency_pct": 70.0, "losses_pct": 30.0,
+                             "year": 2019, "price_eur_m3": 4.1})
+    assert "70.0 %" in h and "30.0 %" in h and "(2019)" in h and "4.1 €/m³" in h
+    assert _water_network_html({}) == ""
+
+
 def test_report_titles_with_searched_address_and_keeps_principal():
     """#146: a bâtiment groupe can span several streets. The fiche titles with
     the searched address and keeps BDNB's principal address visible."""
