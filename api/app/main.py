@@ -51,6 +51,9 @@ HUBEAU_CHRONIQUES_URL = "https://hubeau.eaufrance.fr/api/v1/niveaux_nappes/chron
 # Solar PV (#119): PVGIS (EU JRC) — yearly yield per kWc at the location.
 # Keyless, Europe-wide (reusable for the country-expansion work, #118).
 PVGIS_URL = "https://re.jrc.ec.europa.eu/api/v5_2/PVcalc"
+# Drinking-water service indicators (#171): SISPEA per commune via Hub'Eau —
+# network efficiency P104.3 (rendement: 70% = 30% leaked) + price D102.0.
+SISPEA_URL = "https://hubeau.eaufrance.fr/api/v0/indicateurs_services/communes"
 
 # Rental-ban calendar, loi Climat et Résilience (verified 2026-07-20).
 DPE_BAN_DATES = {"G": "2025-01-01", "F": "2028-01-01", "E": "2034-01-01"}
@@ -481,8 +484,10 @@ async def _do_lookup(q, ban_id, address, lon, lat):
         log.warning("BDNB error: %s", rows)
         rows = []
 
-    risks, groundwater, solar_pv = await asyncio.gather(
-        _area_risks(lon, lat), _groundwater(lon, lat), _solar_pv(lon, lat))
+    commune = rows[0].get("code_commune_insee") if rows else None
+    risks, groundwater, solar_pv, water_network = await asyncio.gather(
+        _area_risks(lon, lat), _groundwater(lon, lat), _solar_pv(lon, lat),
+        _water_network(commune))
 
     M_LOOKUPS.add(1, {"status": "ok" if rows else "no_building"})
     sources = [
@@ -494,12 +499,15 @@ async def _do_lookup(q, ban_id, address, lon, lat):
         sources.append("Hub'Eau piézométrie (ADES/BRGM) — Licence Ouverte")
     if solar_pv:
         sources.append("PVGIS (JRC) — © Union européenne")
+    if water_network:
+        sources.append("SISPEA / OFB (services d'eau) — Licence Ouverte")
     return {
         "query": {"q": q, "ban_id": ban_id, "address": address, "lon": lon, "lat": lat},
         "buildings": [_normalize_building(r) for r in rows],
         "area_risks": risks,
         "groundwater": groundwater,
         "solar_pv": solar_pv,
+        "water_network": water_network,
         "sources": sources,
     }
 
@@ -574,6 +582,39 @@ def _l93_to_wgs84(x: float, y: float) -> tuple[float, float]:
     return math.degrees(lam), math.degrees(phi)
 
 
+async def _water_network(commune_insee):
+    """Commune drinking-water service block (#171): SISPEA network efficiency
+    (P104.3 — rendement; 70% means 30% of treated water leaks before the tap)
+    and water price (D102.0, €/m³ for 120 m³). Small communes report sporadic
+    years: pick the LATEST year carrying the indicator and label it. None on
+    any miss so a SISPEA hiccup never breaks a building record."""
+    if not commune_insee:
+        return None
+    try:
+        data = await _cached_get_json(
+            SISPEA_URL, {"code_commune": commune_insee, "type_service": "AEP"},
+            ttl=7 * 86400)
+        rows = [r for r in (data.get("data") or [])
+                if (r.get("indicateurs") or {}).get("P104.3") is not None]
+        if not rows:
+            return None
+        r = max(rows, key=lambda r: r.get("annee") or 0)
+        ind = r["indicateurs"]
+        eff = round(float(ind["P104.3"]), 1)
+        price = ind.get("D102.0")
+        return {
+            "efficiency_pct": eff,
+            "losses_pct": round(100 - eff, 1),
+            "year": r.get("annee"),
+            "price_eur_m3": round(float(price), 2) if price is not None else None,
+            "commune": r.get("nom_commune"),
+            "commune_insee": commune_insee,
+        }
+    except Exception as e:
+        log.warning("SISPEA failed for %s: %s", commune_insee, e)
+        return None
+
+
 async def _click_address(bdnb_id: str, lon, lat):
     """Address at the clicked point (#152), honest two-step:
     1. BAN-reverse the click; keep it ONLY if that address belongs to the
@@ -632,10 +673,11 @@ async def building(
         raise HTTPException(404, "Unknown building id")
     row = rows[0]
     M_LOOKUPS.add(1, {"status": "by_id"})
-    prices, risks, groundwater, solar_pv, click_addr = await asyncio.gather(
+    prices, risks, groundwater, solar_pv, click_addr, water_network = await asyncio.gather(
         _dvf_prices(bdnb_id), _area_risks(lon, lat),
         _groundwater(lon, lat), _solar_pv(lon, lat),
-        _click_address(bdnb_id, lon, lat))
+        _click_address(bdnb_id, lon, lat),
+        _water_network(row.get("code_commune_insee")))
     sources = ["BDNB (CSTB) — Licence Ouverte v2.0", "Géorisques — Licence Ouverte"]
     if prices:
         sources.append("DVF (DGFiP) / Etalab — Licence Ouverte")
@@ -643,6 +685,8 @@ async def building(
         sources.append("Hub'Eau piézométrie (ADES/BRGM) — Licence Ouverte")
     if solar_pv:
         sources.append("PVGIS (JRC) — © Union européenne")
+    if water_network:
+        sources.append("SISPEA / OFB (services d'eau) — Licence Ouverte")
     return {
         # Prefer the group-member address at the clicked point (#152); the
         # principal address stays on buildings[0].address for the UI's row.
@@ -653,6 +697,7 @@ async def building(
         "area_risks": risks,
         "groundwater": groundwater,
         "solar_pv": solar_pv,
+        "water_network": water_network,
         "prices": prices,
         "sources": sources,
     }

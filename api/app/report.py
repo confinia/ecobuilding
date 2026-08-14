@@ -161,6 +161,15 @@ def _traceability_annex(data: dict, photos: list | None) -> str:
             (gw.get("measured_on") or "—")[:10] + " (dernière mesure)",
             "https://hubeau.eaufrance.fr/api/v1/niveaux_nappes/chroniques"
             f"?code_bss={quote(gw.get('station_code_bss') or '')}&size=1&sort=desc")))
+    wn = data.get("water_network") or {}
+    if wn.get("efficiency_pct") is not None:
+        cards.append(("Eau potable (rendement du réseau)", _prov(
+            "SISPEA — Observatoire des services publics d'eau (OFB)",
+            "Licence Ouverte",
+            f"commune INSEE {wn.get('commune_insee') or '—'} · indicateur P104.3",
+            f"année {wn.get('year') or '—'} (dernière publiée)",
+            "https://hubeau.eaufrance.fr/api/v0/indicateurs_services/communes"
+            f"?code_commune={wn.get('commune_insee') or ''}&type_service=AEP")))
     pv = data.get("solar_pv") or {}
     if pv and lon is not None:
         cards.append(("Solaire photovoltaïque", _prov(
@@ -213,6 +222,23 @@ def _principal_address_note(shown_address: str, b: dict) -> str:
     n = f" ({b['dwellings']} logements)" if b.get("dwellings") else ""
     return (f'<p class="meta">Bâtiment groupe BDNB{n} — '
             f'adresse principale : {principal}</p>')
+
+
+def _water_network_html(wn: dict) -> str:
+    """Commune drinking-water rows (#171): rendement du réseau + prix."""
+    if not wn:
+        return ""
+    yr = f" ({wn['year']})" if wn.get("year") else ""
+    return f"""
+<h2>Eau potable (commune)</h2>
+<table>
+  {_row("Rendement du réseau" + yr, wn.get("efficiency_pct"), " %")}
+  {_row("Part perdue en fuites", wn.get("losses_pct"), " %")}
+  {_row("Prix de l'eau (120 m³)", wn.get("price_eur_m3"), " €/m³")}
+</table>
+<p class="meta">Indicateurs du service public d'eau potable de la commune (SISPEA / OFB),
+dernière année publiée. Un rendement de 70 % signifie que 30 % de l'eau potable
+produite est perdue avant d'arriver au robinet.</p>"""
 
 
 def _groundwater_html(gw: dict) -> str:
@@ -341,6 +367,7 @@ def _report_html(data: dict, photos: list | None = None, map_img: str | None = N
 </table>
 
 {_groundwater_html(gw)}
+{_water_network_html(data.get("water_network") or {})}
 
 <h2>Solaire</h2>
 <table>
