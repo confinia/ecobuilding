@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" role="img" aria-label="EcoBuilding">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#245c3c"/>
+      <stop offset="1" stop-color="#2b7a4b"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <!-- DPE skyline -->
+  <g opacity="0.95">
+    <rect x="640"  y="430" width="70" height="200" rx="10" fill="#a5cc74"/>
+    <rect x="726"  y="360" width="70" height="270" rx="10" fill="#52b153"/>
+    <rect x="812"  y="290" width="70" height="340" rx="10" fill="#009036"/>
+    <rect x="898"  y="390" width="70" height="240" rx="10" fill="#f4e70f"/>
+    <rect x="984"  y="340" width="70" height="290" rx="10" fill="#f0b40f"/>
+    <rect x="1070" y="410" width="70" height="220" rx="10" fill="#eb8235"/>
+  </g>
+  <g font-family="Helvetica, Arial, sans-serif">
+    <text x="80" y="230" font-size="88" font-weight="700" fill="#ffffff">EcoBuilding</text>
+    <text x="80" y="300" font-size="34" fill="#dceadf">La carte d'identité écologique de chaque</text>
+    <text x="80" y="345" font-size="34" fill="#dceadf">bâtiment français, en 3D</text>
+    <text x="80" y="430" font-size="26" fill="#bcd8c4">DPE · interdiction de location · risques · nappe · solaire · prix DVF</text>
+    <text x="80" y="500" font-size="28" font-weight="600" fill="#ffffff">Données ouvertes · Gratuit · API publique</text>
+    <text x="80" y="560" font-size="26" fill="#bcd8c4">ecobuilding.confinia.io</text>
+  </g>
+</svg>
