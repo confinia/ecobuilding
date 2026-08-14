@@ -114,6 +114,18 @@ def test_frontend_loading_feedback_is_wired():
 
 
 @needs_repo
+def test_social_cards_and_favicon():
+    """#169: shares must render as branded cards, tabs must carry the favicon."""
+    idx = (ROOT / "frontend/site/index.html").read_text()
+    for frag in ('rel="icon"', 'property="og:image"', 'og-image.png',
+                 'name="twitter:card"', 'property="og:title"'):
+        assert frag in idx, f"{frag} missing from index.html"
+    assert (ROOT / "frontend/site/assets/og-image.png").stat().st_size > 10_000
+    for page in ("apropos.html", "offres.html"):
+        assert 'rel="icon"' in (ROOT / f"frontend/site/{page}").read_text()
+
+
+@needs_repo
 def test_dvf_prices_wired_everywhere():
     """#162: the self-hosted DVF RPC is wired in BOTH compose files (prod
     blue/green + sandbox) and the web panel renders the price block."""
