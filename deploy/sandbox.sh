@@ -5,6 +5,7 @@
 set -eu
 cd "$(dirname "$0")/.."
 S=sandbox_stack
+podman network exists ecobuilding-internal || podman network create ecobuilding-internal   # (#173)
 HOSTHDR='Host: sandbox.ecobuilding.confinia.io'
 
 # 1. isolated sandbox secrets. Polar values start empty — fill them once the

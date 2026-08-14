@@ -11,7 +11,7 @@ set -eu
 cd ~/projects/ecobuilding
 
 ACTIVE=$(cat deploy/.active 2>/dev/null || echo blue)
-if [ "$ACTIVE" = blue ]; then TARGET=green; PORT=8022; else TARGET=blue; PORT=8021; fi
+if [ "$ACTIVE" = blue ]; then TARGET=green; PORT=13200; else TARGET=blue; PORT=13100; fi   # 1PESI (#173)
 
 curl -fsS -m 5 "http://127.0.0.1:$PORT/api/v1/healthz" >/dev/null \
   || { echo "Target stack ($TARGET, :$PORT) is not healthy — cannot roll back to it"; exit 1; }

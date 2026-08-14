@@ -37,11 +37,26 @@ services:
     volumes:
       - ./realm-confinia.json:/opt/keycloak/data/import/realm-confinia.json:ro
     ports:
-      # 0.0.0.0 so containers reach it via host.containers.internal (ufw blocks 8181 publicly)
+      # legacy 0.0.0.0 publish (ufw-blocked) — until the platform edge flip
       - "8181:8080"
+      # 1PESI (#173): loopback-only; internal consumers use the shared network
+      - "127.0.0.1:13070:8080"
     depends_on:
       - kc-db
+    networks:
+      default:
+      internal:
+        aliases: [keycloak]
     restart: unless-stopped
+
+networks:
+  default: {}
+  # Shared east-west network (#173): bridged consumers (api) reach shared
+  # services by DNS alias — loopback host publishes are unreachable from
+  # bridged containers (verified), so host.containers.internal is out.
+  internal:
+    name: ecobuilding-internal
+    external: true
 
 volumes:
   kc_pgdata:

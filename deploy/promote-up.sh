@@ -8,7 +8,7 @@ set -eu
 cd "$(dirname "$0")/.."
 
 ACTIVE=$(cat deploy/.active 2>/dev/null || echo blue)
-if [ "$ACTIVE" = blue ]; then CANDIDATE=green; PORT=8022; else CANDIDATE=blue; PORT=8021; fi
+if [ "$ACTIVE" = blue ]; then CANDIDATE=green; PORT=13200; else CANDIDATE=blue; PORT=13100; fi   # 1PESI (#173)
 
 # Candidate must be healthy before taking production traffic.
 curl -fsS -m 5 "http://127.0.0.1:$PORT/api/v1/healthz" >/dev/null \
