@@ -1,4 +1,4 @@
-# GREEN stack: entry caddy published on 127.0.0.1:8022.
+# GREEN stack: entry caddy published on 127.0.0.1:13200 (1PESI, #173).
 services:
   caddy:
     ports:

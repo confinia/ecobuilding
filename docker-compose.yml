@@ -4,8 +4,8 @@
 #   podman-compose -p ecobuilding-blue  -f docker-compose.yml -f deploy/blue.override.yml  up -d
 #   podman-compose -p ecobuilding-green -f docker-compose.yml -f deploy/green.override.yml up -d
 #
-# The ONLY published port is this stack's caddy (blue 127.0.0.1:8021, green
-# 127.0.0.1:8022 — set by the override files); everything else stays on the
+# The ONLY published port is this stack's caddy (blue 127.0.0.1:13100, green
+# 127.0.0.1:13200 — set by the override files); everything else stays on the
 # stack's private network, so the two stacks can never collide. The router
 # (caddy_server/) maps prod/next hostnames to the stacks; the VM's main caddy
 # terminates TLS and forwards to the router.
@@ -58,7 +58,7 @@ services:
     restart: unless-stopped
 
   # App-local OTel buffer; its prometheus exporter (:8889) is published per
-  # stack (blue 127.0.0.1:8891 / green :8892 via the override files) and
+  # stack (blue 127.0.0.1:13060 / green :13061 via the override files) and
   # scraped by the SHARED monitoring project (monitoring_stack/), which owns
   # prometheus + grafana + podman-exporter — metrics survive promotes.
   otel-collector:

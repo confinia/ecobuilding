@@ -1,6 +1,6 @@
 # EcoBuilding RENDER (project: ecobuilding-render, issue #88). Stateless headless
-# map renderer, shared like bdnb-rest / auth (outside blue/green). Published on
-# 0.0.0.0:8040 (ufw-blocked); the API reaches it via host.containers.internal.
+# map renderer, shared like bdnb-rest / auth (outside blue/green). Loopback
+# 127.0.0.1:13080; bridged consumers use the ecobuilding-internal alias render.
 services:
   render:
     build: .

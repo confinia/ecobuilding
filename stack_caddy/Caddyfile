@@ -22,7 +22,7 @@
 		reverse_proxy api:8000
 	}
 
-	# SHARED Grafana (monitoring_stack project, host :3002) — same instance
+	# SHARED Grafana (monitoring_stack project, host :13040) — same instance
 	# whichever stack serves prod, so dashboards survive promotes.
 	handle /grafana* {
 		reverse_proxy host.containers.internal:13040
