@@ -18,7 +18,7 @@ Pre-post guard CLEARED 2026-08-03: /lookup cache + per-IP daily cap live.
 - [ ] Mastodon — :
 - [~] Show HN — DEFERRED (2026-08-12, operator call; revisit post-window)
 - [~] r/immobilier — modmail envoyé (rule 9 du sub : outil gratuit via wiki) : 2026-08-12, en attente de la modération
-- [x] Reddit r/InternetIsBeautiful — link post : 2026-08-15, https://www.reddit.com/r/InternetIsBeautiful/comments/1vp3heu/ (u/SpaceClement; la karma-gate n'a pas bloqué le submit final)
+- [~] Reddit r/InternetIsBeautiful — post 2026-08-15 REMOVED par automod (karma insuffisant); modmail d'appel envoyé; retry seulement après accord mods ou karma construit (r/gis, r/openstreetmap). Le social card (#169) s'affichait parfaitement.
 - [ ] GeoRezo — :
 
 ## LinkedIn (FR)
