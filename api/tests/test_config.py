@@ -104,7 +104,9 @@ def test_frontend_loading_feedback_is_wired():
     server-side render)."""
     app = (ROOT / "frontend/site/app.js").read_text()
     css = (ROOT / "frontend/site/style.css").read_text()
-    assert app.count('hint loading') >= 3          # geolocate + search + click
+    # All loading paths use the narrated panel (rotating source labels).
+    assert app.count("showLoadingPanel(") >= 3     # geolocate + search + click + def
+    assert "LOADING_SOURCES" in app and "DGFiP" in app
     order = [app.index(s) for s in
              ("Collecte des données", "Rendu de la carte 3D", "Mise en page du PDF")]
     assert order == sorted(order)

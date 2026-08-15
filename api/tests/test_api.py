@@ -352,6 +352,45 @@ def test_official_dpe_html_and_pdf():
     assert pdf.startswith(b"%PDF") and len(pdf) > 5000
 
 
+def test_local_taxes_block(monkeypatch):
+    async def fake(url, params, ttl):
+        assert 'insee_com="78575"' in params["where"]
+        return {"results": [{"exercice": "2025", "taux_global_tfb": 29.58,
+                             "taux_global_tfnb": 89.91, "taux_plein_teom": 5.51,
+                             "q03": "CC de la Haute Vallée de Chevreuse"}]}
+    monkeypatch.setattr(main, "_cached_get_json", fake)
+    t = asyncio.run(main._local_taxes("78575"))
+    assert t["property_tax_built_pct"] == 29.58 and t["waste_tax_pct"] == 5.51
+    assert asyncio.run(main._local_taxes(None)) is None
+
+
+def test_nearby_schools_sorted(monkeypatch):
+    async def fake(url, params, ttl):
+        return {"results": [
+            {"nom_etablissement": "Loin", "type_etablissement": "Ecole",
+             "statut_public_prive": "Public", "position": {"lon": 2.10, "lat": 48.71}},
+            {"nom_etablissement": "Près", "type_etablissement": "Collège",
+             "statut_public_prive": "Public", "position": {"lon": 2.082, "lat": 48.702}},
+        ]}
+    monkeypatch.setattr(main, "_cached_get_json", fake)
+    sc = asyncio.run(main._nearby_schools(2.0815, 48.7020))
+    assert sc["within_2km"] == 2
+    assert sc["nearest"][0]["name"] == "Près"          # sorted by distance
+    assert sc["nearest"][0]["distance_m"] < sc["nearest"][1]["distance_m"]
+
+
+def test_taxes_and_schools_html():
+    from app.report import _local_taxes_html, _schools_html
+    h = _local_taxes_html({"year": "2025", "property_tax_built_pct": 29.58,
+                           "waste_tax_pct": 5.51, "intercommunalite": "CC X"})
+    assert "29.58 %" in h and "TEOM" in h and "(2025)" in h
+    assert _local_taxes_html({}) == ""
+    h2 = _schools_html({"within_2km": 8, "nearest": [
+        {"name": "Jean Moulin", "type": "Ecole", "statut": "Public", "distance_m": 240}]})
+    assert "Jean Moulin" in h2 and "240 m" in h2 and "sectorisation" in h2
+    assert _schools_html({}) == ""
+
+
 def test_report_titles_with_searched_address_and_keeps_principal():
     """#146: a bâtiment groupe can span several streets. The fiche titles with
     the searched address and keeps BDNB's principal address visible."""
