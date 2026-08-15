@@ -58,16 +58,19 @@ services:
       OIDC_JWKS_URL: http://sandbox-keycloak:8080/auth/realms/sandbox-ecobuilding/protocol/openid-connect/certs
       OIDC_ISSUER: https://sandbox.ecobuilding.confinia.io/auth/realms/sandbox-ecobuilding
       OIDC_REALM: sandbox-ecobuilding
-      # DVF home prices (#89) via the shared BDNB PostgREST RPC (ufw-blocked 3005).
-      DVF_RPC_URL: http://host.containers.internal:3005/rpc/prices_for_building
+      # Shared services via ecobuilding-internal DNS aliases (#173).
+      DVF_RPC_URL: http://bdnb-rest:3005/rpc/prices_for_building
       # DPE-3D map render for the PDF (#88) via the shared render service (8040).
-      RENDER_URL: http://host.containers.internal:8040/shot
+      RENDER_URL: http://render:8040/shot
       # Polar SANDBOX (token/org/product/webhook secret live in ./secrets.env).
       POLAR_ENV: sandbox
       POLAR_BASE_URL: https://sandbox-api.polar.sh
     volumes:
       - ../data/geoip:/geoip:ro
       - ./data/leads:/leads
+    networks:
+      default:
+      internal: {}
     # No depends_on: JWKS is fetched lazily, and podman container dependencies
     # otherwise block single-service recreates (caddy -> api -> keycloak chain).
     restart: unless-stopped
@@ -85,9 +88,16 @@ services:
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
     ports:
-      - "127.0.0.1:8030:8030"
+      - "127.0.0.1:8030:8030"    # legacy — until the platform edge flip
+      - "127.0.0.1:13400:8030"   # 1PESI: eco(3) sandbox(4) entry (#173)
     # No depends_on (see sandbox-api): caddy retries upstreams until they answer.
     restart: unless-stopped
+
+networks:
+  default: {}
+  internal:
+    name: ecobuilding-internal
+    external: true
 
 volumes:
   sandbox_kc_pgdata:

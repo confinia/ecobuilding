@@ -14,6 +14,9 @@ if [ ! -f deploy/secrets.env ]; then
 fi
 systemctl --user is-active --quiet podman.socket || systemctl --user enable --now podman.socket
 
+# Shared east-west network (#173) — idempotent.
+podman network exists ecobuilding-internal || podman network create ecobuilding-internal
+
 # secrets.env is shell-sourced: every line must be KEY=single-token (no spaces,
 # no quotes). Fail fast with LINE NUMBERS ONLY — never echo values (a malformed
 # SMTP_PASSWORD once aborted mid-deploy and leaked a fragment to the terminal).
@@ -64,7 +67,7 @@ else
   ( cd monitoring_stack && podman-compose -p ecobuilding-monitoring -f docker-compose.yml up -d )
 fi
 # Host-listener sanity: monitoring must actually be reachable from the host.
-for p in 3002 9095; do
+for p in 13040 13050; do
   curl -fsS -m 3 -o /dev/null "http://127.0.0.1:$p/" 2>/dev/null \
     || echo "   WARN: no host listener on :$p (monitoring degraded — recreate via ssh)"
 done
@@ -103,7 +106,7 @@ podman exec ecobuilding-edge_caddy_1 caddy reload --config /etc/caddy/Caddyfile 
 
 # Hard health gate on the candidate, via its local entry port. The api can
 # take >3s to start (uvicorn + otel init): retry instead of racing it.
-if [ "$CANDIDATE" = blue ]; then PORT=8021; else PORT=8022; fi
+if [ "$CANDIDATE" = blue ]; then PORT=13100; else PORT=13200; fi   # 1PESI (#173)
 for i in $(seq 1 12); do
   curl -fsS -m 10 "http://127.0.0.1:$PORT/api/v1/healthz" >/dev/null 2>&1 \
     && { echo "   candidate $CANDIDATE healthy on :$PORT"; exit 0; }
