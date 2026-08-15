@@ -7,8 +7,7 @@ services:
     image: ecobuilding-render:latest
     shm_size: 1g
     ports:
-      - "8040:8040"              # legacy 0.0.0.0 (ufw-blocked) — until the flip
-      - "127.0.0.1:13080:8040"   # 1PESI (#173)
+      - "127.0.0.1:13080:8040"   # 1PESI (#173); consumers use alias render
     networks:
       default:
       internal:

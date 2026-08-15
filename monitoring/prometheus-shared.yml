@@ -6,11 +6,11 @@ scrape_configs:
   # blue/green, so promotes never reset the dashboards.
   - job_name: otel-blue
     static_configs:
-      - targets: ["127.0.0.1:8891"]
+      - targets: ["127.0.0.1:13060"]
         labels: { stack: blue }
   - job_name: otel-green
     static_configs:
-      - targets: ["127.0.0.1:8892"]
+      - targets: ["127.0.0.1:13061"]
         labels: { stack: green }
 
   - job_name: podman
