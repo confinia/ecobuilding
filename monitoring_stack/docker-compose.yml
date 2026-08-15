@@ -11,7 +11,7 @@ services:
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.retention.time=180d"
-      - "--web.listen-address=127.0.0.1:9095"
+      - "--web.listen-address=127.0.0.1:13050"
     volumes:
       - ../monitoring/prometheus-shared.yml:/etc/prometheus/prometheus.yml:ro
       - prom_data:/prometheus
@@ -27,7 +27,7 @@ services:
       # recreate can land Grafana on [::]:3002 ONLY (observed 2026-08-11 →
       # /grafana 502: the app caddy proxies over IPv4). Pin it.
       GF_SERVER_HTTP_ADDR: "0.0.0.0"
-      GF_SERVER_HTTP_PORT: "3002"
+      GF_SERVER_HTTP_PORT: "13040"
       GF_SERVER_ROOT_URL: https://ecobuilding.confinia.io/grafana/
       GF_SERVER_SERVE_FROM_SUB_PATH: "true"
       GF_USERS_ALLOW_SIGN_UP: "false"
@@ -54,7 +54,7 @@ services:
     user: "0"
     environment:
       CONTAINER_HOST: unix:///run/podman/podman.sock
-    command: ["--collector.enable-all", "--web.listen-address=127.0.0.1:9882"]
+    command: ["--collector.enable-all", "--web.listen-address=127.0.0.1:13081"]
     volumes:
       - ${XDG_RUNTIME_DIR}/podman/podman.sock:/run/podman/podman.sock:ro
     security_opt:

@@ -135,6 +135,35 @@ def test_dvf_prices_wired_everywhere():
     assert "Prix de vente (DVF)" in app and "commune_eur_m2" in app
 
 
+@needs_repo
+def test_1pesi_port_migration():
+    """#173: 13xxx band dual-published; loopback binds for the old 0.0.0.0
+    exceptions; east-west traffic on the shared network (bridged containers
+    cannot reach loopback host ports — verified empirically)."""
+    root = (ROOT / "docker-compose.yml").read_text()
+    assert "http://keycloak:8080/auth" in root and "http://render:8040/shot" in root
+    assert "http://bdnb-rest:3005/rpc" in root and "ecobuilding-internal" in root
+    assert "host.containers.internal:8181" not in root
+    assert "127.0.0.1:13100:80" in (ROOT / "deploy/blue.override.yml").read_text()
+    assert "127.0.0.1:13200:80" in (ROOT / "deploy/green.override.yml").read_text()
+    assert "127.0.0.1:13070:8080" in (ROOT / "auth_stack/docker-compose.yml").read_text()
+    assert "127.0.0.1:13080:8040" in (ROOT / "render_stack/docker-compose.yml").read_text()
+    assert "127.0.0.1:13020:3005" in (ROOT / "bdnb_stack/docker-compose.yml").read_text()
+    assert "127.0.0.1:13400:8030" in (ROOT / "sandbox_stack/docker-compose.yml").read_text()
+    for f, frag in (("caddy_server/Caddyfile.blue", ":13000"),
+                    ("caddy_server/Caddyfile.green", ":13000"),
+                    ("monitoring_stack/docker-compose.yml", "13040"),
+                    ("monitoring_stack/docker-compose.yml", "13050"),
+                    ("monitoring/grafana-shared/provisioning/datasources/prometheus.yaml", "13050"),
+                    ("deploy/stack-up.sh", "13100"),
+                    ("deploy/promote-up.sh", "13200"),
+                    ("deploy/sandbox.sh", "ecobuilding-internal")):
+        assert frag in (ROOT / f).read_text(), f"{frag} missing from {f}"
+    # Legacy stays until the platform flips the edge (dual-publish, not swap).
+    assert "127.0.0.1:8021:80" in (ROOT / "deploy/blue.override.yml").read_text()
+    assert "127.0.0.1:8030:8030" in (ROOT / "sandbox_stack/docker-compose.yml").read_text()
+
+
 @pytest.mark.skip(reason="e2e email delivery: needs live SMTP creds + a mailbox check")
 def test_registration_email_delivered_e2e():
     """Register a throwaway user on sandbox -> a verification email arrives

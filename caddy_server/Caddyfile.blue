@@ -21,7 +21,7 @@
 	respond @scanners 403
 }
 
-http://ecobuilding.confinia.io {
+http://ecobuilding.confinia.io:8020, http://ecobuilding.confinia.io:13000 {
 	log {
 		output stdout
 		format json
@@ -37,7 +37,7 @@ http://ecobuilding.confinia.io {
 	reverse_proxy 127.0.0.1:8021
 }
 
-http://staging.ecobuilding.confinia.io {
+http://staging.ecobuilding.confinia.io:8020, http://staging.ecobuilding.confinia.io:13000 {
 	log {
 		output stdout
 		format json
@@ -54,5 +54,9 @@ http://staging.ecobuilding.confinia.io {
 }
 
 :8020 {
+	respond "ecobuilding router (active: blue)" 200
+}
+
+:13000 {
 	respond "ecobuilding router (active: blue)" 200
 }

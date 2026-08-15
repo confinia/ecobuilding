@@ -31,13 +31,14 @@ services:
       # 3D DPE building map in the PDF report via the headless render service
       # (#88), reached over the host gateway like Keycloak/bdnb. Must be the
       # full /shot endpoint (the API GETs it directly with lon/lat/... params).
-      RENDER_URL: http://host.containers.internal:8040/shot
-      # DVF home prices (#162): self-hosted PostgREST RPC over the migrated
-      # PostGIS (bdnb_stack), reached over the host gateway like render/kc.
-      DVF_RPC_URL: http://host.containers.internal:3005/rpc/prices_for_building
+      # Shared services via the ecobuilding-internal network (#173): loopback
+      # 13xxx publishes are unreachable from bridged containers, so east-west
+      # traffic uses DNS aliases (keycloak / render / bdnb-rest).
+      RENDER_URL: http://render:8040/shot
+      DVF_RPC_URL: http://bdnb-rest:3005/rpc/prices_for_building
       # Reach Keycloak internally over the shared network (see auth_stack).
-      KC_ADMIN_BASE: http://host.containers.internal:8181/auth
-      OIDC_JWKS_URL: http://host.containers.internal:8181/auth/realms/confinia/protocol/openid-connect/certs
+      KC_ADMIN_BASE: http://keycloak:8080/auth
+      OIDC_JWKS_URL: http://keycloak:8080/auth/realms/confinia/protocol/openid-connect/certs
       OIDC_ISSUER: https://ecobuilding.confinia.io/auth/realms/confinia
     volumes:
       # Country-level GeoIP (dbip-country-lite) — provisioned by deploy.sh,
@@ -46,6 +47,9 @@ services:
       # Lead capture (offer page) — persisted outside git/rsync, shared by
       # both stacks so no lead is lost across promotes.
       - ./data/leads:/leads
+    networks:
+      default:
+      internal: {}
     restart: unless-stopped
 
   frontend:
@@ -64,3 +68,10 @@ services:
       - ./monitoring/otel-collector.yaml:/etc/otelcol/config.yaml:ro
     # ports: set per stack by deploy/{blue,green}.override.yml
     restart: unless-stopped
+
+networks:
+  default: {}
+  # Created by deploy/stack-up.sh (podman network create ecobuilding-internal).
+  internal:
+    name: ecobuilding-internal
+    external: true
