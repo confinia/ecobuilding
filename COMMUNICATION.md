@@ -69,6 +69,20 @@ posting log — timestamp every post there); this file is the *how*.
   technical write-up ("how BDNB MVT + MapLibre render 32M buildings") or the
   EU/NYC data angle.
 
+### Earned media — OpenCage / Geomob
+- **Who:** OpenCage (open geocoding co., @opencage@en.osm.town, Ed Freyfogle)
+  runs the **Geomob** meetups (Paris edition, 5-min lightning talks) and the
+  Geomob podcast; their blog features open-geo-data projects.
+- **Why us:** BAN + BDNB + DVF + Hub'Eau + PVGIS mashup in 3D = their exact
+  editorial line; historical OpenCage backlink to confinia already exists.
+- **Action when ready:** short EN pitch (what it is, the open datasets, the
+  live URL) proposing a Geomob Paris lightning talk or a blog feature. Rule 5:
+  pitch only what is live. Speaking = Clement in person — his call on the
+  identity-mixing trade-off (a geo talk is portfolio-positive, distinct from
+  the LinkedIn concern).
+- **Instance note:** en.osm.town is the OSM-themed Mastodon instance — the
+  fallback (or complement) if the mapstodon.space approval stalls.
+
 ### Timely hooks (use within days of the trigger)
 - **Cash Investigation (eau potable):** the SISPEA rendement block (#171) is
   live — post angle: « Vérifiez le rendement d'eau potable de votre commune ».
