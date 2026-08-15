@@ -49,10 +49,14 @@ posting log — timestamp every post there); this file is the *how*.
 - **r/immobilier:** rule 9 du sub = free tools go through **modmail → wiki des
   outils** (sent 2026-08-12, awaiting mods). Once wiki-listed, link the wiki in
   comments on relevant DPE threads — never a direct post.
-- **r/InternetIsBeautiful:** direct LINK post allowed.
+- **r/InternetIsBeautiful:** KARMA-GATED (2026-08-15: u/SpaceClement below the
+  activity threshold). Unlock path: a week of genuine comments in r/gis /
+  r/openstreetmap earns enough total karma. Then: direct LINK post allowed.
   Title: `Interactive 3D map of every building in France, colored by energy efficiency — built entirely on open government data`
   + one author comment (click any building → record; rental bans 2025/2028/2034; free API).
-- **r/openstreetmap, r/SideProject, r/webdev:** shortened Show-HN-style body, EN.
+- **r/openstreetmap, r/SideProject:** no gate — TEXT posts, EN, OSM-angle /
+  launch-story angle respectively (run-sheets given 2026-08-15). r/webdev:
+  check karma requirements first.
 - **r/france:** only if the rest lands well; public-service angle, Forum Libre.
 
 ### Mastodon (mapstodon.space)
