@@ -2,12 +2,10 @@
 services:
   caddy:
     ports:
-      - "127.0.0.1:8022:80"      # legacy — until the platform edge flip
       - "127.0.0.1:13200:80"     # 1PESI: eco(3) prod-green(2) caddy(0) (#173)
   api:
     environment:
       OTEL_RESOURCE_ATTRIBUTES: deployment.environment=green
   otel-collector:
     ports:
-      - "127.0.0.1:8892:8889"    # legacy
       - "127.0.0.1:13061:8889"   # 1PESI otel

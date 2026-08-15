@@ -41,8 +41,7 @@ services:
       PGRST_DB_POOL: "20"
       PGRST_SERVER_PORT: "3005"
     ports:
-      - "3005:3005"              # legacy 0.0.0.0 (ufw-blocked) — until the flip
-      - "127.0.0.1:13020:3005"   # 1PESI (#173)
+      - "127.0.0.1:13020:3005"   # 1PESI (#173); consumers use alias bdnb-rest
     depends_on:
       - bdnb-db
     networks:

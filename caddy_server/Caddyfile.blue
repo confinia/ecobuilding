@@ -3,7 +3,7 @@
 {
 	admin 127.0.0.1:2030
 	auto_https off
-	http_port 8020
+	http_port 13000
 	default_bind 127.0.0.1
 	servers {
 		# Keep the original client IP in X-Forwarded-For across the local
@@ -21,7 +21,7 @@
 	respond @scanners 403
 }
 
-http://ecobuilding.confinia.io:8020, http://ecobuilding.confinia.io:13000 {
+http://ecobuilding.confinia.io:13000 {
 	log {
 		output stdout
 		format json
@@ -31,13 +31,13 @@ http://ecobuilding.confinia.io:8020, http://ecobuilding.confinia.io:13000 {
 	# Shared identity (ecobuilding-auth project): Keycloak under /auth,
 	# stateful, outside blue/green like monitoring.
 	handle /auth/* {
-		reverse_proxy 127.0.0.1:8181
+		reverse_proxy 127.0.0.1:13070
 	}
 
-	reverse_proxy 127.0.0.1:8021
+	reverse_proxy 127.0.0.1:13100
 }
 
-http://staging.ecobuilding.confinia.io:8020, http://staging.ecobuilding.confinia.io:13000 {
+http://staging.ecobuilding.confinia.io:13000 {
 	log {
 		output stdout
 		format json
@@ -47,15 +47,12 @@ http://staging.ecobuilding.confinia.io:8020, http://staging.ecobuilding.confinia
 	# Shared identity (ecobuilding-auth project): Keycloak under /auth,
 	# stateful, outside blue/green like monitoring.
 	handle /auth/* {
-		reverse_proxy 127.0.0.1:8181
+		reverse_proxy 127.0.0.1:13070
 	}
 
-	reverse_proxy 127.0.0.1:8022
+	reverse_proxy 127.0.0.1:13200
 }
 
-:8020 {
-	respond "ecobuilding router (active: blue)" 200
-}
 
 :13000 {
 	respond "ecobuilding router (active: blue)" 200

@@ -37,9 +37,8 @@ services:
     volumes:
       - ./realm-confinia.json:/opt/keycloak/data/import/realm-confinia.json:ro
     ports:
-      # legacy 0.0.0.0 publish (ufw-blocked) — until the platform edge flip
-      - "8181:8080"
-      # 1PESI (#173): loopback-only; internal consumers use the shared network
+      # 1PESI (#173): loopback-only (router is host-net); internal consumers
+      # use the ecobuilding-internal network (alias keycloak).
       - "127.0.0.1:13070:8080"
     depends_on:
       - kc-db

@@ -159,9 +159,14 @@ def test_1pesi_port_migration():
                     ("deploy/promote-up.sh", "13200"),
                     ("deploy/sandbox.sh", "ecobuilding-internal")):
         assert frag in (ROOT / f).read_text(), f"{frag} missing from {f}"
-    # Legacy stays until the platform flips the edge (dual-publish, not swap).
-    assert "127.0.0.1:8021:80" in (ROOT / "deploy/blue.override.yml").read_text()
-    assert "127.0.0.1:8030:8030" in (ROOT / "sandbox_stack/docker-compose.yml").read_text()
+    # Legacy retired after the platform edge flip (2026-08-15).
+    assert "127.0.0.1:8021:80" not in (ROOT / "deploy/blue.override.yml").read_text()
+    assert "127.0.0.1:8030:8030" not in (ROOT / "sandbox_stack/docker-compose.yml").read_text()
+    assert '"8181:8080"' not in (ROOT / "auth_stack/docker-compose.yml").read_text()
+    assert '"8040:8040"' not in (ROOT / "render_stack/docker-compose.yml").read_text()
+    assert '"3005:3005"' not in (ROOT / "bdnb_stack/docker-compose.yml").read_text()
+    assert "8891" not in (ROOT / "monitoring/prometheus-shared.yml").read_text()
+    assert ":8020" not in (ROOT / "caddy_server/Caddyfile.blue").read_text()
 
 
 @pytest.mark.skip(reason="e2e email delivery: needs live SMTP creds + a mailbox check")

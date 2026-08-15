@@ -76,14 +76,14 @@ Intra-stack routing: static frontend + `/api` → the stack's FastAPI.
 | 8181 | Keycloak (shared auth) |
 | 3005 | bdnb-rest (PostgREST read mirror) |
 
-**1PESI migration in progress (#173, platform PR #7)** — band 13xxx (product
-digit 3), dual-published alongside legacy until the platform flips the edge:
-8020→13000 · 8021/8022→13100/13200 · 8030→13400 · 3005→13020† · 3002→13040 ·
-9095→13050 · 8891/8892→13060/13061 · 8181→13070† · 8040→13080† · 9882→13081.
-† now bind 127.0.0.1 (the 0.0.0.0+ufw exception does not carry over); bridged
-consumers reach shared services via the `ecobuilding-internal` network
-(aliases keycloak / render / bdnb-rest) — loopback host ports are unreachable
-from bridged containers.
+**1PESI ports (final since 2026-08-15, #173 / platform PR #7)** — band 13xxx,
+read as 1 · product(3) · env · service · instance: 13000 router · 13020
+bdnb-rest · 13040 grafana (0.0.0.0+ufw, gateway consumers) · 13050 prometheus
+· 13060/13061 otel blue/green · 13070 keycloak · 13080 render · 13081
+podman-exporter · 13100/13200 blue/green caddies · 13400 sandbox. All
+loopback-only except 13040. Legacy 80xx/3002/3005/909x/9882 retired. East-west
+traffic runs on the `ecobuilding-internal` network (aliases keycloak / render
+/ bdnb-rest): loopback host ports are unreachable from bridged containers.
 | 9090 / 3000 / 9882 | prometheus / grafana / podman-exporter |
 
 ---
