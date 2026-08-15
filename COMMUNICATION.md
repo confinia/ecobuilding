@@ -20,7 +20,10 @@ posting log — timestamp every post there); this file is the *how*.
 ### GeoRezo — the API-buyer audience (géomaticiens)
 - **URL:** https://georezo.net/forum/viewforum.php?id=5 (board **Webmapping**;
   fallback if mods object: « Géo communiqué », id=14)
-- **Account:** register `confinia` with contact@confinia.io (no account yet)
+- **Account:** `confinia` / contact@confinia.io. (A dormant personal account
+  exists — username `clement@igonet.fr`, registered 2026-07-17: do NOT post
+  from it, the username displays the raw personal email publicly; its emailed
+  cleartext password should be changed.)
 - **Action:** NEW topic
 - **Title:** `EcoBuilding — BDNB en tuiles vectorielles + MapLibre: bâtiments 3D colorés par DPE, API publique`
 - **Body:** LAUNCH.md § GeoRezo (the depersonalized REX version)
