@@ -19,6 +19,7 @@ Pre-post guard CLEARED 2026-08-03: /lookup cache + per-IP daily cap live.
 - [~] Show HN — DEFERRED (2026-08-12, operator call; revisit post-window)
 - [~] r/immobilier — modmail envoyé (rule 9 du sub : outil gratuit via wiki) : 2026-08-12, en attente de la modération
 - [x] Reddit r/openstreetmap — text post : 2026-08-15 (u/SpaceClement); AUSSI à faire : commentaire dans le thread épinglé « OpenStreetMap websites/apps to share » (long tail)
+- [x] Reddit r/SideProject — text post : 2026-08-15 (u/SpaceClement)
 - [~] Reddit r/InternetIsBeautiful — post 2026-08-15 REMOVED par automod (karma insuffisant); modmail d'appel envoyé; retry seulement après accord mods ou karma construit (r/gis, r/openstreetmap). Le social card (#169) s'affichait parfaitement.
 - [ ] GeoRezo — :
 
