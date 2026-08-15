@@ -97,7 +97,7 @@ geolocate.on("geolocate", async (pos) => {
   const { longitude: lon, latitude: lat } = pos.coords;
   track("geolocate");
   map.easeTo({ zoom: 17.5, pitch: 55 });
-  showPanel('<p class="hint loading">Recherche du bâtiment à votre position…</p>');
+  showLoadingPanel('Recherche du bâtiment à votre position…');
   try {
     const r = await fetch(`${API}/reverse?lon=${lon}&lat=${lat}`);
     if (!r.ok) throw new Error(r.status);
@@ -251,7 +251,7 @@ async function select(s) {
   // Full address: fly to the building and open its record.
   map.flyTo({ center: [s.lon, s.lat], zoom: 17.5, pitch: 55, bearing: -18, duration: 2500 });
   placeMarker(s.lon, s.lat);
-  showPanel('<p class="hint loading">Chargement des données du bâtiment…</p>');
+  showLoadingPanel('Chargement des données du bâtiment…');
   try {
     const r = await fetch(`${API}/lookup?ban_id=${encodeURIComponent(s.ban_id)}&lon=${s.lon}&lat=${s.lat}`);
     const data = await r.json();
@@ -287,7 +287,7 @@ async function loadStreetview(lon, lat) {
 async function openBuildingById(id, lon, lat) {
   placeMarker(lon, lat);
   anchorMarkerToBuilding(id);   // id is the tile's batiment_groupe_id -> pin on the footprint
-  showPanel('<p class="hint loading">Chargement des données du bâtiment…</p>');
+  showLoadingPanel('Chargement des données du bâtiment…');
   try {
     const r = await fetch(`${API}/buildings/${encodeURIComponent(id)}?lon=${lon}&lat=${lat}`);
     if (!r.ok) throw new Error(r.status);
@@ -375,6 +375,12 @@ function renderPanel(s, data) {
     ${kv("Piézomètre le plus proche", data.groundwater.station_distance_m != null ? `à ${data.groundwater.station_distance_m} m` + (data.groundwater.station_commune ? ` (${data.groundwater.station_commune})` : "") : null)}
     ${kv("Mesuré le", data.groundwater.measured_on ? String(data.groundwater.measured_on).slice(0, 10) : null)}
     <p class="hint">${data.groundwater.note || ""} ${data.groundwater.well_regulation || ""}</p>` : ""}
+    ${data.local_taxes ? `<h3>Fiscalité locale${data.local_taxes.year ? ` (${data.local_taxes.year})` : ""}</h3>
+    ${kv("Taxe foncière (bâti), taux global", data.local_taxes.property_tax_built_pct != null ? data.local_taxes.property_tax_built_pct + " %" : null)}
+    ${kv("Ordures ménagères (TEOM)", data.local_taxes.waste_tax_pct != null ? data.local_taxes.waste_tax_pct + " %" : null)}` : ""}
+    ${data.schools?.within_2km ? `<h3>Écoles à proximité (${data.schools.within_2km} < 2 km)</h3>
+    ${(data.schools.nearest || []).slice(0, 3).map((s) => kv(`${s.type || "Établissement"}${s.statut ? " · " + s.statut : ""}`, `${s.name} (${s.distance_m} m)`)).join("")}
+    <p class="hint">Proximité ≠ sectorisation (carte scolaire).</p>` : ""}
     ${data.water_network ? `<h3>Eau potable (commune)</h3>
     ${kv(`Rendement du réseau${data.water_network.year ? ` (${data.water_network.year})` : ""}`, data.water_network.efficiency_pct != null ? data.water_network.efficiency_pct + " %" : null)}
     ${kv("Part perdue en fuites", data.water_network.losses_pct != null ? data.water_network.losses_pct + " %" : null)}
@@ -395,6 +401,27 @@ function renderPanel(s, data) {
   const pdfBtn = document.getElementById("report-btn");
   if (pdfBtn) pdfBtn.onclick = () => downloadReport(pdfBtn);
   loadStreetview(data.query?.lon, data.query?.lat);
+}
+
+// --- Panel loading narration (#150 follow-up): with 9 upstream sources per
+// click, the spinner names what is actually being gathered — honest fan-out
+// narration, not fake progress.
+const LOADING_SOURCES = [
+  "Bâtiment (BDNB)…", "Risques (Géorisques)…", "Nappe phréatique (Hub'Eau)…",
+  "Solaire (PVGIS)…", "Prix de vente (DVF)…", "DPE officiel (ADEME)…",
+  "Fiscalité locale (DGFiP)…", "Écoles (annuaire)…", "Eau potable (SISPEA)…",
+];
+let loadingTimer = null;
+function showLoadingPanel(first) {
+  let i = 0;
+  showPanel(`<p class="hint loading">${first}<br><span id="loading-src" class="hint">${LOADING_SOURCES[0]}</span></p>`);
+  clearInterval(loadingTimer);
+  loadingTimer = setInterval(() => {
+    const el = document.getElementById("loading-src");
+    if (!el) { clearInterval(loadingTimer); return; }
+    i = (i + 1) % LOADING_SOURCES.length;
+    el.textContent = LOADING_SOURCES[i];
+  }, 550);
 }
 
 // --- PDF generation feedback (#150) ------------------------------------------

@@ -500,9 +500,11 @@ async def _do_lookup(q, ban_id, address, lon, lat):
 
     commune = rows[0].get("code_commune_insee") if rows else None
     first_id = rows[0].get("batiment_groupe_id") if rows else None
-    risks, groundwater, solar_pv, water_network, official_dpe = await asyncio.gather(
+    (risks, groundwater, solar_pv, water_network, official_dpe,
+     local_taxes, schools) = await asyncio.gather(
         _area_risks(lon, lat), _groundwater(lon, lat), _solar_pv(lon, lat),
-        _water_network(commune), _official_dpe(first_id) if first_id else _noop())
+        _water_network(commune), _official_dpe(first_id) if first_id else _noop(),
+        _local_taxes(commune), _nearby_schools(lon, lat))
 
     M_LOOKUPS.add(1, {"status": "ok" if rows else "no_building"})
     sources = [
@@ -518,6 +520,10 @@ async def _do_lookup(q, ban_id, address, lon, lat):
         sources.append("SISPEA / OFB (services d'eau) — Licence Ouverte")
     if official_dpe and official_dpe.get("dpe_number"):
         sources.append("ADEME — Observatoire DPE — Licence Ouverte")
+    if local_taxes:
+        sources.append("DGFiP — Fiscalité directe locale — Licence Ouverte")
+    if schools:
+        sources.append("Annuaire de l'éducation (MENJ) — Licence Ouverte")
     return {
         "query": {"q": q, "ban_id": ban_id, "address": address, "lon": lon, "lat": lat},
         "buildings": [_normalize_building(r) for r in rows],
@@ -526,6 +532,8 @@ async def _do_lookup(q, ban_id, address, lon, lat):
         "solar_pv": solar_pv,
         "water_network": water_network,
         "official_dpe": official_dpe,
+        "local_taxes": local_taxes,
+        "schools": schools,
         "sources": sources,
     }
 
@@ -598,6 +606,68 @@ def _l93_to_wgs84(x: float, y: float) -> tuple[float, float]:
         phi = math.pi / 2 - 2 * math.atan(
             t * ((1 - e * math.sin(phi)) / (1 + e * math.sin(phi))) ** (e / 2))
     return math.degrees(lam), math.degrees(phi)
+
+
+FISCALITE_URL = ("https://data.economie.gouv.fr/api/explore/v2.1/catalog/datasets/"
+                 "fiscalite-locale-des-particuliers-geo/records")
+SCHOOLS_URL = ("https://data.education.gouv.fr/api/explore/v2.1/catalog/datasets/"
+               "fr-en-annuaire-education/records")
+
+
+async def _local_taxes(commune_insee):
+    """Local recurring taxes (#193): DGFiP fiscalité directe locale — the
+    buyer's other cost sheet next to the DPE €/an. Latest exercice; global
+    rates (commune + interco + syndicats). None on any miss."""
+    if not commune_insee:
+        return None
+    try:
+        d = await _cached_get_json(FISCALITE_URL, {
+            "where": f'insee_com="{commune_insee}"',
+            "order_by": "exercice desc", "limit": "1"}, ttl=7 * 86400)
+        r = (d.get("results") or [{}])[0]
+        if not r.get("taux_global_tfb"):
+            return None
+        return {
+            "year": r.get("exercice"),
+            "property_tax_built_pct": r.get("taux_global_tfb"),
+            "property_tax_unbuilt_pct": r.get("taux_global_tfnb"),
+            "waste_tax_pct": r.get("taux_plein_teom"),
+            "intercommunalite": r.get("q03"),
+        }
+    except Exception as e:
+        log.warning("local taxes failed for %s: %s", commune_insee, e)
+        return None
+
+
+async def _nearby_schools(lon, lat, radius_km: float = 2.0):
+    """Nearest schools (#194) from the annuaire de l'éducation. Honest caveat
+    carried in the UI: proximity is NOT the carte scolaire assignment."""
+    if lon is None or lat is None:
+        return None
+    try:
+        d = await _cached_get_json(SCHOOLS_URL, {
+            "where": f"within_distance(position, geom'POINT({lon} {lat})', {radius_km}km)",
+            "select": "nom_etablissement,type_etablissement,statut_public_prive,position",
+            "limit": "40"}, ttl=86400)
+        rows = d.get("results") or []
+        out = []
+        for r in rows:
+            pos = r.get("position") or {}
+            if pos.get("lon") is None:
+                continue
+            out.append({
+                "name": r.get("nom_etablissement"),
+                "type": r.get("type_etablissement"),
+                "statut": r.get("statut_public_prive"),
+                "distance_m": round(_haversine_m(lon, lat, pos["lon"], pos["lat"])),
+            })
+        if not out:
+            return {"within_2km": 0, "nearest": []}
+        out.sort(key=lambda s: s["distance_m"])
+        return {"within_2km": len(out), "nearest": out[:5]}
+    except Exception as e:
+        log.warning("schools failed for %s,%s: %s", lon, lat, e)
+        return None
 
 
 async def _noop():
@@ -754,12 +824,15 @@ async def building(
         raise HTTPException(404, "Unknown building id")
     row = rows[0]
     M_LOOKUPS.add(1, {"status": "by_id"})
-    prices, risks, groundwater, solar_pv, click_addr, water_network, official_dpe = await asyncio.gather(
+    (prices, risks, groundwater, solar_pv, click_addr, water_network,
+     official_dpe, local_taxes, schools) = await asyncio.gather(
         _dvf_prices(bdnb_id), _area_risks(lon, lat),
         _groundwater(lon, lat), _solar_pv(lon, lat),
         _click_address(bdnb_id, lon, lat),
         _water_network(row.get("code_commune_insee")),
-        _official_dpe(bdnb_id))
+        _official_dpe(bdnb_id),
+        _local_taxes(row.get("code_commune_insee")),
+        _nearby_schools(lon, lat))
     sources = ["BDNB (CSTB) — Licence Ouverte v2.0", "Géorisques — Licence Ouverte"]
     if prices:
         sources.append("DVF (DGFiP) / Etalab — Licence Ouverte")
@@ -771,6 +844,10 @@ async def building(
         sources.append("SISPEA / OFB (services d'eau) — Licence Ouverte")
     if official_dpe and official_dpe.get("dpe_number"):
         sources.append("ADEME — Observatoire DPE — Licence Ouverte")
+    if local_taxes:
+        sources.append("DGFiP — Fiscalité directe locale — Licence Ouverte")
+    if schools:
+        sources.append("Annuaire de l'éducation (MENJ) — Licence Ouverte")
     return {
         # Prefer the group-member address at the clicked point (#152); the
         # principal address stays on buildings[0].address for the UI's row.
@@ -783,6 +860,8 @@ async def building(
         "solar_pv": solar_pv,
         "water_network": water_network,
         "official_dpe": official_dpe,
+        "local_taxes": local_taxes,
+        "schools": schools,
         "prices": prices,
         "sources": sources,
     }

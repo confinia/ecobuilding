@@ -161,6 +161,19 @@ def _traceability_annex(data: dict, photos: list | None) -> str:
             od.get("established_on") or "—",
             "https://data.ademe.fr/data-fair/api/v1/datasets/dpe03existant/lines"
             f"?qs=numero_dpe:%22{od['dpe_number']}%22")))
+    lt = data.get("local_taxes") or {}
+    if lt.get("property_tax_built_pct") is not None:
+        cards.append(("Fiscalité locale", _prov(
+            "DGFiP — Fiscalité directe locale (data.economie.gouv.fr)",
+            "Licence Ouverte", f"insee_com = {commune or '—'} · exercice {lt.get('year') or '—'}",
+            f"exercice {lt.get('year') or '—'}",
+            "https://data.economie.gouv.fr/explore/dataset/fiscalite-locale-des-particuliers-geo/")))
+    sc = data.get("schools") or {}
+    if sc.get("within_2km"):
+        cards.append(("Écoles", _prov(
+            "Annuaire de l'éducation (MENJ)", "Licence Ouverte",
+            f"within_distance 2 km de {lat}, {lon}", "annuaire courant",
+            "https://data.education.gouv.fr/explore/dataset/fr-en-annuaire-education/")))
     gw = data.get("groundwater") or {}
     if gw.get("available"):
         cards.append(("Eau souterraine (nappe)", _prov(
@@ -230,6 +243,41 @@ def _principal_address_note(shown_address: str, b: dict) -> str:
     n = f" ({b['dwellings']} logements)" if b.get("dwellings") else ""
     return (f'<p class="meta">Bâtiment groupe BDNB{n} — '
             f'adresse principale : {principal}</p>')
+
+
+def _local_taxes_html(t: dict) -> str:
+    """Recurring local taxes (#193) — the other cost sheet buyers budget."""
+    if not t:
+        return ""
+    yr = f" ({t['year']})" if t.get("year") else ""
+    return f"""
+<h2>Fiscalité locale{yr}</h2>
+<table>
+  {_row("Taxe foncière (bâti), taux global", t.get("property_tax_built_pct"), " %")}
+  {_row("Taxe ordures ménagères (TEOM)", t.get("waste_tax_pct"), " %")}
+  {_row("Taxe foncière (non bâti)", t.get("property_tax_unbuilt_pct"), " %")}
+  {_row("Intercommunalité", t.get("intercommunalite"))}
+</table>
+<p class="meta">Taux globaux (commune + intercommunalité + syndicats), dernier exercice
+publié (DGFiP). La taxe due dépend de la valeur locative cadastrale du bien.</p>"""
+
+
+def _schools_html(sc: dict) -> str:
+    """Nearest schools (#194) — proximity, NOT the carte scolaire."""
+    if not sc:
+        return ""
+    rows = "".join(
+        _row(f"{s.get('type') or 'Établissement'} · {s.get('statut') or ''}".strip(" ·"),
+             f"{s.get('name')} ({s.get('distance_m')} m)")
+        for s in (sc.get("nearest") or []))
+    if not rows:
+        return ('<h2>Écoles à proximité</h2><p class="meta">Aucun établissement recensé '
+                'à moins de 2 km (annuaire de l\'éducation).</p>')
+    return f"""
+<h2>Écoles à proximité ({sc.get('within_2km')} à moins de 2 km)</h2>
+<table>{rows}</table>
+<p class="meta">Distances à vol d'oiseau (annuaire de l'éducation). La proximité ne vaut
+pas sectorisation: la carte scolaire dépend de la commune.</p>"""
 
 
 def _official_dpe_html(od: dict) -> str:
@@ -418,6 +466,8 @@ def _report_html(data: dict, photos: list | None = None, map_img: str | None = N
 {f'<p class="meta">{pv["assumptions"]}</p>' if pv.get("assumptions") else ""}
 
 {_prices_html(data.get("prices"))}
+{_local_taxes_html(data.get("local_taxes") or {})}
+{_schools_html(data.get("schools") or {})}
 
 <footer>
   Sources : BDNB (CSTB), Base Adresse Nationale, Géorisques — Licence Ouverte, attributions requises.
