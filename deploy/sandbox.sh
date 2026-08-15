@@ -36,19 +36,19 @@ mkdir -p "$S/data/leads"
 echo "   waiting for sandbox Keycloak realm..."
 for i in $(seq 1 72); do
   curl -fsS -m 5 -H "$HOSTHDR" \
-    "http://127.0.0.1:8030/auth/realms/sandbox-ecobuilding/.well-known/openid-configuration" \
+    "http://127.0.0.1:13400/auth/realms/sandbox-ecobuilding/.well-known/openid-configuration" \
     >/dev/null 2>&1 && { echo "   realm up"; break; }
   sleep 5
 done
 
-# 4. The platform edge routes sandbox.ecobuilding.confinia.io -> :8030 IN THE
+# 4. The platform edge routes sandbox.ecobuilding.confinia.io -> :13400 IN THE
 #    confinia/platform REPO (its PR #3) — never hand-edit the edge from here:
 #    a platform redeploy reverts it, and a duplicate site block breaks reload.
 
 # 5. health
 sleep 3
 echo "== sandbox health =="
-curl -fsS -m 10 -H "$HOSTHDR" "http://127.0.0.1:8030/api/v1/healthz" && echo || echo "WARN: local api via sandbox caddy"
+curl -fsS -m 10 -H "$HOSTHDR" "http://127.0.0.1:13400/api/v1/healthz" && echo || echo "WARN: local api via sandbox caddy"
 curl -fsS -m 20 "https://sandbox.api.ecobuilding.confinia.io/v1/healthz" && echo || echo "WARN: public api (edge may still be issuing the cert)"
 echo
 echo "App:  https://sandbox.ecobuilding.confinia.io   (Créer un compte -> realm sandbox-ecobuilding)"

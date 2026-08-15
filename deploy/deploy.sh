@@ -6,9 +6,9 @@
 # https://staging.ecobuilding.confinia.io then promote.
 #
 # Model: two complete independent stacks from the same docker-compose.yml
-#   ecobuilding-blue  (entry 127.0.0.1:8021)
-#   ecobuilding-green (entry 127.0.0.1:8022)
-# plus the router (caddy_server/, project ecobuilding-edge, 127.0.0.1:8020)
+#   ecobuilding-blue  (entry 127.0.0.1:13100)
+#   ecobuilding-green (entry 127.0.0.1:13200)
+# plus the router (caddy_server/, project ecobuilding-edge, 127.0.0.1:13000)
 # which maps prod/staging hostnames to the stacks. State: deploy/.active on VM.
 set -eu
 
@@ -25,7 +25,7 @@ rsync -az --delete \
 
 # Upstream edge = platform repo (github.com/confinia/platform), run by the
 # 'debian' user: its Caddyfile forwards ecobuilding.confinia.io and
-# staging.ecobuilding.confinia.io -> 127.0.0.1:8020 (our router). Managed once,
+# staging.ecobuilding.confinia.io -> 127.0.0.1:13000 (our router). Managed once,
 # out of band (needs sudo); this deploy does not touch it.
 
 echo "== remote: stacks (deploy/stack-up.sh)"

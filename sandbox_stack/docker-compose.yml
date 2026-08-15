@@ -8,7 +8,7 @@
 #  - own Keycloak instance + DB, realm "sandbox-ecobuilding" (prod's KC and its
 #    pinned KC_HOSTNAME are untouched);
 #  - own secrets (./secrets.env, gitignored), own volumes;
-#  - single bridged caddy published on 127.0.0.1:8030; the platform edge routes
+#  - single bridged caddy published on 127.0.0.1:13400; the platform edge routes
 #    sandbox.ecobuilding.confinia.io + sandbox.api.ecobuilding.confinia.io here.
 # Shared (read-only, no duplication): the BDNB backend — sandbox-api defaults to
 # public api.bdnb.io and can be repointed to the local PostgREST (#28) via env.
@@ -60,7 +60,7 @@ services:
       OIDC_REALM: sandbox-ecobuilding
       # Shared services via ecobuilding-internal DNS aliases (#173).
       DVF_RPC_URL: http://bdnb-rest:3005/rpc/prices_for_building
-      # DPE-3D map render for the PDF (#88) via the shared render service (8040).
+      # DPE-3D map render for the PDF (#88) via the shared render service (alias).
       RENDER_URL: http://render:8040/shot
       # Polar SANDBOX (token/org/product/webhook secret live in ./secrets.env).
       POLAR_ENV: sandbox
