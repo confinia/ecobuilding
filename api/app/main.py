@@ -54,6 +54,20 @@ PVGIS_URL = "https://re.jrc.ec.europa.eu/api/v5_2/PVcalc"
 # Drinking-water service indicators (#171): SISPEA per commune via Hub'Eau —
 # network efficiency P104.3 (rendement: 70% = 30% leaked) + price D102.0.
 SISPEA_URL = "https://hubeau.eaufrance.fr/api/v0/indicateurs_services/communes"
+# Official DPE record (#189): BDNB links each groupe to its representative
+# dwelling's DPE (identifiant_dpe); the ADEME observatoire then serves the
+# official document's substance (annual € costs, insulation quality, systems).
+BDNB_REP_DPE_URL = os.environ.get(
+    "BDNB_REP_DPE_URL",
+    "https://api.bdnb.io/v1/bdnb/donnees/batiment_groupe_dpe_representatif_logement")
+ADEME_DPE_URL = "https://data.ademe.fr/data-fair/api/v1/datasets/dpe03existant/lines"
+ADEME_DPE_SELECT = ",".join((
+    "cout_total_5_usages", "cout_chauffage", "cout_ecs", "cout_eclairage",
+    "cout_auxiliaires", "cout_refroidissement", "qualite_isolation_enveloppe",
+    "qualite_isolation_menuiseries", "qualite_isolation_plancher_bas",
+    "qualite_isolation_plancher_haut_comble_perdu",
+    "description_installation_chauffage_n1", "description_installation_ecs_n1",
+    "type_energie_n1", "type_energie_n2"))
 
 # Rental-ban calendar, loi Climat et Résilience (verified 2026-07-20).
 DPE_BAN_DATES = {"G": "2025-01-01", "F": "2028-01-01", "E": "2034-01-01"}
@@ -485,9 +499,10 @@ async def _do_lookup(q, ban_id, address, lon, lat):
         rows = []
 
     commune = rows[0].get("code_commune_insee") if rows else None
-    risks, groundwater, solar_pv, water_network = await asyncio.gather(
+    first_id = rows[0].get("batiment_groupe_id") if rows else None
+    risks, groundwater, solar_pv, water_network, official_dpe = await asyncio.gather(
         _area_risks(lon, lat), _groundwater(lon, lat), _solar_pv(lon, lat),
-        _water_network(commune))
+        _water_network(commune), _official_dpe(first_id) if first_id else _noop())
 
     M_LOOKUPS.add(1, {"status": "ok" if rows else "no_building"})
     sources = [
@@ -501,6 +516,8 @@ async def _do_lookup(q, ban_id, address, lon, lat):
         sources.append("PVGIS (JRC) — © Union européenne")
     if water_network:
         sources.append("SISPEA / OFB (services d'eau) — Licence Ouverte")
+    if official_dpe and official_dpe.get("dpe_number"):
+        sources.append("ADEME — Observatoire DPE — Licence Ouverte")
     return {
         "query": {"q": q, "ban_id": ban_id, "address": address, "lon": lon, "lat": lat},
         "buildings": [_normalize_building(r) for r in rows],
@@ -508,6 +525,7 @@ async def _do_lookup(q, ban_id, address, lon, lat):
         "groundwater": groundwater,
         "solar_pv": solar_pv,
         "water_network": water_network,
+        "official_dpe": official_dpe,
         "sources": sources,
     }
 
@@ -580,6 +598,69 @@ def _l93_to_wgs84(x: float, y: float) -> tuple[float, float]:
         phi = math.pi / 2 - 2 * math.atan(
             t * ((1 - e * math.sin(phi)) / (1 + e * math.sin(phi))) ** (e / 2))
     return math.degrees(lam), math.degrees(phi)
+
+
+async def _noop():
+    return None
+
+
+async def _official_dpe(bdnb_id: str):
+    """Official-DPE block (#189): BDNB's representative dwelling gives the real
+    ADEME DPE number, surface and final energy; the ADEME observatoire adds the
+    official document's substance — annual energy costs in €, insulation
+    quality per envelope element, heating/ECS system descriptions. Honest
+    framing: this describes the group's REPRESENTATIVE dwelling, not every
+    unit. None on any miss; never breaks a building record."""
+    try:
+        rep = await _cached_get_json(
+            BDNB_REP_DPE_URL, {"batiment_groupe_id": f"eq.{bdnb_id}", "limit": "1"},
+            ttl=86400)
+        if not isinstance(rep, list) or not rep:
+            return None
+        r = rep[0]
+        num = r.get("identifiant_dpe")
+        established = (r.get("date_etablissement_dpe") or "")[:10] or None
+        block = {
+            "dpe_number": num,
+            "established_on": established,
+            # Legal validity: 10 years (art. L126-26 CCH).
+            "valid_until": (str(int(established[:4]) + 10) + established[4:])
+            if established else None,
+            "surface_habitable_m2": r.get("surface_habitable_logement")
+            or r.get("surface_habitable_immeuble"),
+            "final_energy_kwh_m2y": r.get("conso_5_usages_ef_m2"),
+        }
+        if num:
+            adm = await _cached_get_json(
+                ADEME_DPE_URL,
+                {"qs": f'numero_dpe:"{num}"', "size": "1", "select": ADEME_DPE_SELECT},
+                ttl=7 * 86400)
+            res = (adm.get("results") or [{}])[0]
+            if res:
+                block.update({
+                    "annual_cost_eur": res.get("cout_total_5_usages"),
+                    "cost_breakdown_eur": {
+                        "chauffage": res.get("cout_chauffage"),
+                        "eau_chaude": res.get("cout_ecs"),
+                        "eclairage": res.get("cout_eclairage"),
+                        "auxiliaires": res.get("cout_auxiliaires"),
+                        "refroidissement": res.get("cout_refroidissement"),
+                    },
+                    "insulation": {
+                        "enveloppe": res.get("qualite_isolation_enveloppe"),
+                        "menuiseries": res.get("qualite_isolation_menuiseries"),
+                        "plancher_bas": res.get("qualite_isolation_plancher_bas"),
+                        "plancher_haut": res.get("qualite_isolation_plancher_haut_comble_perdu"),
+                    },
+                    "heating": res.get("description_installation_chauffage_n1"),
+                    "hot_water": res.get("description_installation_ecs_n1"),
+                    "energies": [e for e in (res.get("type_energie_n1"),
+                                             res.get("type_energie_n2")) if e],
+                })
+        return block
+    except Exception as e:
+        log.warning("official DPE failed for %s: %s", bdnb_id, e)
+        return None
 
 
 async def _water_network(commune_insee):
@@ -673,11 +754,12 @@ async def building(
         raise HTTPException(404, "Unknown building id")
     row = rows[0]
     M_LOOKUPS.add(1, {"status": "by_id"})
-    prices, risks, groundwater, solar_pv, click_addr, water_network = await asyncio.gather(
+    prices, risks, groundwater, solar_pv, click_addr, water_network, official_dpe = await asyncio.gather(
         _dvf_prices(bdnb_id), _area_risks(lon, lat),
         _groundwater(lon, lat), _solar_pv(lon, lat),
         _click_address(bdnb_id, lon, lat),
-        _water_network(row.get("code_commune_insee")))
+        _water_network(row.get("code_commune_insee")),
+        _official_dpe(bdnb_id))
     sources = ["BDNB (CSTB) — Licence Ouverte v2.0", "Géorisques — Licence Ouverte"]
     if prices:
         sources.append("DVF (DGFiP) / Etalab — Licence Ouverte")
@@ -687,6 +769,8 @@ async def building(
         sources.append("PVGIS (JRC) — © Union européenne")
     if water_network:
         sources.append("SISPEA / OFB (services d'eau) — Licence Ouverte")
+    if official_dpe and official_dpe.get("dpe_number"):
+        sources.append("ADEME — Observatoire DPE — Licence Ouverte")
     return {
         # Prefer the group-member address at the clicked point (#152); the
         # principal address stays on buildings[0].address for the UI's row.
@@ -698,6 +782,7 @@ async def building(
         "groundwater": groundwater,
         "solar_pv": solar_pv,
         "water_network": water_network,
+        "official_dpe": official_dpe,
         "prices": prices,
         "sources": sources,
     }

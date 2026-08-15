@@ -354,6 +354,9 @@ function renderPanel(s, data) {
     ${banHtml}
     ${kv("Date du DPE", b.energy?.dpe_date ? String(b.energy.dpe_date).slice(0, 10) : null)}
     ${kv("GES", b.energy?.ghg_kgco2_m2y ? Math.round(b.energy.ghg_kgco2_m2y) + " kgCO₂/m²/an" : null)}
+    ${kv("N° DPE officiel", data.official_dpe?.dpe_number)}
+    ${kv("Surface habitable", data.official_dpe?.surface_habitable_m2 ? data.official_dpe.surface_habitable_m2 + " m²" : null)}
+    ${kv("Coût annuel d'énergie", data.official_dpe?.annual_cost_eur ? Math.round(data.official_dpe.annual_cost_eur).toLocaleString("fr-FR") + " €/an (DPE)" : null)}
     <h3>Bâtiment</h3>
     ${kv("Année de construction", b.construction_year)}
     ${kv("Hauteur moyenne", b.height_m ? b.height_m + " m" : null)}
