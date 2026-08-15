@@ -25,12 +25,7 @@
 	# SHARED Grafana (monitoring_stack project, host :3002) — same instance
 	# whichever stack serves prod, so dashboards survive promotes.
 	handle /grafana* {
-		# 1PESI migration (#173): try the new port first, fall back to legacy
-		# until the shared grafana moves to 13040; passive failover via caddy.
-		reverse_proxy host.containers.internal:13040 host.containers.internal:3002 {
-			lb_policy first
-			fail_duration 10s
-		}
+		reverse_proxy host.containers.internal:13040
 	}
 
 	# MapLibre frontend. no-cache = browsers must revalidate (ETag), so every

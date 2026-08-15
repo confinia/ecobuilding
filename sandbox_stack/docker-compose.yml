@@ -88,7 +88,6 @@ services:
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
     ports:
-      - "127.0.0.1:8030:8030"    # legacy — until the platform edge flip
       - "127.0.0.1:13400:8030"   # 1PESI: eco(3) sandbox(4) entry (#173)
     # No depends_on (see sandbox-api): caddy retries upstreams until they answer.
     restart: unless-stopped
