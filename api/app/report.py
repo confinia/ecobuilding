@@ -153,6 +153,14 @@ def _traceability_annex(data: dict, photos: list | None) -> str:
                 "DVF (DGFiP / Etalab)", f"Fenêtre {DVF_WINDOW} · Licence Ouverte 2.0",
                 "indisponible : l'Alsace-Moselle et Mayotte ne sont pas couvertes par la DVF",
                 "—", dvf_url)))
+    od = data.get("official_dpe") or {}
+    if od.get("dpe_number"):
+        cards.append(("DPE officiel", _prov(
+            "Observatoire DPE (ADEME)", "Licence Ouverte",
+            f"numero_dpe = {od['dpe_number']} (logement représentatif BDNB)",
+            od.get("established_on") or "—",
+            "https://data.ademe.fr/data-fair/api/v1/datasets/dpe03existant/lines"
+            f"?qs=numero_dpe:%22{od['dpe_number']}%22")))
     gw = data.get("groundwater") or {}
     if gw.get("available"):
         cards.append(("Eau souterraine (nappe)", _prov(
@@ -222,6 +230,36 @@ def _principal_address_note(shown_address: str, b: dict) -> str:
     n = f" ({b['dwellings']} logements)" if b.get("dwellings") else ""
     return (f'<p class="meta">Bâtiment groupe BDNB{n} — '
             f'adresse principale : {principal}</p>')
+
+
+def _official_dpe_html(od: dict) -> str:
+    """Official-DPE substance (#189): the fiche carries what the legal document
+    carries — number, validity, surface, ANNUAL € COSTS, insulation quality,
+    systems — honestly framed as the group's representative dwelling."""
+    if not od or not od.get("dpe_number"):
+        return ""
+    ins = od.get("insulation") or {}
+    cost = od.get("annual_cost_eur")
+    cost_txt = (_eur(cost) + " €/an") if cost else None
+    return f"""
+<h2>DPE officiel (logement représentatif)</h2>
+<table>
+  {_row("N° DPE (ADEME)", od.get("dpe_number"))}
+  {_row("Établi le", od.get("established_on"))}
+  {_row("Valable jusqu'au", od.get("valid_until"), " (validité légale: 10 ans)")}
+  {_row("Surface habitable", od.get("surface_habitable_m2"), " m²")}
+  {_row("Coût annuel d'énergie estimé", cost_txt)}
+  {_row("Chauffage", od.get("heating"))}
+  {_row("Eau chaude sanitaire", od.get("hot_water"))}
+  {_row("Énergies", " + ".join(od.get("energies") or []) or None)}
+  {_row("Isolation: enveloppe", ins.get("enveloppe"))}
+  {_row("Isolation: menuiseries", ins.get("menuiseries"))}
+  {_row("Isolation: plancher bas", ins.get("plancher_bas"))}
+  {_row("Isolation: plancher haut", ins.get("plancher_haut"))}
+</table>
+<p class="meta">Données du DPE officiel du logement représentatif du bâtiment (Observatoire
+DPE, ADEME). Dans un immeuble, les autres logements peuvent différer. Coûts estimés
+aux prix de l'énergie en vigueur à la date du diagnostic.</p>"""
 
 
 def _water_network_html(wn: dict) -> str:
@@ -349,6 +387,7 @@ def _report_html(data: dict, photos: list | None = None, map_img: str | None = N
   {_row("Date du DPE", (e.get("dpe_date") or "")[:10] or None)}
   {_row("Émissions GES", round(ges) if ges else None, " kgCO₂/m²/an")}
 </table>
+{_official_dpe_html(data.get("official_dpe") or {})}
 
 <h2>Bâtiment</h2>
 <table>

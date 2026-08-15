@@ -308,6 +308,50 @@ def test_water_network_html_renders():
     assert _water_network_html({}) == ""
 
 
+def test_official_dpe_chain(monkeypatch):
+    """#189: BDNB rep-logement -> ADEME observatoire, 10-year validity."""
+    async def fake(url, params, ttl):
+        if "dpe_representatif" in url:
+            return [{"identifiant_dpe": "2678E0726918P",
+                     "date_etablissement_dpe": "2026-03-12T23:00:00",
+                     "surface_habitable_logement": 106.17,
+                     "conso_5_usages_ef_m2": 215.0}]
+        if "data.ademe.fr" in url:
+            assert params["qs"] == 'numero_dpe:"2678E0726918P"'
+            return {"results": [{"cout_total_5_usages": 2573.2,
+                                 "cout_chauffage": 2093.1,
+                                 "qualite_isolation_enveloppe": "insuffisante",
+                                 "description_installation_chauffage_n1": "Chaudière gaz",
+                                 "type_energie_n1": "Gaz naturel"}]}
+        raise AssertionError(url)
+    monkeypatch.setattr(main, "_cached_get_json", fake)
+    od = asyncio.run(main._official_dpe("bdnb-bg-X"))
+    assert od["dpe_number"] == "2678E0726918P"
+    assert od["valid_until"] == "2036-03-12"      # legal 10-year validity
+    assert od["annual_cost_eur"] == 2573.2
+    assert od["insulation"]["enveloppe"] == "insuffisante"
+    assert od["energies"] == ["Gaz naturel"]
+
+
+def test_official_dpe_absent_is_none(monkeypatch):
+    async def fake(url, params, ttl): return []
+    monkeypatch.setattr(main, "_cached_get_json", fake)
+    assert asyncio.run(main._official_dpe("bdnb-bg-X")) is None
+
+
+def test_official_dpe_html_and_pdf():
+    from app.report import _official_dpe_html, build_report_pdf
+    od = {"dpe_number": "2678E0726918P", "established_on": "2026-03-12",
+          "valid_until": "2036-03-12", "surface_habitable_m2": 106.17,
+          "annual_cost_eur": 2573.2, "heating": "Chaudière gaz",
+          "insulation": {"enveloppe": "insuffisante"}, "energies": ["Gaz naturel"]}
+    h = _official_dpe_html(od)
+    assert "2678E0726918P" in h and "2 573 €/an" in h and "logement représentatif" in h
+    assert _official_dpe_html({}) == ""
+    pdf = build_report_pdf({**BUILDING_FIXTURE, "official_dpe": od})
+    assert pdf.startswith(b"%PDF") and len(pdf) > 5000
+
+
 def test_report_titles_with_searched_address_and_keeps_principal():
     """#146: a bâtiment groupe can span several streets. The fiche titles with
     the searched address and keeps BDNB's principal address visible."""
