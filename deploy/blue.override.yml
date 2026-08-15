@@ -1,4 +1,4 @@
-# BLUE stack: entry caddy published on 127.0.0.1:8021.
+# BLUE stack: entry caddy published on 127.0.0.1:13100 (1PESI, #173).
 services:
   caddy:
     ports:

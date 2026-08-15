@@ -167,6 +167,13 @@ def test_1pesi_port_migration():
     assert '"3005:3005"' not in (ROOT / "bdnb_stack/docker-compose.yml").read_text()
     assert "8891" not in (ROOT / "monitoring/prometheus-shared.yml").read_text()
     assert ":8020" not in (ROOT / "caddy_server/Caddyfile.blue").read_text()
+    # No CI/CD script may still address a legacy HOST port (audit 2026-08-15):
+    # container-internal ports (:8030 inside sandbox caddy, :3005 PostgREST,
+    # :8040 render) are fine — only host publishes were migrated.
+    sandbox_sh2 = (ROOT / "deploy/sandbox.sh").read_text()
+    assert "127.0.0.1:8030" not in sandbox_sh2 and "127.0.0.1:13400" in sandbox_sh2
+    assert not (ROOT / "monitoring/prometheus.yml").exists()   # dead pre-shared config
+    assert "caddy_server/Caddyfile" in (ROOT / ".gitignore").read_text()
 
 
 @pytest.mark.skip(reason="e2e email delivery: needs live SMTP creds + a mailbox check")

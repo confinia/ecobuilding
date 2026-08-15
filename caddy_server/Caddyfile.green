@@ -1,4 +1,4 @@
-# ACTIVE = GREEN. prod -> green stack (8022), staging -> blue stack (8021).
+# ACTIVE = GREEN. prod -> green stack (13200), staging -> blue stack (13100).
 # Installed as ./Caddyfile by deploy/promote.sh (or deploy.sh from .active).
 {
 	admin 127.0.0.1:2030

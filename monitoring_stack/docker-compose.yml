@@ -1,8 +1,8 @@
 # EcoBuilding SHARED MONITORING — third compose project (ecobuilding-monitoring),
 # deliberately OUTSIDE the blue/green stacks so usage metrics survive promotes.
 # Host network (loopback targets): scrapes both stacks' otel-collectors
-# (blue 127.0.0.1:8891, green 127.0.0.1:8892) and the podman exporter.
-# Grafana binds :3002 (port reserved for ecobuilding in the platform README);
+# (blue 127.0.0.1:13060, green 127.0.0.1:13061) and the podman exporter.
+# Grafana binds :13040 (1PESI band, #173);
 # ufw does not expose it — public access goes through /grafana on the app hosts.
 services:
   prometheus:
@@ -24,7 +24,7 @@ services:
       - ../deploy/secrets.env   # GF_SECURITY_ADMIN_PASSWORD (unchanged)
     environment:
       # Explicit IPv4 bind: with the default empty http_addr, a container
-      # recreate can land Grafana on [::]:3002 ONLY (observed 2026-08-11 →
+      # recreate can land Grafana on [::] ONLY (observed 2026-08-11 on :3002 →
       # /grafana 502: the app caddy proxies over IPv4). Pin it.
       GF_SERVER_HTTP_ADDR: "0.0.0.0"
       GF_SERVER_HTTP_PORT: "13040"

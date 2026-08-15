@@ -101,7 +101,7 @@ podman exec ecobuilding-edge_caddy_1 caddy reload --config /etc/caddy/Caddyfile 
 
 # Upstream (platform) edge is managed separately under the 'debian' user (it
 # runs platform_caddy_1 and needs sudo): both ecobuilding.confinia.io and
-# staging.ecobuilding.confinia.io are routed there to 127.0.0.1:8020. This
+# staging.ecobuilding.confinia.io are routed there to 127.0.0.1:13000. This
 # script runs as the unprivileged 'ecobuilding' user and does NOT touch it.
 
 # Hard health gate on the candidate, via its local entry port. The api can

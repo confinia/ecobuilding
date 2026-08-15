@@ -1,5 +1,5 @@
 # Sandbox edge (project ecobuilding-sandbox). One bridged caddy published on
-# 127.0.0.1:8030; the platform edge forwards both sandbox hostnames here and we
+# host 127.0.0.1:13400 (container-internal :8030); the platform edge forwards here and we
 # dispatch by Host. Same compose project as the api/frontend, so we reach them
 # by container DNS; Keycloak is a sibling container reached the same way.
 {
