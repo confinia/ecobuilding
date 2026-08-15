@@ -88,3 +88,9 @@
     reported afterwards, but without waiting for sign-off). Prompt the
     operator ONLY when the decision is a genuine choice between alternatives
     beyond yes/no.
+18. **Every post ships with its how-to** (rule set 2026-08-15): any message
+    prepared for an external channel comes with full operating details in
+    `COMMUNICATION.md` — exact URL to go to, which account/identity to use,
+    title to use, whether to reply to an existing thread or open a new one,
+    channel etiquette, and where to log the timestamp (LAUNCH.md). The copy
+    itself lives in LAUNCH.md; COMMUNICATION.md is the per-channel how.
