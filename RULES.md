@@ -99,3 +99,10 @@
     billing simulations, render checks) is executed by the GitHub Actions
     pipeline, never manually from a workstation. Manual runs are for debugging
     only; if a check matters, it is a workflow step so every PR re-proves it.
+20. **Verify CI outcomes, don't assume them** (rule set 2026-08-16): after
+    launching a pipeline run, confirm what actually happened — `gh run view`
+    for the authoritative status, and `./deploy/check-mail.sh` on the VM for
+    the ops mailbox (alert@confinia.io over IMAP, same OVH creds as the SMTP
+    sender): CI notifications, Grafana alerts and above all **bounces** land
+    there. A silent mailbox is part of "it works"; an unread bounce is an
+    outage nobody sees.
