@@ -24,7 +24,7 @@ for i in $(seq 1 "$CALLS"); do
     "$API_BASE/api/v1/buildings/$BDNB_ID?lon=2.0815&lat=48.7020" || echo "   call $i failed"
 done
 
-echo "== 2. simulate 1 PDF fiche (5 credits)"
+echo "== 2. simulate 1 PDF fiche"
 curl -fsS -o /dev/null -H "X-API-Key: $API_KEY" \
   "$API_BASE/api/v1/report/$BDNB_ID.pdf?lon=2.0815&lat=48.7020" || echo "   fiche failed"
 
@@ -34,7 +34,8 @@ import json,sys
 u = json.load(sys.stdin)
 print(f\"   credits={u['credits']} billable={u['billable_credits']} \"
       f\"cost={u['cost_eur']} EUR cap={u['monthly_cap_eur']} reached={u['cap_reached']}\")
-expected = $BEFORE + $CALLS + 5
+c = u['credit_costs']
+expected = $BEFORE + $CALLS * c['buildings'] + c['report']
 assert u['credits'] == expected, f\"expected {expected} credits, got {u['credits']}\"
 print('   local counter OK')
 "

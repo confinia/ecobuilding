@@ -958,15 +958,17 @@ def _load_keys() -> set:
 
 
 # --- Pay-as-you-go metering (#201) -------------------------------------------
-# One CREDIT = one building record (lookup / buildings / reverse). A PDF fiche
-# costs more because it fans out to every source plus the 3D render. Monthly
-# free allowance, then a per-credit price, and a HARD monthly cap so a client
-# can never be surprised by its bill — the cap is the selling point for
-# cost-controlled companies.
-FREE_CREDITS_MONTH = int(os.environ.get("FREE_CREDITS_MONTH", "500"))
-PRICE_PER_CREDIT_EUR = float(os.environ.get("PRICE_PER_CREDIT_EUR", "0.02"))
+# The PDF fiche is the sellable deliverable, so it is billed FROM THE FIRST
+# ONE (0,20 €): a free monthly allowance on fiches would just give the product
+# away (operator decision 2026-08-16, BUSINESS.md). Raw API calls are 20x
+# cheaper (0,01 €) because they are an input, not a deliverable. A HARD monthly
+# cap keeps the worst case knowable — the selling point for cost-controlled
+# companies. Anonymous browsing (no key) stays free and uncapped.
+FREE_CREDITS_MONTH = int(os.environ.get("FREE_CREDITS_MONTH", "0"))
+PRICE_PER_CREDIT_EUR = float(os.environ.get("PRICE_PER_CREDIT_EUR", "0.01"))
 MONTHLY_CAP_EUR = float(os.environ.get("MONTHLY_CAP_EUR", "99"))
-CREDIT_COST = {"lookup": 1, "buildings": 1, "reverse": 1, "report": 5, "suggest": 0}
+# 20 credits = 0,20 € per fiche; 1 credit = 0,01 € per API record.
+CREDIT_COST = {"lookup": 1, "buildings": 1, "reverse": 1, "report": 20, "suggest": 0}
 USAGE_PATH = os.environ.get("USAGE_PATH", "/leads/usage.json")
 
 
@@ -1145,9 +1147,9 @@ async def create_key(request: Request):
 async def usage(request: Request):
     """Current-month usage and cost for the calling API key (#201).
 
-    Pay-as-you-go: a free monthly allowance, then a per-credit price, and a
-    hard monthly cap — a client can always answer "what is my worst case?".
-    Credits: 1 per building record, 5 per PDF fiche, autocomplete is free.
+    Pay-as-you-go from the first fiche, with a hard monthly cap — a client can
+    always answer "what is my worst case?". 20 credits (0,20 €) per PDF fiche,
+    1 credit (0,01 €) per API record, autocomplete free.
     """
     key = request.headers.get("x-api-key") or request.query_params.get("key")
     if not key or key not in _load_keys():
