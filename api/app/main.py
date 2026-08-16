@@ -1416,7 +1416,11 @@ async def pro_checkout(request: Request):
         "success_url": f"{PUBLIC_BASE_URL}/?pro=success",
         "customer_email": claims.get("email") or claims.get("preferred_username"),
         "customer_external_id": claims.get("sub"),
-        "metadata": {"kc_sub": claims.get("sub") or "", "org": claims.get("org") or ""},
+        # Polar rejects EMPTY metadata values (min_length 1), so only non-empty
+        # entries are sent: a user without an `org` claim would otherwise get a
+        # 422 on every checkout attempt.
+        "metadata": {k: v for k, v in (("kc_sub", claims.get("sub")),
+                                       ("org", claims.get("org"))) if v},
     }
     try:
         resp = await _client.post(
