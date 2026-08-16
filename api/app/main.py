@@ -1299,6 +1299,34 @@ M_LEADS = _meter.create_counter("ecobuilding_leads", description="Access request
 LEADS_PATH = os.environ.get("LEADS_PATH", "/leads/leads.jsonl")
 
 
+def _send_lead_email(rec: dict) -> bool:
+    """Lead notification (#196): alert@ -> operator mailbox, using the SMTP
+    creds provisioned by #128 (secrets.env via env_file). Returns False and
+    only logs when creds are absent (CI/dev) or the relay fails — a lead is
+    ALWAYS persisted first; mail is best-effort."""
+    host, pwd = os.environ.get("SMTP_HOST"), os.environ.get("SMTP_PASSWORD")
+    if not host or not pwd:
+        return False
+    import smtplib
+    import ssl
+    from email.message import EmailMessage
+
+    env_label = os.environ.get("OIDC_REALM", "confinia")
+    m = EmailMessage()
+    m["From"] = os.environ.get("SMTP_FROM", "alert@confinia.io")
+    m["To"] = os.environ.get("ALERT_RCPT", "contact@confinia.io")
+    m["Subject"] = f"[EcoBuilding{'/' + env_label if 'sandbox' in env_label else ''}] Nouveau lead: {rec.get('org') or rec.get('email')}"
+    m.set_content(
+        f"E-mail: {rec.get('email')}\nOrganisation: {rec.get('org') or '-'}\n"
+        f"Besoin:\n{rec.get('need') or '-'}\n\nHorodatage: {rec.get('ts')}")
+    port = int(os.environ.get("SMTP_PORT", "587"))
+    with smtplib.SMTP(host, port, timeout=20) as s:
+        s.starttls(context=ssl.create_default_context())
+        s.login(os.environ.get("SMTP_USER", ""), pwd)
+        s.send_message(m)
+    return True
+
+
 @app.post("/v1/leads", tags=["telemetry"], status_code=204)
 async def create_lead(lead: Lead):
     """Access request / waitlist signup (offer page). Stored locally, never shared."""
@@ -1315,6 +1343,14 @@ async def create_lead(lead: Lead):
         log.error("lead not persisted: %s", e)
         raise HTTPException(500, "Storage error")
     M_LEADS.add(1, {"kind": "enterprise" if "10" in (lead.need or "") else "waitlist"})
+
+    async def _notify():
+        try:
+            await asyncio.to_thread(_send_lead_email, rec)
+        except Exception as e:  # mail is best-effort, the lead is already saved
+            log.warning("lead email failed: %s", e)
+
+    asyncio.get_running_loop().create_task(_notify())
     return None
 
 
