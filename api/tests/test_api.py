@@ -593,10 +593,16 @@ def test_usage_endpoint_requires_key_and_reports_cost(tmp_path, monkeypatch):
     assert client.get("/v1/usage").status_code == 401
     import hashlib
     kid = hashlib.sha256(b"K1").hexdigest()[:16]
-    main._usage_add(kid, 40 * 49)                  # 40 fiches (within the 50 included)
+    main._usage_add(kid, 20 * 49)                  # 20 fiches this month
     body = client.get("/v1/usage", headers={"X-API-Key": "K1"}).json()
-    assert body["credits"] == 1960 and body["billable_credits"] == 0
-    assert body["cost_eur"] == 9.0 and body["monthly_cap_eur"] == 99.0
+    # A FREE account sees its allowance, not a bill (#206).
+    assert body["plan"] == "free" and body["cost_eur"] == 0.0
+    assert body["reports_used"] == 20 and body["reports_left"] == 10
+    # A PRO subscriber sees the subscription cost instead.
+    monkeypatch.setattr(main, "_key_plans", lambda: {"K1": "pro"})
+    pro = client.get("/v1/usage", headers={"X-API-Key": "K1"}).json()
+    assert pro["plan"] == "pro" and pro["cost_eur"] == 9.0
+    assert pro["monthly_cap_eur"] == 99.0
 
 
 def test_pricing_simulator_matches_frontend_formula():
@@ -659,3 +665,33 @@ def test_free_tiers_enforced(tmp_path, monkeypatch):
     pid = hashlib.sha256(b"PROKEY").hexdigest()[:16]
     main._usage_add(pid, 10_000)                        # way past any allowance
     assert main._quota_gate(Req("PROKEY"), "report") == "key"   # never blocked
+
+def test_registered_user_gets_the_free_account_ladder(tmp_path, monkeypatch):
+    """#206: a signed-in browser user (no API key) consumes the free-account
+    allowance, and a subscriber is never blocked."""
+    monkeypatch.setattr(main, "USAGE_PATH", str(tmp_path / "usage.json"))
+    monkeypatch.setattr(main, "_load_keys", lambda: set())
+    monkeypatch.setattr(main, "_decode_token", lambda t: {"sub": "user-1"})
+    monkeypatch.setattr(main, "_pro_active", lambda sub: False)
+
+    class Req:
+        headers = {"authorization": "Bearer x", "x-forwarded-for": "10.0.0.9"}
+        query_params: dict = {}
+
+    for _ in range(main.FREE_ACCOUNT_REPORTS):
+        assert main._quota_gate(Req(), "report") == "user_free"
+    with pytest.raises(HTTPException) as e:
+        main._quota_gate(Req(), "report")
+    assert "Pro" in e.value.detail                    # upsell, not a dead end
+
+    monkeypatch.setattr(main, "_pro_active", lambda sub: True)
+    assert main._quota_gate(Req(), "report") == "user_pro"   # never blocked
+
+
+def test_key_plan_follows_the_account_subscription(tmp_path, monkeypatch):
+    """A subscription attaches to the ACCOUNT: every key of that user turns pro
+    (and back) without touching keys.jsonl (#206)."""
+    monkeypatch.setattr(main, "_key_owners", lambda: {"K-A": "user-1", "K-B": "user-2"})
+    monkeypatch.setattr(main, "_pro_active", lambda sub: sub == "user-1")
+    plans = main._key_plans()
+    assert plans == {"K-A": "pro", "K-B": "free"}

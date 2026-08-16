@@ -34,6 +34,7 @@ track("page_view");
         window.ecoToken = () => kc.token;   // future authenticated API calls
         setInterval(() => kc.updateToken(60).catch(() => {}), 30000);
         track("signed_in_view");
+        refreshQuota();                     // show the monthly allowance (#206)
       } else {
         show("signin", true); show("signup", true);
       }
@@ -403,6 +404,25 @@ function renderPanel(s, data) {
   loadStreetview(data.query?.lon, data.query?.lat);
 }
 
+// --- Account quota (#206): a signed-in user sees what is left of the free
+// monthly allowance, and subscribers see their plan instead of a limit.
+async function refreshQuota() {
+  const el = document.getElementById("userlabel");
+  if (!el || !window.ecoToken) return;
+  try {
+    const r = await fetch(`${API}/usage`, { headers: { Authorization: "Bearer " + window.ecoToken() } });
+    if (!r.ok) return;
+    const u = await r.json();
+    window.ecoQuota = u;
+    const badge = u.plan === "pro"
+      ? "Pro"
+      : `${u.reports_left} fiche${u.reports_left > 1 ? "s" : ""} restante${u.reports_left > 1 ? "s" : ""} ce mois`;
+    el.textContent = el.textContent.split(" · ")[0] + " · " + badge;
+    const go = document.getElementById("gopro");
+    if (go && u.plan !== "pro") go.hidden = false;   // upsell only for free plans
+  } catch { /* quota display is cosmetic: never break the app */ }
+}
+
 // --- Panel loading narration (#150 follow-up): with 9 upstream sources per
 // click, the spinner names what is actually being gathered — honest fan-out
 // narration, not fake progress.
@@ -471,7 +491,10 @@ async function downloadReport(btn) {
   }, 500);
   track("report_click");
   try {
-    const r = await fetch(url);
+    // Signed-in users get their account allowance (#206); anonymous visitors
+    // keep the 10/month IP tier.
+    const headers = window.ecoToken ? { Authorization: "Bearer " + window.ecoToken() } : {};
+    const r = await fetch(url, { headers });
     if (!r.ok) {
       // Quota (429) and friends serve a friendly HTML page — show it as-is.
       if (tab) tab.location = url; else window.open(url, "_blank");
@@ -486,6 +509,7 @@ async function downloadReport(btn) {
     return;
   } finally {
     clearInterval(timer);
+    refreshQuota();                       // the fiche just consumed one
     btn.disabled = false;
     if (btn.textContent.startsWith("⏳")) btn.textContent = original;
   }

@@ -187,6 +187,16 @@ def test_registration_email_delivered_e2e():
     from alert@confinia.io. Manual/e2e only; never faked (rule 9)."""
 
 @needs_repo
+def test_account_tier_is_wired_in_the_app():
+    """#206: the web app must carry the session into the fiche request (so the
+    account allowance applies) and show what is left."""
+    app = (ROOT / "frontend/site/app.js").read_text()
+    assert "refreshQuota" in app and "/usage" in app
+    assert 'Authorization: "Bearer " + window.ecoToken()' in app
+    assert "fiche" in app and "gopro" in app        # allowance + upsell
+
+
+@needs_repo
 def test_payg_pricing_is_consistent_everywhere():
     """#201: the offres page, the server formula and the Polar setup script
     must quote the SAME numbers — a pricing mismatch is a trust bug."""
