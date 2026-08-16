@@ -194,6 +194,11 @@ def test_account_tier_is_wired_in_the_app():
     assert "refreshQuota" in app and "/usage" in app
     assert 'Authorization: "Bearer " + window.ecoToken()' in app
     assert "fiche" in app and "gopro" in app        # allowance + upsell
+    # The Pro CTA must stay behind the env flag everywhere it is revealed
+    # (rule 7: no purchasable offer in prod until a >=10k EUR deal).
+    for line in app.splitlines():
+        if "gopro" in line and "hidden = false" in line:
+            assert "ECO_PRO_ENABLED" in line, line
 
 
 @needs_repo
