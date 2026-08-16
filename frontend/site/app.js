@@ -35,8 +35,23 @@ track("page_view");
         setInterval(() => kc.updateToken(60).catch(() => {}), 30000);
         track("signed_in_view");
         refreshQuota();                     // show the monthly allowance (#206)
+        if (new URLSearchParams(location.search).get("welcome") === "1") {
+          track("signup_completed");
+          showPanel(`<h2>Bienvenue 🎉</h2>
+            <p>Votre compte est actif : <strong>30 fiches PDF par mois</strong> (au lieu de 10),
+            une clé API et le suivi de votre consommation.</p>
+            <p class="hint">Cliquez un bâtiment sur la carte pour générer une fiche.
+            Un problème ? <a href="mailto:contact@confinia.io?subject=EcoBuilding%20-%20aide">contact@confinia.io</a></p>`);
+          history.replaceState(null, "", location.pathname);
+        }
       } else {
         show("signin", true); show("signup", true);
+        // Arriving from the quota page (#212): open registration straight away
+        // instead of making the user hunt for the button.
+        if (new URLSearchParams(location.search).get("signup") === "1") {
+          track("signup_autostart");
+          kc.register({ redirectUri: location.origin + "/?welcome=1" });
+        }
       }
       document.getElementById("signin").onclick = (e) => { e.preventDefault(); track("signin_click"); kc.login(); };
       document.getElementById("signup").onclick = (e) => { e.preventDefault(); track("signup_click"); kc.register(); };
@@ -495,6 +510,20 @@ async function downloadReport(btn) {
     // keep the 10/month IP tier.
     const headers = window.ecoToken ? { Authorization: "Bearer " + window.ecoToken() } : {};
     const r = await fetch(url, { headers });
+    if (r.status === 429) {
+      // Self-service: the app itself says what to do next (#212).
+      const signedIn = !!window.ecoToken;
+      showPanel(`<h2>Limite atteinte</h2>
+        <p>${signedIn
+          ? "Votre compte gratuit couvre 30 fiches par mois."
+          : "Sans compte, 10 fiches par mois sont offertes."}</p>
+        <p>${signedIn
+          ? '<a class="report-link" href="/offres.html">Voir l\'offre Pro (9 €/mois)</a>'
+          : '<a class="report-link" href="/?signup=1">Créer un compte gratuit (30 fiches/mois)</a>'}</p>
+        <p class="hint">Une question ? <a href="mailto:contact@confinia.io?subject=EcoBuilding%20-%20aide">contact@confinia.io</a></p>`);
+      if (tab) tab.close();
+      return;
+    }
     if (!r.ok) {
       // Quota (429) and friends serve a friendly HTML page — show it as-is.
       if (tab) tab.location = url; else window.open(url, "_blank");

@@ -1012,6 +1012,8 @@ INCLUDED_FICHES = int(os.environ.get("INCLUDED_FICHES", "50"))
 PRICE_PER_CREDIT_EUR = float(os.environ.get("PRICE_PER_CREDIT_EUR", "0.01"))
 MONTHLY_CAP_EUR = float(os.environ.get("MONTHLY_CAP_EUR", "99"))
 ANON_MONTHLY_REPORTS = int(os.environ.get("ANON_MONTHLY_REPORTS", "10"))
+# Self-service means: never leave a user stuck without a way out (#212).
+SUPPORT_EMAIL = os.environ.get("SUPPORT_EMAIL", "contact@confinia.io")
 FREE_ACCOUNT_REPORTS = int(os.environ.get("FREE_ACCOUNT_REPORTS", "30"))
 # 49 credits = 0,49 EUR per fiche; 1 credit = 0,01 EUR per API record.
 CREDIT_COST = {"lookup": 1, "buildings": 1, "reverse": 1, "report": 49, "suggest": 0}
@@ -1149,7 +1151,7 @@ def _quota_gate(request: Request, endpoint: str):
                     f"Compte gratuit : {FREE_ACCOUNT_REPORTS} fiches par mois atteintes. "
                     f"L'offre Pro ({BASE_FEE_EUR:.0f} €/mois, {INCLUDED_FICHES} fiches incluses, "
                     f"plafond {MONTHLY_CAP_EUR:.0f} €) : "
-                    f"https://ecobuilding.confinia.io/offres.html")
+                    f"https://ecobuilding.confinia.io/offres.html — une question ? {SUPPORT_EMAIL}")
         _meter_call(request, endpoint, key)
         return "key"
     sub = _bearer_sub(request)
@@ -1174,7 +1176,7 @@ def _quota_gate(request: Request, endpoint: str):
                     f"Compte gratuit : {FREE_ACCOUNT_REPORTS} fiches par mois atteintes. "
                     f"L'offre Pro ({BASE_FEE_EUR:.0f} €/mois, {INCLUDED_FICHES} fiches incluses, "
                     f"plafond {MONTHLY_CAP_EUR:.0f} €) : "
-                    f"https://ecobuilding.confinia.io/offres.html")
+                    f"https://ecobuilding.confinia.io/offres.html — une question ? {SUPPORT_EMAIL}")
             _usage_add(uid, CREDIT_COST["report"])
         return "user_free"
     ip = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip() or "?"
@@ -1187,8 +1189,8 @@ def _quota_gate(request: Request, endpoint: str):
             raise HTTPException(
                 429,
                 f"Limite gratuite atteinte ({ANON_MONTHLY_REPORTS} fiches par mois sans compte). "
-                f"Créez un compte gratuit pour {FREE_ACCOUNT_REPORTS} fiches par mois : "
-                f"https://ecobuilding.confinia.io/offres.html")
+                f"Créez un compte gratuit (30 secondes) pour {FREE_ACCOUNT_REPORTS} fiches par mois : "
+                f"https://ecobuilding.confinia.io/?signup=1 — une question ? {SUPPORT_EMAIL}")
     return "anon"
 
 
@@ -1202,18 +1204,30 @@ async def _http_exc_handler(request: Request, exc: HTTPException):
     from fastapi.exception_handlers import http_exception_handler
 
     if exc.status_code == 429 and "text/html" in request.headers.get("accept", ""):
+        # Self-service (#212): the page must say what happened, what to do
+        # next in ONE click, and how to reach a human if it goes wrong.
         return HTMLResponse(status_code=429, content=f"""<!DOCTYPE html><html lang="fr"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Limite gratuite atteinte — EcoBuilding</title>
-<style>body{{font-family:system-ui,sans-serif;max-width:540px;margin:12vh auto;padding:0 20px;color:#222;text-align:center}}
+<link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+<style>body{{font-family:system-ui,sans-serif;max-width:560px;margin:10vh auto;padding:0 20px;color:#222;text-align:center}}
 h1{{font-size:22px}}.c{{background:#fdecea;color:#b3261e;border-radius:10px;padding:14px;margin:18px 0}}
+ul{{text-align:left;display:inline-block;color:#444;line-height:1.7}}
 a.btn{{display:inline-block;margin:6px;padding:11px 18px;border-radius:8px;text-decoration:none;font-weight:600}}
-.p{{background:#2b7a4b;color:#fff}}.s{{border:1px solid #2b7a4b;color:#2b7a4b}}</style></head><body>
+.p{{background:#2b7a4b;color:#fff}}.s{{border:1px solid #2b7a4b;color:#2b7a4b}}
+.help{{margin-top:26px;font-size:14px;color:#666}}</style></head><body>
 <h1>🏢 Limite gratuite atteinte</h1>
-<div class="c">Vous avez atteint la limite gratuite de {ANON_DAILY_CAP} documents par jour.</div>
-<p>Créez un compte pour obtenir une clé API (gratuite pendant la bêta) et lever cette limite.</p>
-<p><a class="btn p" href="https://ecobuilding.confinia.io/offres.html">Voir les offres</a>
-<a class="btn s" href="https://ecobuilding.confinia.io/">Retour à la carte</a></p>
+<div class="c">{exc.detail}</div>
+<p><strong>Créez un compte gratuit</strong> (30 secondes, sans carte bancaire) :</p>
+<ul>
+  <li>{FREE_ACCOUNT_REPORTS} fiches PDF par mois au lieu de {ANON_MONTHLY_REPORTS}</li>
+  <li>Une clé API pour vos propres outils</li>
+  <li>Le suivi de votre consommation en temps réel</li>
+</ul>
+<p><a class="btn p" href="https://ecobuilding.confinia.io/?signup=1">Créer un compte gratuit</a>
+<a class="btn s" href="https://ecobuilding.confinia.io/offres.html">Voir les offres</a></p>
+<p class="help">Un problème, une question ? Écrivez à
+<a href="mailto:{SUPPORT_EMAIL}?subject=EcoBuilding%20-%20aide">{SUPPORT_EMAIL}</a>, on répond.</p>
 </body></html>""")
     return await http_exception_handler(request, exc)
 

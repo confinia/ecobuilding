@@ -473,7 +473,7 @@ def _report_html(data: dict, photos: list | None = None, map_img: str | None = N
   Sources : BDNB (CSTB), Base Adresse Nationale, Géorisques — Licence Ouverte, attributions requises.
   Document informatif généré automatiquement à partir de données ouvertes : il ne remplace ni un
   diagnostic de performance énergétique (DPE) officiel, ni un état des risques et pollutions (ERP)
-  réglementaire. Version bêta gratuite.
+  réglementaire. Version bêta gratuite. Une question sur cette fiche : contact@confinia.io
 </footer>
 {_context_page(data, photos, map_img)}
 {_traceability_annex(data, photos)}

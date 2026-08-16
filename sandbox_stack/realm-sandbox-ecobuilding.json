@@ -9,7 +9,10 @@
   "verifyEmail": false,
   "sslRequired": "external",
   "internationalizationEnabled": true,
-  "supportedLocales": ["fr", "en"],
+  "supportedLocales": [
+    "fr",
+    "en"
+  ],
   "defaultLocale": "fr",
   "components": {
     "org.keycloak.userprofile.UserProfileProvider": [
@@ -65,6 +68,18 @@
           }
         }
       ]
+    },
+    {
+      "clientId": "ecobuilding-e2e",
+      "name": "CI end-to-end (sandbox only)",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "attributes": {
+        "post.logout.redirect.uris": "+"
+      }
     }
   ]
 }
