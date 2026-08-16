@@ -56,12 +56,12 @@
 
       <section class="tier">
         <h2>API Pro <span class="badge soon">bientôt</span></h2>
-        <p class="price">0,02 €<small> /crédit</small></p>
+        <p class="price">0,20 €<small> /fiche PDF</small></p>
         <p class="price-sub"><strong>plafonné à 99 € /mois</strong>, quoi qu'il arrive</p>
         <ul>
-          <li><strong>500 crédits offerts chaque mois</strong>, puis 0,02 € par crédit</li>
-          <li>1 crédit = 1 bâtiment consulté · 5 crédits = 1 fiche PDF · autocomplétion gratuite</li>
-          <li>Plafond mensuel garanti : votre facture ne dépasse jamais 99 €</li>
+          <li>Facturé dès la première fiche, sans abonnement ni engagement</li>
+          <li>Appels API bruts (bâtiment, adresse) : 0,01 € l'unité, autocomplétion gratuite</li>
+          <li>Plafond mensuel garanti : au-delà de 495 fiches, tout est inclus dans les 99 €</li>
           <li>Suivi de consommation en temps réel (<code>GET /v1/usage</code>)</li>
           <li>Clé API dédiée, support par e-mail</li>
         </ul>
@@ -83,14 +83,13 @@
 
     <section class="sim">
       <h2>Simulateur : combien ça coûte ?</h2>
-      <p class="hint">Payez à l'usage, jamais au-delà du plafond. Déplacez le curseur pour votre volume mensuel.</p>
-      <label for="sim-range">Bâtiments consultés par mois : <output id="sim-vol">500</output></label>
-      <input id="sim-range" type="range" min="0" max="12000" step="100" value="500">
+      <p class="hint">Payez à la fiche, jamais au-delà du plafond. Déplacez le curseur pour votre volume mensuel.</p>
+      <label for="sim-range">Fiches PDF par mois : <output id="sim-vol">50</output></label>
+      <input id="sim-range" type="range" min="0" max="1200" step="10" value="50">
       <table class="sim-out">
-        <tr><td>Crédits gratuits</td><td id="sim-free">500</td></tr>
-        <tr><td>Crédits facturés</td><td id="sim-billable">0</td></tr>
-        <tr><td><strong>Coût mensuel</strong></td><td><strong id="sim-cost">0,00 €</strong></td></tr>
-        <tr><td>Économie vs forfait 99 €</td><td id="sim-saved">99,00 €</td></tr>
+        <tr><td>Fiches facturées (0,20 €)</td><td id="sim-billable">50</td></tr>
+        <tr><td><strong>Coût mensuel</strong></td><td><strong id="sim-cost">10,00 €</strong></td></tr>
+        <tr><td>Économie vs forfait 99 €</td><td id="sim-saved">89,00 €</td></tr>
       </table>
       <p class="hint" id="sim-note"></p>
     </section>
@@ -131,23 +130,21 @@
 // Price simulator (#201). Mirrors the server formula; /v1/pricing is the
 // authority and the test suite pins both to the same numbers.
 (function () {
-  const FREE = 500, PRICE = 0.02, CAP = 99;
+  const PRICE_FICHE = 0.20, CAP = 99;
   const r = document.getElementById("sim-range");
   if (!r) return;
   const eur = (n) => n.toFixed(2).replace(".", ",") + " €";
   function render() {
-    const credits = Number(r.value);
-    const billable = Math.max(0, credits - FREE);
-    const raw = billable * PRICE;
+    const fiches = Number(r.value);
+    const raw = fiches * PRICE_FICHE;
     const cost = Math.min(raw, CAP);
-    document.getElementById("sim-vol").textContent = credits.toLocaleString("fr-FR");
-    document.getElementById("sim-free").textContent = FREE.toLocaleString("fr-FR");
-    document.getElementById("sim-billable").textContent = billable.toLocaleString("fr-FR");
+    document.getElementById("sim-vol").textContent = fiches.toLocaleString("fr-FR");
+    document.getElementById("sim-billable").textContent = fiches.toLocaleString("fr-FR");
     document.getElementById("sim-cost").textContent = eur(cost);
     document.getElementById("sim-saved").textContent = eur(CAP - cost);
     document.getElementById("sim-note").textContent = raw >= CAP
-      ? "Plafond atteint : au-delà, la consommation reste facturée 99 € maximum."
-      : "Sous le plafond : vous ne payez que ce que vous consommez.";
+      ? "Plafond atteint (495 fiches) : toute fiche supplémentaire est incluse."
+      : "Sous le plafond : vous ne payez que les fiches générées.";
   }
   r.addEventListener("input", render);
   render();
