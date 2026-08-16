@@ -7,7 +7,7 @@ promoted (production) → closed**. Environments (rule 12):
 [staging](https://staging.ecobuilding.confinia.io) ·
 [sandbox](https://sandbox.ecobuilding.confinia.io).
 
-Last updated: 2026-08-05 (post-promote).
+Last updated: 2026-08-16 (triage + promote).
 
 ## Environment state
 
@@ -21,6 +21,10 @@ Last updated: 2026-08-05 (post-promote).
 
 | Issue | Status | Next step |
 |---|---|---|
+| [#224](https://github.com/confinia/ecobuilding/issues/224) Pricing v3 (facturer la fiche) | **In production 2026-08-16** (PR [#225](https://github.com/confinia/ecobuilding/pull/225)): 3 / 10 gratuites, puis 0,49 € la fiche, plafond 99 € ; plus aucun « crédit » côté client ; [PRICING.md](PRICING.md) est la source de vérité | — |
+| [#220](https://github.com/confinia/ecobuilding/issues/220) Clé API introuvable dans l'UI · [#221](https://github.com/confinia/ecobuilding/issues/221) bandeau sandbox · [#222](https://github.com/confinia/ecobuilding/issues/222) marqueur sur le toit | **In production 2026-08-16** (PR [#223](https://github.com/confinia/ecobuilding/pull/223)) ; #221 et #222 fermées | — |
+| [#219](https://github.com/confinia/ecobuilding/pull/219) Checkout Polar : metadata vides (422) | **In production 2026-08-16** : bloquait tout utilisateur sans organisation | — |
+| Caddy admin 2030 → 13090 (demande plateforme) | **In production 2026-08-16** (PR [#226](https://github.com/confinia/ecobuilding/pull/226)) ; 2030 silencieux, admin dans la bande | — |
 | [#215](https://github.com/confinia/ecobuilding/issues/215) Aucun bouton d'inscription visible | **Fixed in production 2026-08-16** (PR [#216](https://github.com/confinia/ecobuilding/pull/216)): l'UI d'auth disparaissait dès qu'un import CDN ou l'init Keycloak échouait; keycloak-js vendorisé same-origin, boutons affichés avant tout `await` avec des URLs Keycloak directes en filet. MapLibre 6.4.0 (web + render alignés, test anti-dérive), mentions « bêta » retirées | Operator: recharger et confirmer visuellement |
 | [#212](https://github.com/confinia/ecobuilding/issues/212) Self-service PAYG (contact + parcours d'inscription) | **In production 2026-08-16** (PR [#213](https://github.com/confinia/ecobuilding/pull/213)): contact@ à chaque friction (quota, page 429, fiche PDF, header « Aide », offres), inscription en un clic depuis la page quota + écran de bienvenue, 429 in-app transformé en upsell; **e2e CI du parcours complet** (compte jetable → 30 fiches → décompte sur le COMPTE → 429 avec upsell) | Operator: manual robustification pass |
 | [#201](https://github.com/confinia/ecobuilding/issues/201) Polar metering | **Wired to the real Polar sandbox 2026-08-16**: meter `aba28fdd…` + product `a908bb90…` (base 9 € fixe + metered 1 c/crédit, `cap_amount` 9900) créés dans l'org `ecobuilding`; simulation réconciliée **53 crédits locaux = 53 dans le meter Polar** | Checkout → webhook → passage Pro (bouton actif en sandbox) |
