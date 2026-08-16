@@ -1,62 +1,91 @@
-# TEST_POLAR — pro account registration validation (Polar.sh)
+# TEST_POLAR — valider l'inscription et le paiement sans risque
 
-Covers the **pro plan registration** flow: a signed-in user (Keycloak, see
-TEST_SUBSCRIPTION.md) subscribes via **Polar.sh** (Merchant of Record) and
-gains pro abilities — normalized PDF building fiches with a daily quota,
-higher API limits. Feature status: **not implemented** — tracked in
-[#35](https://github.com/confinia/ecobuilding/issues/35); real-money wiring is
-gated by RULES.md #6 (≥10k€ before incorporation); **sandbox** tests come first.
-**No fabricated results: the results below are from the real latest run.**
+**Aucun euro réel ne peut être encaissé** : la production n'a AUCUNE
+configuration Polar (0 variable `POLAR_*`), donc `/v1/pro/checkout` y répond
+503 et le bouton « Passer Pro » y est masqué (`ECO_PRO_ENABLED=false`,
+rule 7). Tout le test de paiement se fait sur le **sandbox**.
 
-## Target flow under test (spec 2026-07-22)
+## L'environnement de test EST l'image de production
 
-1. Signed-in user clicks **« Passer Pro »** → `GET /v1/pro/checkout` →
-   redirect to the Polar hosted checkout (sandbox organization during beta).
-2. Payment done → Polar sends the `subscription.created` **webhook** (signed);
-   the API verifies the signature, matches the user/org, upgrades the tier.
-3. Pro tier grants: PDF fiche downloads **N/day** (quota), batch lookups,
-   higher API quotas; usage visible per org in Grafana.
-4. `subscription.canceled` webhook → automatic downgrade to free.
-5. All money flows through Polar as seller of record (EU VAT handled).
+`sandbox.ecobuilding.confinia.io` fait tourner **exactement la même image**
+que la production (vérifié 2026-08-16 : `ImageID cea98525539f5711` des deux
+côtés). Seule la CONFIGURATION diffère :
 
-## Automated validation (CI)
-
-Suite: `api/tests/test_polar.py` — currently **SKIPPED** with the explicit
-reason `Polar integration not implemented`. Planned cases:
-
-| # | Case | Asserts |
+| | Production | Sandbox |
 |---|---|---|
-| 1 | `test_checkout_redirects_to_polar_sandbox` | authenticated checkout → 307 to Polar sandbox URL with org metadata |
-| 2 | `test_webhook_provisions_pro_key` | signed `subscription.created` → tier=pro, quota active |
-| 3 | `test_webhook_signature_enforced` | tampered signature → 401, no provisioning |
-| 4 | `test_cancellation_downgrades_key` | `subscription.canceled` → tier=free |
+| Image API | `ecobuilding-api:latest` | **la même** |
+| Réalm Keycloak | `confinia` | `sandbox-ecobuilding` (isolé) |
+| Données (leads, clés, usage) | volume prod | volume sandbox |
+| Polar | **aucun** (503) | `sandbox-api.polar.sh` |
+| Bouton « Passer Pro » | masqué (rule 7) | visible |
 
-Prerequisite (user action): create the Polar account + sandbox organization;
-`POLAR_WEBHOOK_SECRET` and product IDs go to `deploy/secrets.env`.
+Donc : pour tester un paiement, on utilise le sandbox ; le code exercé est
+celui qui partira en production.
 
-## Manual validation checklist (sandbox, before any real money)
+## Procédure complète (validée 2026-08-16)
 
-- [ ] « Passer Pro » visible only when signed in
-- [ ] Checkout shows the pro plan with correct price and org name
-- [ ] Sandbox test card completes; redirect back to the app confirmed
-- [ ] Tier switches to `pro` (visible in `/api/v1/me`) within seconds
-- [ ] PDF fiche quota enforced: N/day then explicit 429 with reset time
-- [ ] Cancellation in Polar dashboard downgrades the account
-- [ ] Invoice/receipt e-mail received from Polar (MoR)
+### 1. Une fois : déclarer le webhook Polar (seule étape manuelle)
 
-## How to run
+Le token d'organisation courant n'a pas le scope `webhooks:write`, donc la
+création par API échoue (`insufficient_scope`). Deux options :
 
-Same hermetic command as TEST_SUBSCRIPTION.md (`pytest api/tests -v`).
-GitHub Actions activation: see TEST_SUBSCRIPTION.md (token `workflow` scope).
+- **Dashboard** : sandbox.polar.sh → org `ecobuilding` → Settings → Webhooks →
+  Add endpoint
+  - URL : `https://sandbox.ecobuilding.confinia.io/api/v1/pro/webhook`
+  - Format : **Raw** (Standard Webhooks — c'est ce que l'API vérifie)
+  - Events : `subscription.created`, `subscription.active`,
+    `subscription.updated`, `subscription.canceled`, `subscription.revoked`
+  - Copier le **secret** généré.
+- ou régénérer un token avec `webhooks:write` et relancer la création par API.
 
-## Last results (REAL run)
+Puis sur la VM :
+```sh
+ssh ecobuilding
+nano ~/projects/ecobuilding/sandbox_stack/secrets.env   # POLAR_WEBHOOK_SECRET=whsec_…
+cd ~/projects/ecobuilding/sandbox_stack && set -a && . secrets.env && set +a \
+  && podman-compose -p ecobuilding-sandbox -f docker-compose.yml up -d --force-recreate sandbox-api
+```
 
-- **Date:** 2026-07-22 · **Environment:** `python:3.12-slim` container on the
-  production VM (`cka-ovh-dedicated-01`) · **Branch:** `feat/ci-test-harness`
-- **Outcome:** `6 passed, 8 skipped in 1.19s`
+### 2. Payer avec une carte de test
 
-| Suite | Result |
+1. Ouvrir https://sandbox.ecobuilding.confinia.io et créer un compte
+   (le champ **Organisation est obligatoire** : sans lui, Keycloak refuse la
+   connexion avec « Account is not fully set up »).
+2. Cliquer **« Passer Pro »** → redirection vers le checkout hébergé Polar
+   (URL en `sandbox.polar.sh/checkout/…`).
+3. Carte de test Stripe : **4242 4242 4242 4242**, date future quelconque,
+   CVC quelconque, code postal quelconque. Aucun argent réel n'est débité.
+4. Retour sur l'app (`?pro=success`).
+
+### 3. Vérifier que le plan a basculé
+
+```sh
+# côté app : le badge du compte affiche « Pro » au lieu des fiches restantes
+curl -H "Authorization: Bearer <token>" \
+  https://sandbox.ecobuilding.confinia.io/api/v1/usage | jq '.plan, .cost_eur'
+# -> "pro", 9.0
+```
+Le webhook `subscription.created` écrit le statut dans `pro.json` ; toutes les
+clés API du compte deviennent « pro » automatiquement (le plan suit le COMPTE).
+
+## Ce qui est déjà prouvé automatiquement (CI, rule 19)
+
+| Étape | Preuve |
 |---|---|
-| `test_api.py` (existing API surface) | ✅ 6 PASSED |
-| `test_polar.py` (4 cases) | ⏭ SKIPPED — integration not implemented (#35) |
-| `test_subscription.py` (4 cases) | ⏭ SKIPPED — see TEST_SUBSCRIPTION.md |
+| Inscription → quota compte | `deploy/e2e-signup.sh` : compte jetable, 30 fiches, décompte sur le compte, 429 avec upsell |
+| Consommation → facturation | `deploy/e2e-usage.sh` : crédits locaux = crédits ingérés dans le meter Polar (53 = 53) |
+| Objets Polar | meter `aba28fdd…` + produit `a908bb90…` (base 9 € fixe + metered 1 c/crédit, `cap_amount` 9900) |
+| Checkout | URL de checkout sandbox obtenue via l'API avec un vrai compte (2026-08-16) |
+| Webhook → passage Pro | **manuel pour l'instant** : nécessite l'étape 1 |
+
+## Bugs trouvés en faisant ce test (et corrigés)
+
+- `422 metadata` : Polar refuse les valeurs de metadata vides ; on envoyait
+  `org: ""` pour tout utilisateur sans organisation → **tous** ces checkouts
+  échouaient. Corrigé ([#219](https://github.com/confinia/ecobuilding/pull/219)).
+- Bouton « Passer Pro » visible en production malgré `ECO_PRO_ENABLED=false`
+  (le rafraîchissement du quota le démasquait). Corrigé
+  ([#218](https://github.com/confinia/ecobuilding/pull/218)).
+- Token d'organisation Polar : interdit d'envoyer `organization_id` (422).
+- Realm Keycloak : `organization` est un attribut REQUIS ; sans lui, toute
+  connexion échoue avec « Account is not fully set up ».
