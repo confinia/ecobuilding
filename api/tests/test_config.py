@@ -219,3 +219,23 @@ def test_payg_pricing_is_consistent_everywhere():
     assert "BASE_CENTS:-900}" in setup                # the 9 EUR subscription base
     assert "cap_amount" in setup                       # Polar enforces the cap too
     assert (ROOT / "deploy/polar-sim.sh").exists()
+
+@needs_repo
+def test_self_service_support_and_signup(needs_repo_ok=None):
+    """#212: a user must never be stuck — support contact at every friction
+    point, and the sign-up journey is proven by a CI e2e (rule 19)."""
+    api = (ROOT / "api/app/main.py").read_text()
+    assert 'SUPPORT_EMAIL", "contact@confinia.io"' in api
+    assert api.count("SUPPORT_EMAIL") >= 4            # quota msgs + 429 page
+    assert "?signup=1" in api                          # one-click way out
+    app = (ROOT / "frontend/site/app.js").read_text()
+    assert 'get("signup") === "1"' in app and "kc.register(" in app
+    assert 'get("welcome") === "1"' in app             # post-signup confirmation
+    assert "r.status === 429" in app                   # in-app upsell path
+    for page in ("index.html", "offres.html"):
+        assert "contact@confinia.io" in (ROOT / f"frontend/site/{page}").read_text()
+    assert "contact@confinia.io" in (ROOT / "api/app/report.py").read_text()
+    wf = (ROOT / ".github/workflows/sandbox.yml").read_text()
+    assert "e2e-signup.sh" in wf                       # journey proven per PR
+    e2e = (ROOT / "deploy/e2e-signup.sh").read_text()
+    assert "reports_left" in e2e and "429" in e2e and "contact@confinia.io" in e2e

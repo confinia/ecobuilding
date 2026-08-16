@@ -9,3 +9,4 @@ sandbox_stack/secrets.env
 
 # Generated on the VM from Caddyfile.$ACTIVE by stack-up/promote — never track.
 caddy_server/Caddyfile
+**/secrets.env

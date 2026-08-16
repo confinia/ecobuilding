@@ -16,9 +16,13 @@ set -eu
 : "${POLAR_ACCESS_TOKEN:?export POLAR_ACCESS_TOKEN=<polar_oat_...>}"
 BASE="${POLAR_BASE_URL:-https://sandbox-api.polar.sh}"
 EVENT="${POLAR_METER_EVENT:-ecobuilding_credits}"
-# Sandbox org "ecobuilding" (discovered 2026-08-16). An organization-scoped
-# token already implies its org, so this is only sent when set.
-ORG_ID="${POLAR_ORG_ID:-cc1b6a73-edfb-4b78-8922-4ef67a9b22b4}"
+# An ORGANIZATION-scoped token already carries its org and Polar REJECTS an
+# explicit organization_id with it (422 organization_token). Only a personal
+# token needs one, so the field is included only when POLAR_ORG_ID is set AND
+# the token is not an organization token (POLAR_ORG_TOKEN=0 to force it in).
+ORG_ID="${POLAR_ORG_ID:-}"
+ORG_TOKEN="${POLAR_ORG_TOKEN:-1}"
+if [ "$ORG_TOKEN" = "1" ] || [ -z "$ORG_ID" ]; then ORG_FIELD=""; else ORG_FIELD=",\"organization_id\": \"$ORG_ID\""; fi
 UNIT_CENTS="${UNIT_CENTS:-1}"        # 0,01 € per credit (49 credits = 0,49 € per fiche)
 BASE_CENTS="${BASE_CENTS:-900}"      # 9 € subscription base (the MRR anchor)
 CAP_CENTS="${CAP_CENTS:-9900}"       # hard 99 €/month ceiling
@@ -41,8 +45,7 @@ METER=$(curl -fsS "${AUTH[@]}" -X POST "$BASE/v1/meters/" -d @- <<JSON | python3
   "name": "EcoBuilding credits",
   "filter": {"conjunction": "and",
              "clauses": [{"property": "name", "operator": "eq", "value": "$EVENT"}]},
-  "aggregation": {"func": "sum", "property": "credits"},
-  "organization_id": "$ORG_ID"
+  "aggregation": {"func": "sum", "property": "credits"}$ORG_FIELD
 }
 JSON
 )
@@ -56,8 +59,7 @@ PRODUCT=$(curl -fsS "${AUTH[@]}" -X POST "$BASE/v1/products/" -d @- <<JSON | pyt
   "recurring_interval": "month",
   "prices": [{"amount_type": "fixed", "price_currency": "eur", "price_amount": $BASE_CENTS},
              {"amount_type": "metered_unit", "price_currency": "eur",
-              "meter_id": "$METER", "unit_amount": $UNIT_CENTS, "cap_amount": $CAP_CENTS}],
-  "organization_id": "$ORG_ID"
+              "meter_id": "$METER", "unit_amount": $UNIT_CENTS, "cap_amount": $CAP_CENTS}]$ORG_FIELD
 }
 JSON
 )
