@@ -1232,6 +1232,35 @@ a.btn{{display:inline-block;margin:6px;padding:11px 18px;border-radius:8px;text-
     return await http_exception_handler(request, exc)
 
 
+@app.get("/v1/keys", tags=["account"])
+async def list_keys(request: Request):
+    """The caller's own API keys, MASKED (#220). A key value is shown exactly
+    once, at creation: this listing exists so the user can see what they have
+    and when it was created, not to recover a lost secret."""
+    auth = request.headers.get("authorization", "")
+    if not auth.lower().startswith("bearer "):
+        raise HTTPException(401, "Bearer token required")
+    try:
+        claims = _decode_token(auth[7:].strip())
+    except Exception:
+        raise HTTPException(401, "Invalid token")
+    sub = claims.get("sub")
+    import json as _json
+    out = []
+    try:
+        with open(KEYS_PATH) as f:
+            for line in f:
+                rec = _json.loads(line)
+                if rec.get("sub") and rec["sub"] == sub:
+                    k = rec["key"]
+                    out.append({"masked": k[:7] + "…" + k[-4:],
+                                "created": rec.get("created"),
+                                "plan": "pro" if _pro_active(sub) else "free"})
+    except (OSError, ValueError):
+        pass
+    return {"keys": out, "count": len(out)}
+
+
 @app.post("/v1/keys", tags=["account"], status_code=201)
 async def create_key(request: Request):
     """Mint an API key for the signed-in user (Keycloak JWT). Free during beta."""
@@ -1285,6 +1314,23 @@ async def usage(request: Request):
                  "reports_included": FREE_ACCOUNT_REPORTS,
                  "reports_left": max(0, FREE_ACCOUNT_REPORTS - used)}
     return body
+
+
+@app.get("/v1/config", tags=["meta"])
+async def config():
+    """Public runtime facts the UI must not guess (#221): which payment
+    environment is wired. A SANDBOX payment mode must be visible in the UI so
+    nobody mistakes a test checkout for a real one."""
+    if not POLAR_ACCESS_TOKEN:
+        mode = "disabled"
+    elif "sandbox" in POLAR_BASE_URL:
+        mode = "sandbox"
+    else:
+        mode = "live"
+    return {"payment_mode": mode,
+            "free_tiers": {"anonymous_reports_month": ANON_MONTHLY_REPORTS,
+                           "free_account_reports_month": FREE_ACCOUNT_REPORTS},
+            "support_email": SUPPORT_EMAIL}
 
 
 @app.get("/v1/pricing", tags=["account"])

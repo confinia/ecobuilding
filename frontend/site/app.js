@@ -10,6 +10,17 @@ function track(event, meta) {
 }
 track("page_view");
 
+// Payment-mode banner (#221): when the backend is wired to a SANDBOX payment
+// provider, say so loudly — a test checkout must never look like a real one.
+fetch(`${API}/config`).then((r) => r.ok && r.json()).then((c) => {
+  if (!c || c.payment_mode !== "sandbox") return;
+  const b = document.createElement("div");
+  b.id = "paybanner";
+  b.textContent = "Mode paiement SANDBOX — aucun paiement réel n'est encaissé (cartes de test uniquement)";
+  document.body.appendChild(b);
+  document.body.classList.add("has-paybanner");
+}).catch(() => {});
+
 // --- Auth (Keycloak, shared /auth) — progressive: UI hides if IdP is down ---
 // Keycloak 26 ships the JS adapter as an ESM module (no server-hosted
 // /auth/js/keycloak.js), so we import it dynamically from a pinned CDN.
@@ -49,6 +60,9 @@ track("page_view");
         document.getElementById("userlabel").textContent =
           (t.email || t.preferred_username || "compte") + (t.org ? " · " + t.org : "");
         show("userchip", true); show("signin", false); show("signup", false);
+        const chip = document.getElementById("userlabel");
+        if (chip) { chip.style.cursor = "pointer"; chip.title = "Mon compte, mes clés API";
+                    chip.onclick = () => { track("account_open"); showAccount(); }; }
         if (window.ECO_PRO_ENABLED) show("gopro", true);
         window.ecoToken = () => kc.token;
         setInterval(() => kc.updateToken(60).catch(() => {}), 30000);
@@ -231,10 +245,25 @@ const MARKER_COLOR = "#2b7a4b";
 // onto the target building's footprint centroid once its tile is loaded, so the
 // pin sits on top of the building instead of the off-centre BAN address point.
 // Same helper (ecoGeo.featuresCenter) and color as the PDF render for parity.
-function placeMarker(lon, lat) {
+let markerHeightM = 0;
+function placeMarker(lon, lat, heightM) {
   if (marker) marker.remove();
+  markerHeightM = heightM || 0;
   marker = new maplibregl.Marker({ color: MARKER_COLOR }).setLngLat([lon, lat]).addTo(map);
+  updateMarkerElevation();
 }
+// MapLibre markers are screen-anchored with no altitude API (6.4), so the
+// building height is converted to a pixel offset for the CURRENT camera:
+// metres -> pixels at this latitude/zoom, foreshortened by the pitch. Kept in
+// sync on every camera move so the pin stays on the roof (#222).
+function updateMarkerElevation() {
+  if (!marker || !markerHeightM) return;
+  const lat = marker.getLngLat().lat;
+  const metresPerPixel = 156543.03392 * Math.cos(lat * Math.PI / 180) / Math.pow(2, map.getZoom());
+  const dy = (markerHeightM / metresPerPixel) * Math.cos(map.getPitch() * Math.PI / 180);
+  marker.setOffset([0, -dy]);
+}
+map.on("move", updateMarkerElevation);
 function anchorMarkerToBuilding(id) {
   if (!marker || !id) return;
   const tryAnchor = () => {
@@ -360,6 +389,8 @@ function kv(k, v) {
 function renderPanel(s, data) {
   const b = data.buildings?.[0];
   if (b?.bdnb_id) setUrlBuilding(b.bdnb_id);
+  // Now that the height is known, lift the pin onto the roof (#222).
+  if (b?.height_m && marker) { markerHeightM = b.height_m; updateMarkerElevation(); }
   if (!b) {
     showPanel(`<h2>${s.label}</h2><p class="hint">Aucune fiche BDNB trouvée pour cette adresse.
       Le bâtiment existe peut-être sous une adresse voisine.</p>`);
@@ -462,6 +493,57 @@ async function refreshQuota() {
     const go = document.getElementById("gopro");
     if (go && window.ECO_PRO_ENABLED && u.plan !== "pro") go.hidden = false;
   } catch { /* quota display is cosmetic: never break the app */ }
+}
+
+// --- Account panel (#220): the product promises "une clé API" — this is where
+// a user actually gets it, sees their plan and their consumption.
+async function showAccount() {
+  if (!window.ecoToken) return;
+  const auth = { Authorization: "Bearer " + window.ecoToken() };
+  showPanel('<p class="hint loading">Chargement de votre compte…</p>');
+  try {
+    const [usage, keys] = await Promise.all([
+      fetch(`${API}/usage`, { headers: auth }).then((r) => r.json()),
+      fetch(`${API}/keys`, { headers: auth }).then((r) => r.json()),
+    ]);
+    const quota = usage.plan === "pro"
+      ? `<p>Offre <strong>Pro</strong> — ${usage.credits} crédits ce mois, ${usage.cost_eur} € (plafond ${usage.monthly_cap_eur} €).</p>`
+      : `<p>Compte gratuit — <strong>${usage.reports_left}</strong> fiches restantes sur ${usage.reports_included} ce mois.</p>`;
+    const list = (keys.keys || []).length
+      ? `<ul class="keys">${keys.keys.map((k) => `<li><code>${k.masked}</code> <span class="hint">créée le ${String(k.created || "").slice(0, 10)}</span></li>`).join("")}</ul>`
+      : '<p class="hint">Aucune clé API pour le moment.</p>';
+    showPanel(`<h2>Mon compte</h2>${quota}
+      <h3>Clés API</h3>${list}
+      <p><button id="newkey" class="report-link">Générer une clé API</button></p>
+      <div id="keyout"></div>
+      <p class="hint">Passez la clé en en-tête <code>X-API-Key</code>.
+      Documentation : <a href="/api/v1/docs">/api/v1/docs</a>.<br>
+      Une question ? <a href="mailto:contact@confinia.io?subject=EcoBuilding%20-%20aide">contact@confinia.io</a></p>`);
+    const btn = document.getElementById("newkey");
+    if (btn) btn.onclick = async () => {
+      btn.disabled = true; btn.textContent = "Génération…";
+      try {
+        const r = await fetch(`${API}/keys`, { method: "POST", headers: auth });
+        const d = await r.json();
+        // The value is shown ONCE: the listing only ever returns it masked.
+        document.getElementById("keyout").innerHTML =
+          `<p class="keynew"><strong>Votre nouvelle clé (copiez-la maintenant, elle ne sera plus affichée)</strong><br>
+           <code id="kv">${d.api_key}</code>
+           <button id="copykey" class="report-link">Copier</button></p>`;
+        document.getElementById("copykey").onclick = () => {
+          navigator.clipboard?.writeText(d.api_key);
+          document.getElementById("copykey").textContent = "Copiée ✓";
+        };
+        track("api_key_created");
+      } catch {
+        document.getElementById("keyout").innerHTML =
+          '<p class="hint">Échec de la génération. Réessayez ou écrivez à contact@confinia.io</p>';
+      }
+      btn.disabled = false; btn.textContent = "Générer une clé API";
+    };
+  } catch {
+    showPanel('<p class="hint">Compte indisponible. Réessayez, ou écrivez à contact@confinia.io</p>');
+  }
 }
 
 // --- Panel loading narration (#150 follow-up): with 9 upstream sources per
