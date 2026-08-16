@@ -253,7 +253,9 @@ def test_maplibre_vendored_and_versions_match():
     assert render["dependencies"]["maplibre-gl"] == vendored, (
         vendored, render["dependencies"]["maplibre-gl"])
     idx = (ROOT / "frontend/site/index.html").read_text()
-    assert "assets/maplibre/maplibre-gl.mjs" in idx and "esm.sh" not in idx
+    assert "assets/maplibre/maplibre-gl.mjs" in idx
+    # No CDN *import* (a comment may still mention esm.sh to explain why not).
+    assert "from 'https://esm.sh" not in idx and 'from "https://esm.sh' not in idx
 
 
 @needs_repo
