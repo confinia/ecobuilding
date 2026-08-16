@@ -720,3 +720,23 @@ def test_config_exposes_payment_mode(monkeypatch):
     assert client.get("/v1/config").json()["payment_mode"] == "sandbox"
     monkeypatch.setattr(main, "POLAR_BASE_URL", "https://api.polar.sh")
     assert client.get("/v1/config").json()["payment_mode"] == "live"
+
+def test_polar_checkout_omits_empty_metadata(monkeypatch):
+    """Polar rejects empty metadata values (422): a user without an `org`
+    claim must still be able to subscribe."""
+    sent = {}
+    class Resp:
+        def raise_for_status(self): pass
+        def json(self): return {"url": "https://sandbox.polar.sh/checkout/x", "id": "c1"}
+    async def fake_post(url, json=None, headers=None):
+        sent.update(json or {})
+        return Resp()
+    monkeypatch.setattr(main, "POLAR_ACCESS_TOKEN", "tok")
+    monkeypatch.setattr(main, "POLAR_PRODUCT_ID", "prod")
+    monkeypatch.setattr(main._client, "post", fake_post)
+    monkeypatch.setattr(main, "_decode_token",
+                        lambda t: {"sub": "u-1", "email": "u@x.io"})   # no org claim
+    r = client.get("/v1/pro/checkout", headers={"Authorization": "Bearer x"})
+    assert r.status_code == 200, r.text
+    assert sent["metadata"] == {"kc_sub": "u-1"}          # no empty values
+    assert "" not in sent["metadata"].values()
