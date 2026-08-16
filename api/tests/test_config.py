@@ -191,15 +191,21 @@ def test_payg_pricing_is_consistent_everywhere():
     """#201: the offres page, the server formula and the Polar setup script
     must quote the SAME numbers — a pricing mismatch is a trust bug."""
     html = (ROOT / "frontend/site/offres.html").read_text()
-    assert "0,20 €" in html and "99 €" in html and "495 fiches" in html
+    assert "9 €" in html and "0,49 €" in html and "99 €" in html
+    assert "10 fiches" in html and "30 fiches" in html and "50 fiches" in html
+    assert "234 fiches" in html                       # where the cap lands
     assert "500 crédits" not in html                   # the giveaway draft is gone
     assert 'id="sim-range"' in html                    # simulator present
     main_py = (ROOT / "api/app/main.py").read_text()
-    assert 'FREE_CREDITS_MONTH", "0"' in main_py       # billed from the first fiche
+    assert 'BASE_FEE_EUR", "9"' in main_py             # the subscription base
+    assert 'INCLUDED_FICHES", "50"' in main_py
+    assert 'ANON_MONTHLY_REPORTS", "10"' in main_py
+    assert 'FREE_ACCOUNT_REPORTS", "30"' in main_py
     assert 'PRICE_PER_CREDIT_EUR", "0.01"' in main_py
     assert 'MONTHLY_CAP_EUR", "99"' in main_py
-    assert '"report": 20' in main_py                   # 20 credits = 0,20 EUR
+    assert '"report": 49' in main_py                   # 49 credits = 0,49 EUR
     setup = (ROOT / "deploy/polar-setup.sh").read_text()
     assert "UNIT_CENTS:-1}" in setup and "CAP_CENTS:-9900}" in setup
+    assert "BASE_CENTS:-900}" in setup                # the 9 EUR subscription base
     assert "cap_amount" in setup                       # Polar enforces the cap too
     assert (ROOT / "deploy/polar-sim.sh").exists()

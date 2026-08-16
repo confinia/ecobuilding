@@ -14,6 +14,7 @@ solar potential — all from open data (BDNB/CSTB, BAN, Géorisques).
 |---|---|
 | [DEV.md](DEV.md) | Architecture, deploy, observability, conventions |
 | [DATA.md](DATA.md) | Datasets: how each is loaded, where it lives, how it is updated |
+| [SOURCES.md](SOURCES.md) | Open-data inventory: live, planned, candidate (incl. health, EU/US) |
 | [COMMUNICATION.md](COMMUNICATION.md) | Posting playbook: channel URLs, identities, titles, etiquette |
 | [BUSINESS.md](BUSINESS.md) | Market analysis, strategy, decision log |
 | [TODO.md](TODO.md) | Actions (business + product) |

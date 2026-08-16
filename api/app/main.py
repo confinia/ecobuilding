@@ -945,6 +945,21 @@ M_KEYED_CALLS = _meter.create_counter("ecobuilding_keyed_calls", description="Va
 M_CREDITS = _meter.create_counter("ecobuilding_credits", description="Billable credits consumed", unit="1")
 
 
+def _key_plans() -> dict:
+    """key -> plan ("free" | "pro"). Plans live next to the key so a free
+    account and a subscriber are the same object with one field (#206)."""
+    plans = {}
+    try:
+        with open(KEYS_PATH) as f:
+            import json as _json
+            for line in f:
+                rec = _json.loads(line)
+                plans[rec["key"]] = rec.get("plan", "free")
+    except (OSError, ValueError):
+        pass
+    return plans
+
+
 def _load_keys() -> set:
     keys = set()
     try:
@@ -964,11 +979,22 @@ def _load_keys() -> set:
 # cheaper (0,01 €) because they are an input, not a deliverable. A HARD monthly
 # cap keeps the worst case knowable — the selling point for cost-controlled
 # companies. Anonymous browsing (no key) stays free and uncapped.
-FREE_CREDITS_MONTH = int(os.environ.get("FREE_CREDITS_MONTH", "0"))
+# Pricing policy v2 (#206) — SUBSCRIPTION FIRST: the goal is stable identified
+# users, not early revenue. "Scalability is not only growing high quickly, it
+# is also the ability to start from very low" (operator, 2026-08-16), hence a
+# 9 EUR entry that nobody needs approval to spend.
+#   anonymous  : 10 fiches/month  (was 20/day — nobody ever registered)
+#   free account: 30 fiches/month + API key
+#   pro        : 9 EUR/month, 50 fiches included, then 0,49 EUR/fiche, cap 99 EUR
+BASE_FEE_EUR = float(os.environ.get("BASE_FEE_EUR", "9"))
+INCLUDED_FICHES = int(os.environ.get("INCLUDED_FICHES", "50"))
 PRICE_PER_CREDIT_EUR = float(os.environ.get("PRICE_PER_CREDIT_EUR", "0.01"))
 MONTHLY_CAP_EUR = float(os.environ.get("MONTHLY_CAP_EUR", "99"))
-# 20 credits = 0,20 € per fiche; 1 credit = 0,01 € per API record.
-CREDIT_COST = {"lookup": 1, "buildings": 1, "reverse": 1, "report": 20, "suggest": 0}
+ANON_MONTHLY_REPORTS = int(os.environ.get("ANON_MONTHLY_REPORTS", "10"))
+FREE_ACCOUNT_REPORTS = int(os.environ.get("FREE_ACCOUNT_REPORTS", "30"))
+# 49 credits = 0,49 EUR per fiche; 1 credit = 0,01 EUR per API record.
+CREDIT_COST = {"lookup": 1, "buildings": 1, "reverse": 1, "report": 49, "suggest": 0}
+FREE_CREDITS_MONTH = INCLUDED_FICHES * CREDIT_COST["report"]   # 50 fiches included
 USAGE_PATH = os.environ.get("USAGE_PATH", "/leads/usage.json")
 
 
@@ -1011,20 +1037,26 @@ def _usage_add(key_id: str, credits: int) -> int:
 
 
 def _usage_cost(credits: int) -> dict:
-    """Pay-as-you-go cost of a month's credits, with the hard cap applied."""
+    """Monthly cost of a PRO subscription: fixed base + metered overage, hard
+    cap. The base is what makes it a subscription (MRR) rather than a series
+    of transactions; the cap is what makes the worst case knowable."""
     billable = max(0, credits - FREE_CREDITS_MONTH)
-    raw = round(billable * PRICE_PER_CREDIT_EUR, 2)
+    raw = round(BASE_FEE_EUR + billable * PRICE_PER_CREDIT_EUR, 2)
     capped = min(raw, MONTHLY_CAP_EUR)
     return {
         "credits": credits,
+        "base_fee_eur": BASE_FEE_EUR,
+        "included_fiches": INCLUDED_FICHES,
         "free_credits": FREE_CREDITS_MONTH,
         "billable_credits": billable,
         "price_per_credit_eur": PRICE_PER_CREDIT_EUR,
+        "price_per_fiche_eur": round(PRICE_PER_CREDIT_EUR * CREDIT_COST["report"], 2),
         "cost_eur": capped,
         "monthly_cap_eur": MONTHLY_CAP_EUR,
         "cap_reached": raw >= MONTHLY_CAP_EUR,
-        # What the client saves versus the flat 99 €/month plan.
         "saved_vs_cap_eur": round(MONTHLY_CAP_EUR - capped, 2),
+        "free_tiers": {"anonymous_reports_month": ANON_MONTHLY_REPORTS,
+                       "free_account_reports_month": FREE_ACCOUNT_REPORTS},
     }
 
 
@@ -1070,26 +1102,47 @@ def _meter_if_keyed(request: Request, endpoint: str):
         _meter_call(request, endpoint, key)
 
 
+def _reports_this_month(bucket_id: str) -> int:
+    """Fiches already generated this month by an IP or a key (#206)."""
+    used = (_usage_load().get(_month_key()) or {}).get(bucket_id, 0)
+    return used // CREDIT_COST["report"] if bucket_id.startswith("ip:") else used
+
+
 def _quota_gate(request: Request, endpoint: str):
-    """Allow if a known API key is present; else enforce the anonymous daily
-    per-IP cap. Returns the caller kind for metrics."""
+    """Tiered access (#206), subscription-first ladder:
+      anonymous      -> ANON_MONTHLY_REPORTS fiches/month per IP
+      free account   -> FREE_ACCOUNT_REPORTS fiches/month (API key)
+      pro subscriber -> metered, hard-capped, never blocked
+    Returns the caller kind for metrics."""
     key = request.headers.get("x-api-key") or request.query_params.get("key")
     if key and key in _load_keys():
-        M_KEYED_CALLS.add(1, {"endpoint": endpoint, "key": hashlib.sha256(key.encode()).hexdigest()[:12]})
+        plan = _key_plans().get(key, "free")
+        M_KEYED_CALLS.add(1, {"endpoint": endpoint, "plan": plan,
+                              "key": hashlib.sha256(key.encode()).hexdigest()[:12]})
+        if plan != "pro" and endpoint == "report":
+            key_id = hashlib.sha256(key.encode()).hexdigest()[:16]
+            used = (_usage_load().get(_month_key()) or {}).get(key_id, 0) // CREDIT_COST["report"]
+            if used >= FREE_ACCOUNT_REPORTS:
+                raise HTTPException(
+                    429,
+                    f"Compte gratuit : {FREE_ACCOUNT_REPORTS} fiches par mois atteintes. "
+                    f"L'offre Pro ({BASE_FEE_EUR:.0f} €/mois, {INCLUDED_FICHES} fiches incluses, "
+                    f"plafond {MONTHLY_CAP_EUR:.0f} €) : "
+                    f"https://ecobuilding.confinia.io/offres.html")
         _meter_call(request, endpoint, key)
         return "key"
-    today = date.today().isoformat()
-    if _anon_day["d"] != today:
-        _anon_day["d"] = today
-        _anon_counts.clear()
     ip = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip() or "?"
-    _anon_counts[ip] += 1
-    if _anon_counts[ip] > ANON_DAILY_CAP:
-        raise HTTPException(
-            429,
-            f"Limite gratuite atteinte ({ANON_DAILY_CAP}/jour). Créez un compte pour une clé API "
-            f"(gratuite pendant la bêta) : https://ecobuilding.confinia.io/offres.html",
-        )
+    if endpoint == "report":
+        # Monthly, not daily: a daily cap of 20 was never reached, so nobody
+        # ever created an account (#206).
+        bucket = "ip:" + hashlib.sha256(ip.encode()).hexdigest()[:16]
+        used = _usage_add(bucket, CREDIT_COST["report"]) // CREDIT_COST["report"]
+        if used > ANON_MONTHLY_REPORTS:
+            raise HTTPException(
+                429,
+                f"Limite gratuite atteinte ({ANON_MONTHLY_REPORTS} fiches par mois sans compte). "
+                f"Créez un compte gratuit pour {FREE_ACCOUNT_REPORTS} fiches par mois : "
+                f"https://ecobuilding.confinia.io/offres.html")
     return "anon"
 
 
