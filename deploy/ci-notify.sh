@@ -17,6 +17,7 @@ WF="${1:-unknown}"; URL="${2:-}"; REF="${3:-}"
 WF="$WF" URL="$URL" REF="$REF" python3 <<'PY'
 import os, smtplib, ssl
 from email.message import EmailMessage
+from email.utils import formatdate, make_msgid
 
 env = {}
 for line in open("deploy/secrets.env"):
@@ -29,6 +30,10 @@ m["From"] = env.get("SMTP_FROM", "alert@confinia.io")
 m["To"] = env.get("ALERT_RCPT", "contact@confinia.io")
 m["Cc"] = env.get("SMTP_USER", "alert@confinia.io")   # readable mailbox
 m["Subject"] = f"[EcoBuilding CI] ECHEC: {os.environ['WF']} ({os.environ['REF']})"
+# Without Date/Message-ID, clients and IMAP listings show the mail undated —
+# which is how six CI notifications got mistaken for bounces.
+m["Date"] = formatdate(localtime=True)
+m["Message-ID"] = make_msgid(domain="confinia.io")
 m.set_content(
     f"Le workflow {os.environ['WF']} a echoue.\n\n"
     f"Ref : {os.environ['REF']}\nRun : {os.environ['URL']}\n\n"

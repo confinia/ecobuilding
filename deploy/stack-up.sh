@@ -94,9 +94,10 @@ podman-compose -p "ecobuilding-$CANDIDATE" -f docker-compose.yml -f "deploy/$CAN
 # (podman-compose 1.3 fails to open "-f subdir/file" — run from inside the dir)
 cp "caddy_server/Caddyfile.$ACTIVE" caddy_server/Caddyfile
 ( cd caddy_server && podman-compose -p ecobuilding-edge -f docker-compose.yml up -d ) || true
-# Graceful reload (admin 127.0.0.1:2030); restart only as fallback for the
-# one-time transition from an admin-off config.
+# Admin moved 2030 -> 13090 (1PESI): a reload posts to the address in the NEW
+# config, so try it, then the OLD one for the one-time transition, then restart.
 podman exec ecobuilding-edge_caddy_1 caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile 2>/dev/null \
+  || podman exec ecobuilding-edge_caddy_1 caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile --address localhost:2030 2>/dev/null \
   || podman restart ecobuilding-edge_caddy_1 >/dev/null
 
 # Upstream (platform) edge is managed separately under the 'debian' user (it
