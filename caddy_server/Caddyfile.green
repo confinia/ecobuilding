@@ -1,7 +1,10 @@
 # ACTIVE = GREEN. prod -> green stack (13200), staging -> blue stack (13100).
 # Installed as ./Caddyfile by deploy/promote.sh (or deploy.sh from .active).
 {
-	admin 127.0.0.1:2030
+	# 1PESI: 13090 = ecobuilding(3) · shared tier(0) · admin(9) · main.
+	# UNIQUE per host-network caddy (a shared admin address let one caddy
+	# load another's config and took the VM down on 2026-07-20).
+	admin 127.0.0.1:13090
 	auto_https off
 	http_port 13000
 	default_bind 127.0.0.1
