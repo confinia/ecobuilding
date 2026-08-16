@@ -37,7 +37,8 @@ http://ecobuilding.confinia.io:13000 {
 	reverse_proxy 127.0.0.1:13200
 }
 
-http://staging.ecobuilding.confinia.io:13000 {
+http://staging.ecobuilding.confinia.io:13000,
+http://staging.ecobuilding.confinia.io:13300 {
 	log {
 		output stdout
 		format json
@@ -56,4 +57,11 @@ http://staging.ecobuilding.confinia.io:13000 {
 
 :13000 {
 	respond "ecobuilding router (active: green)" 200
+}
+
+# 1PESI staging edge (platform request 2026-08-16): staging gets its own
+# listener so the edge can tell prod and pre-prod apart. Dual-published
+# with :13000 until the platform flips its block.
+:13300 {
+	respond "ecobuilding staging router (candidate: 13100)" 200
 }
