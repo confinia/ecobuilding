@@ -96,3 +96,12 @@ html, body { margin: 0; height: 100%; font-family: system-ui, -apple-system, san
 @keyframes spin { to { transform: rotate(360deg); } }
 button.report-link { font: inherit; cursor: pointer; }
 button.report-link[disabled] { opacity: .75; cursor: progress; }
+
+/* Pay-as-you-go pricing (#201): sub-price line + simulator. */
+.price-sub { margin: -6px 0 10px; color: #2b7a4b; font-size: .95em; }
+.sim { background: #fff; border: 1px solid #e2e8e4; border-radius: 10px;
+       padding: 18px 20px; margin: 18px 0; }
+.sim input[type="range"] { width: 100%; margin: 10px 0 14px; accent-color: #2b7a4b; }
+.sim-out { width: 100%; border-collapse: collapse; }
+.sim-out td { padding: 6px 4px; border-bottom: 1px dashed #eee; }
+.sim-out td:last-child { text-align: right; }
