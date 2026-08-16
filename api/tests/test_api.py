@@ -66,6 +66,25 @@ def test_leads_persisted(tmp_path, monkeypatch):
     assert rec["email"] == "ci@test.io"
 
 
+def test_lead_email_skips_without_creds(monkeypatch):
+    """#196: no SMTP env (CI/dev) -> quietly skipped, never raises."""
+    monkeypatch.delenv("SMTP_HOST", raising=False)
+    monkeypatch.delenv("SMTP_PASSWORD", raising=False)
+    assert main._send_lead_email({"email": "x@y.z"}) is False
+
+
+def test_lead_persisted_even_when_email_fails(tmp_path, monkeypatch):
+    """#196: the lead is saved first; a failing relay never breaks the form."""
+    path = tmp_path / "leads.jsonl"
+    monkeypatch.setattr(main, "LEADS_PATH", str(path))
+    def boom(rec):
+        raise RuntimeError("relay down")
+    monkeypatch.setattr(main, "_send_lead_email", boom)
+    r = client.post("/v1/leads", json={"email": "e2e@test.io", "org": "X", "need": "y"})
+    assert r.status_code == 204
+    assert "e2e@test.io" in path.read_text()
+
+
 def test_report_pdf_bytes():
     from app.report import build_report_pdf
     pdf = build_report_pdf(BUILDING_FIXTURE)
