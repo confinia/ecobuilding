@@ -19,7 +19,8 @@ EVENT="${POLAR_METER_EVENT:-ecobuilding_credits}"
 # Sandbox org "ecobuilding" (discovered 2026-08-16). An organization-scoped
 # token already implies its org, so this is only sent when set.
 ORG_ID="${POLAR_ORG_ID:-cc1b6a73-edfb-4b78-8922-4ef67a9b22b4}"
-UNIT_CENTS="${UNIT_CENTS:-1}"        # 0,01 € per credit (20 credits = 0,20 € per fiche)
+UNIT_CENTS="${UNIT_CENTS:-1}"        # 0,01 € per credit (49 credits = 0,49 € per fiche)
+BASE_CENTS="${BASE_CENTS:-900}"      # 9 € subscription base (the MRR anchor)
 CAP_CENTS="${CAP_CENTS:-9900}"       # hard 99 €/month ceiling
 AUTH=(-H "Authorization: Bearer $POLAR_ACCESS_TOKEN" -H "Content-Type: application/json")
 
@@ -51,9 +52,10 @@ echo "== create product (metered unit price, capped)"
 PRODUCT=$(curl -fsS "${AUTH[@]}" -X POST "$BASE/v1/products/" -d @- <<JSON | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])"
 {
   "name": "EcoBuilding API — paiement à l'usage",
-  "description": "0,20 € par fiche PDF dès la première, 0,01 € par appel API, plafonné à 99 € par mois.",
+  "description": "9 € par mois, 50 fiches incluses, puis 0,49 € la fiche, plafonné à 99 € par mois.",
   "recurring_interval": "month",
-  "prices": [{"amount_type": "metered_unit", "price_currency": "eur",
+  "prices": [{"amount_type": "fixed", "price_currency": "eur", "price_amount": $BASE_CENTS},
+             {"amount_type": "metered_unit", "price_currency": "eur",
               "meter_id": "$METER", "unit_amount": $UNIT_CENTS, "cap_amount": $CAP_CENTS}],
   "organization_id": "$ORG_ID"
 }

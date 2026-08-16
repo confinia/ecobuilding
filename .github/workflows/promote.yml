@@ -23,3 +23,10 @@ jobs:
           curl -fsS -m 10 https://ecobuilding.confinia.io/api/v1/healthz
           curl -fsS -m 10 -o /dev/null -w "prod frontend: %{http_code}\n" https://ecobuilding.confinia.io/
           echo "OK — https://ecobuilding.confinia.io"
+
+      # Rule 20: the pipeline mails its own failures to a mailbox the session
+      # can actually read (contact@ is a redirection; GitHub notifies the
+      # owner's personal inbox only).
+      - name: Notify failure by e-mail
+        if: failure()
+        run: ssh -o BatchMode=yes localhost 'cd ~/projects/ecobuilding && ./deploy/ci-notify.sh "promote" "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" "${{ github.ref_name }}"'

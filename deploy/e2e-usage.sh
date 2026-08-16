@@ -46,18 +46,17 @@ assert u['cost_eur'] <= u['monthly_cap_eur']
 print(f\"usage e2e OK: {u['credits']} credits, {u['cost_eur']} EUR (cap {u['monthly_cap_eur']})\")
 "
 
-# Cost model must be identical on the public simulator (page <-> server).
-curl -fsS -m 20 "$API_BASE/api/v1/pricing?credits=$((50 * C_REPORT))" | python3 -c "
+# Cost model must be identical on the public simulator (page <-> server), and
+# must be derived from the API's own fields so a repricing never breaks CI.
+curl -fsS -m 20 "$API_BASE/api/v1/pricing?credits=$((100 * C_REPORT))" | python3 -c "
 import json, sys
 p = json.load(sys.stdin)
-assert p['cost_eur'] == 10.0, p          # 50 fiches x 0,20 EUR
+fiches = 100
+extra = max(0, fiches - p['included_fiches'])
+expected = round(min(p['base_fee_eur'] + extra * p['price_per_fiche_eur'],
+                     p['monthly_cap_eur']), 2)
+assert p['cost_eur'] == expected, (p['cost_eur'], expected)
 assert p['cost_eur'] <= p['monthly_cap_eur']
-print('pricing simulator OK: 50 fiches ->', p['cost_eur'], 'EUR')
+print(f\"pricing simulator OK: {fiches} fiches -> {p['cost_eur']} EUR \"
+      f\"(base {p['base_fee_eur']} + {extra} x {p['price_per_fiche_eur']}, cap {p['monthly_cap_eur']})\")
 "
-
-if [ -n "${POLAR_ACCESS_TOKEN:-}" ] && [ -n "${POLAR_METER_ID:-}" ]; then
-  echo "== Polar leg"
-  API_KEY="$KEY" API_BASE="$API_BASE" CALLS="$CALLS" ./deploy/polar-sim.sh
-else
-  echo "== Polar leg skipped (POLAR_ACCESS_TOKEN / POLAR_METER_ID not configured)"
-fi

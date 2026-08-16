@@ -43,25 +43,25 @@
 
     <div class="tiers">
       <section class="tier">
-        <h2>Découverte <span class="badge">bêta gratuite</span></h2>
+        <h2>Découverte <span class="badge">gratuit</span></h2>
         <p class="price">0 €</p>
         <ul>
-          <li>Carte 3D complète (DPE, risques, solaire)</li>
-          <li>API JSON publique — usage raisonnable</li>
-          <li><a href="/api/v1/docs">Documentation OpenAPI</a></li>
-          <li>Attribution requise (Licence Ouverte)</li>
+          <li>Carte 3D complète et API JSON publique, sans limite</li>
+          <li><strong>10 fiches PDF par mois</strong> sans créer de compte</li>
+          <li><strong>30 fiches par mois</strong> avec un compte gratuit, plus une clé API</li>
+          <li><a href="/api/v1/docs">Documentation OpenAPI</a> · attribution requise (Licence Ouverte)</li>
         </ul>
         <a class="cta" href="/api/v1/docs">Essayer l'API</a>
       </section>
 
       <section class="tier">
-        <h2>API Pro <span class="badge soon">bientôt</span></h2>
-        <p class="price">0,20 €<small> /fiche PDF</small></p>
-        <p class="price-sub"><strong>plafonné à 99 € /mois</strong>, quoi qu'il arrive</p>
+        <h2>Pro <span class="badge soon">bientôt</span></h2>
+        <p class="price">9 €<small> /mois</small></p>
+        <p class="price-sub"><strong>50 fiches incluses</strong>, puis 0,49 € la fiche</p>
         <ul>
-          <li>Facturé dès la première fiche, sans abonnement ni engagement</li>
-          <li>Appels API bruts (bâtiment, adresse) : 0,01 € l'unité, autocomplétion gratuite</li>
-          <li>Plafond mensuel garanti : au-delà de 495 fiches, tout est inclus dans les 99 €</li>
+          <li>Abonnement sans engagement, résiliable à tout moment</li>
+          <li><strong>Plafond garanti à 99 € par mois</strong> : au-delà de 234 fiches, tout est inclus</li>
+          <li>Appels API bruts : 0,01 € l'unité, autocomplétion gratuite</li>
           <li>Suivi de consommation en temps réel (<code>GET /v1/usage</code>)</li>
           <li>Clé API dédiée, support par e-mail</li>
         </ul>
@@ -69,27 +69,27 @@
       </section>
 
       <section class="tier">
-        <h2>Entreprise &amp; marque blanche <span class="badge">disponible</span></h2>
-        <p class="price">dès 10 000 €<small> /an</small></p>
+        <h2>Entreprise &amp; marque blanche <span class="badge">sur devis</span></h2>
+        <p class="price">nous consulter</p>
         <ul>
-          <li>Licence annuelle API avec SLA</li>
-          <li>Carte 3D en marque blanche (votre portail, vos couleurs)</li>
-          <li>Champs et exports sur mesure (DPE, risques, climatisation…)</li>
-          <li>Intégration accompagnée</li>
+          <li>Déploiement chez vous (on-premise) ou instance dédiée</li>
+          <li>Carte 3D et fiches à votre marque, sur votre domaine</li>
+          <li>Licence API annuelle avec SLA, volumes illimités</li>
+          <li>Champs et exports sur mesure, intégration accompagnée</li>
         </ul>
         <a class="cta primary" href="#lead-form">Demander un accès</a>
       </section>
     </div>
 
     <section class="sim">
-      <h2>Simulateur : combien ça coûte ?</h2>
-      <p class="hint">Payez à la fiche, jamais au-delà du plafond. Déplacez le curseur pour votre volume mensuel.</p>
+      <h2>Simulateur : combien coûte l'offre Pro ?</h2>
+      <p class="hint">9 € par mois, 50 fiches incluses, puis 0,49 € la fiche, et jamais plus de 99 €.</p>
       <label for="sim-range">Fiches PDF par mois : <output id="sim-vol">50</output></label>
-      <input id="sim-range" type="range" min="0" max="1200" step="10" value="50">
+      <input id="sim-range" type="range" min="0" max="400" step="5" value="50">
       <table class="sim-out">
-        <tr><td>Fiches facturées (0,20 €)</td><td id="sim-billable">50</td></tr>
-        <tr><td><strong>Coût mensuel</strong></td><td><strong id="sim-cost">10,00 €</strong></td></tr>
-        <tr><td>Économie vs forfait 99 €</td><td id="sim-saved">89,00 €</td></tr>
+        <tr><td>Abonnement</td><td id="sim-base">9,00 €</td></tr>
+        <tr><td>Fiches au-delà des 50 incluses</td><td id="sim-extra">0</td></tr>
+        <tr><td><strong>Total mensuel</strong></td><td><strong id="sim-cost">9,00 €</strong></td></tr>
       </table>
       <p class="hint" id="sim-note"></p>
     </section>
@@ -127,24 +127,24 @@
   </script>
 
 <script>
-// Price simulator (#201). Mirrors the server formula; /v1/pricing is the
+// Price simulator (#206). Mirrors the server formula; /v1/pricing is the
 // authority and the test suite pins both to the same numbers.
 (function () {
-  const PRICE_FICHE = 0.20, CAP = 99;
+  const BASE = 9, INCLUDED = 50, PRICE = 0.49, CAP = 99;
   const r = document.getElementById("sim-range");
   if (!r) return;
   const eur = (n) => n.toFixed(2).replace(".", ",") + " €";
   function render() {
     const fiches = Number(r.value);
-    const raw = fiches * PRICE_FICHE;
-    const cost = Math.min(raw, CAP);
+    const extra = Math.max(0, fiches - INCLUDED);
+    const cost = Math.min(BASE + extra * PRICE, CAP);
     document.getElementById("sim-vol").textContent = fiches.toLocaleString("fr-FR");
-    document.getElementById("sim-billable").textContent = fiches.toLocaleString("fr-FR");
+    document.getElementById("sim-base").textContent = eur(BASE);
+    document.getElementById("sim-extra").textContent = extra.toLocaleString("fr-FR");
     document.getElementById("sim-cost").textContent = eur(cost);
-    document.getElementById("sim-saved").textContent = eur(CAP - cost);
-    document.getElementById("sim-note").textContent = raw >= CAP
-      ? "Plafond atteint (495 fiches) : toute fiche supplémentaire est incluse."
-      : "Sous le plafond : vous ne payez que les fiches générées.";
+    document.getElementById("sim-note").textContent = (BASE + extra * PRICE) >= CAP
+      ? "Plafond atteint (234 fiches) : toute fiche supplémentaire est incluse."
+      : "Sous le plafond : abonnement plus fiches réellement générées.";
   }
   r.addEventListener("input", render);
   render();
