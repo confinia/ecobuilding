@@ -276,3 +276,15 @@ def test_auth_buttons_never_depend_on_a_cdn():
     assert 'show("signin", true); show("signup", true);' in head
     assert "openid-connect/${action}" in head          # templated auth URLs
     assert 'authUrl("registrations")' in head           # sign-up without JS
+
+@needs_repo
+def test_account_panel_and_payment_banner():
+    """#220/#221/#222: the key is retrievable from the UI, a sandbox payment
+    mode is announced, and the marker sits on the roof."""
+    app = (ROOT / "frontend/site/app.js").read_text()
+    assert "showAccount" in app and "Générer une clé API" in app
+    assert "/keys" in app and "copykey" in app        # created once, copyable
+    assert "paybanner" in app and 'payment_mode !== "sandbox"' in app
+    assert "updateMarkerElevation" in app and "getPitch()" in app
+    css = (ROOT / "frontend/site/style.css").read_text()
+    assert "#paybanner" in css and "ul.keys" in css

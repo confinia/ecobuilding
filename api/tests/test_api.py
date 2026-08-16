@@ -695,3 +695,31 @@ def test_key_plan_follows_the_account_subscription(tmp_path, monkeypatch):
     monkeypatch.setattr(main, "_pro_active", lambda sub: sub == "user-1")
     plans = main._key_plans()
     assert plans == {"K-A": "pro", "K-B": "free"}
+
+def test_keys_listing_is_scoped_and_masked(tmp_path, monkeypatch):
+    """#220: a user sees THEIR keys, masked — the value is shown once at
+    creation and can never be recovered from the listing."""
+    import json as _json
+    path = tmp_path / "keys.jsonl"
+    path.write_text(
+        _json.dumps({"key": "eco_MINE_abcdefgh", "sub": "me", "created": "2026-08-01T00:00:00Z"}) + "\n" +
+        _json.dumps({"key": "eco_THEIRS_zzzzzz", "sub": "other", "created": "2026-08-02T00:00:00Z"}) + "\n")
+    monkeypatch.setattr(main, "KEYS_PATH", str(path))
+    monkeypatch.setattr(main, "_decode_token", lambda t: {"sub": "me"})
+    monkeypatch.setattr(main, "_pro_active", lambda sub: False)
+    body = client.get("/v1/keys", headers={"Authorization": "Bearer x"}).json()
+    assert body["count"] == 1                        # only mine
+    masked = body["keys"][0]["masked"]
+    assert "eco_MINE_abcdefgh" not in masked and masked.startswith("eco_")
+    assert client.get("/v1/keys").status_code == 401  # session required
+
+
+def test_config_exposes_payment_mode(monkeypatch):
+    """#221: the UI must be able to warn that payments are in SANDBOX mode."""
+    monkeypatch.setattr(main, "POLAR_ACCESS_TOKEN", "")
+    assert client.get("/v1/config").json()["payment_mode"] == "disabled"
+    monkeypatch.setattr(main, "POLAR_ACCESS_TOKEN", "tok")
+    monkeypatch.setattr(main, "POLAR_BASE_URL", "https://sandbox-api.polar.sh")
+    assert client.get("/v1/config").json()["payment_mode"] == "sandbox"
+    monkeypatch.setattr(main, "POLAR_BASE_URL", "https://api.polar.sh")
+    assert client.get("/v1/config").json()["payment_mode"] == "live"
