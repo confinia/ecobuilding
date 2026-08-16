@@ -152,6 +152,10 @@ def test_1pesi_port_migration():
     assert "127.0.0.1:13080:8040" in (ROOT / "render_stack/docker-compose.yml").read_text()
     assert "127.0.0.1:13020:3005" in (ROOT / "bdnb_stack/docker-compose.yml").read_text()
     assert "127.0.0.1:13400:8030" in (ROOT / "sandbox_stack/docker-compose.yml").read_text()
+    # Admin address inside the band and unique per caddy (1PESI, VM rule 2).
+    for f in ("caddy_server/Caddyfile.blue", "caddy_server/Caddyfile.green"):
+        assert "admin 127.0.0.1:13090" in (ROOT / f).read_text()
+        assert ":2030" not in (ROOT / f).read_text()
     for f, frag in (("caddy_server/Caddyfile.blue", ":13000"),
                     ("caddy_server/Caddyfile.green", ":13000"),
                     # staging owns the 1PESI X300 listener (platform 2026-08-16)
