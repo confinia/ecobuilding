@@ -89,7 +89,10 @@ bucket = "kc:" + hashlib.sha256(claims["sub"].encode()).hexdigest()[:14]
 path = os.environ["USAGE_FILE"]
 store = json.load(open(path)) if os.path.exists(path) else {}
 month = date.today().strftime("%Y-%m")
-store.setdefault(month, {})[bucket] = 30 * 49          # allowance consumed
+# Consume the allowance (value read from the API, not hardcoded).
+req0 = urllib.request.Request(f"{base}/api/v1/usage", headers={"Authorization": f"Bearer {token}"})
+included = json.load(urllib.request.urlopen(req0))["reports_included"]
+store.setdefault(month, {})[bucket] = included
 json.dump(store, open(path, "w"))
 
 req = urllib.request.Request(
