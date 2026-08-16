@@ -196,44 +196,36 @@ map: "see every building that becomes illegal to rent in 2028/2034, in 3D."
 Pre-announce guard: cache /lookup responses (BDNB 10k calls/month); tiles already go
 browser→BDNB directly (spike-safe for us); attribution displayed (Licence Ouverte ✓).
 
-### Pricing policy v2 — subscription first (2026-08-16, supersedes the PAYG-only draft)
+### Pricing v3 — pay-as-you-go à la fiche (2026-08-16, remplace la v2)
 
-**Principle (operator):** *« la scalabilité, ce n'est pas seulement monter très
-haut très vite, c'est aussi pouvoir démarrer de très bas ».* The offer must be
-enterable at almost no cost, because the first goal is **stable identified
-users, not early revenue** — prices go up later, once retention is proven.
+**Déclencheur :** la page de paiement Polar affichait « €9 / mo » puis
+« Additional metered usage — EcoBuilding credits €0.01 / unit ». Le crédit
+était un détail d'implémentation interne qui fuitait chez le client et laissait
+croire qu'une fiche coûtait un centime. Leçon : **l'unité facturée doit être
+l'unité que le client comprend** (la fiche), sinon le checkout ment.
 
-| Offre | Prix | Contenu |
+| Palier | Fiches PDF | Prix |
 |---|---|---|
-| Découverte (sans compte) | 0 € | carte 3D + API publique illimitées, **10 fiches/mois** |
-| Compte gratuit (bêta) | 0 € | **30 fiches/mois** + clé API + suivi de consommation |
-| **Pro (abonnement)** | **9 €/mois** | **50 fiches incluses**, puis **0,49 €/fiche**, **plafond 99 €/mois** (atteint à 234 fiches) |
-| Entreprise / on-premise / marque blanche | sur devis (dès 10 k€/an) | déploiement chez le client, SLA, marque, champs sur mesure |
+| Sans compte | **3 / mois** | 0 € |
+| Compte gratuit | **10 / mois** + clé API | 0 € |
+| **Pro (paiement à l'usage)** | **10 offertes**, puis 0,49 € la fiche | **plafond 99 €/mois** (atteint à 212 fiches) |
+| Entreprise / on-premise / marque blanche | illimité | sur devis (dès 10 k€/an) |
 
-**Why a fixed base instead of pure metering.** Pay-as-you-go produces
-transactions, not subscribers: a client at 4 € one month and 0 € the next is
-not a relationship and cannot be shown as MRR. The 9 € base is deliberately
-under any procurement threshold (nobody asks permission), so it maximises
-sign-ups — the metric that matters now — while turning usage into recurring
-revenue. It also expresses the "minimum per report" intent more cleanly: the
-subscription IS the floor.
+Les appels API bruts, l'autocomplétion et la carte 3D sont **gratuits et
+illimités** : ils ne sont plus facturés du tout. La facture a une seule ligne.
 
-**Why the free tier is monthly, not daily.** The previous anonymous cap was 20
-fiches/day, which no professional ever reached, so nobody had a reason to
-register. 10/month is enough to evaluate seriously, scarce enough to convert;
-the free *account* (30/month) buys an email, an identity and a usage history —
-the population to upgrade when prices rise.
+**Ce que ça change par rapport à la v2 :** plus d'abonnement fixe de 9 €, donc
+plus de MRR garanti — le revenu suit strictement l'usage. C'est le choix de
+l'opérateur : *« la scalabilité, c'est aussi pouvoir démarrer de très bas »*,
+et un utilisateur qui ne consomme pas ne doit rien payer. Conséquence à
+assumer : un compte Pro inactif rapporte 0 €, donc le nombre de comptes ne
+mesure rien ; **seul le volume de fiches compte**. À surveiller après quelques
+semaines : si beaucoup d'abonnés restent sous 10 fiches, réintroduire un socle
+(ou baisser les 10 offertes) sera la première correction à envisager.
 
-**Arithmetic, honestly.** A subscriber generating 20 fiches/month pays 9 €;
-100 fiches → 33,50 €; the cap (99 €) lands at 234 fiches. So ~90 subscribers
-at ~9-15 € ≈ 10 k€/an: this tier proves willingness to pay and produces MRR,
-while the ≥10 k€ deals (RULES.md #7) remain the Entreprise/on-premise line.
-Levers if adoption is good but revenue is thin: raise the fiche price (buyers
-compare it to a 100-300 € diagnostic), raise the base, or add a per-domain
-widget line — never lower the free ladder, which is the acquisition engine.
-
-**Status:** published as « bientôt » (rule 7: no real money until a ≥10 k€ deal);
-implemented and metered end to end in [#206](https://github.com/confinia/ecobuilding/issues/206).
+**Arithmétique :** 30 fiches/mois = 9,80 € ; 100 = 44,10 € ; le plafond tombe à
+212 fiches. Il faut donc ~20 clients à 40 €/mois pour 10 k€/an — les gros
+contrats restent la ligne Entreprise (RULES.md #7).
 
 ### Launch success thresholds (set 2026-08-11, before posting — fixed, no goalpost moves)
 

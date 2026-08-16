@@ -561,21 +561,20 @@ def test_building_map_enabled_returns_datauri(monkeypatch):
     assert base64.b64decode(out.split(",", 1)[1]) == png
 
 # --- Pay-as-you-go metering (#201) -------------------------------------------
-def test_pro_subscription_curve(monkeypatch):
-    """Pricing policy v2 (#206), subscription-first: 9 €/month base with 50
-    fiches included, then 0,20 €/fiche, hard 99 € cap."""
+def test_pro_payg_curve():
+    """Pricing v3 (#224): the billed unit IS the fiche — 10 offertes, then
+    0,49 € each, hard 99 € cap (reached at 212). No base fee, no credits."""
     from app.main import _usage_cost, CREDIT_COST
-    F = CREDIT_COST["report"]
-    assert F == 49                                # 49 credits = 0,49 EUR
-    assert _usage_cost(0)["cost_eur"] == 9.0      # the base IS the subscription
-    assert _usage_cost(50 * F)["cost_eur"] == 9.0     # 50 fiches included
-    assert _usage_cost(100 * F)["cost_eur"] == 33.5   # +50 fiches x 0,49
-    assert _usage_cost(233 * F)["cost_eur"] == 98.67  # just under the cap
-    capped = _usage_cost(1_000_000)
+    assert CREDIT_COST["report"] == 1 and CREDIT_COST["lookup"] == 0
+    assert _usage_cost(0)["cost_eur"] == 0.0        # nothing used, nothing due
+    assert _usage_cost(10)["cost_eur"] == 0.0       # 10 offertes
+    assert _usage_cost(30)["cost_eur"] == 9.8       # 20 x 0,49
+    assert _usage_cost(212)["cost_eur"] == 98.98    # just under the cap
+    capped = _usage_cost(10_000)
     assert capped["cost_eur"] == 99.0 and capped["cap_reached"] is True
-    tiers = _usage_cost(0)["free_tiers"]           # the free ladder is published
-    assert tiers["anonymous_reports_month"] == 10
-    assert tiers["free_account_reports_month"] == 30
+    tiers = _usage_cost(0)["free_tiers"]
+    assert tiers["anonymous_reports_month"] == 3
+    assert tiers["free_account_reports_month"] == 10
 
 
 def test_usage_counter_accumulates_per_month(tmp_path, monkeypatch):
@@ -593,27 +592,27 @@ def test_usage_endpoint_requires_key_and_reports_cost(tmp_path, monkeypatch):
     assert client.get("/v1/usage").status_code == 401
     import hashlib
     kid = hashlib.sha256(b"K1").hexdigest()[:16]
-    main._usage_add(kid, 20 * 49)                  # 20 fiches this month
+    main._usage_add(kid, 20)                       # 20 fiches this month
     body = client.get("/v1/usage", headers={"X-API-Key": "K1"}).json()
     # A FREE account sees its allowance, not a bill (#206).
     assert body["plan"] == "free" and body["cost_eur"] == 0.0
-    assert body["reports_used"] == 20 and body["reports_left"] == 10
+    assert body["reports_used"] == 20 and body["reports_left"] == 0
     # A PRO subscriber sees the subscription cost instead.
     monkeypatch.setattr(main, "_key_plans", lambda: {"K1": "pro"})
     pro = client.get("/v1/usage", headers={"X-API-Key": "K1"}).json()
-    assert pro["plan"] == "pro" and pro["cost_eur"] == 9.0
+    assert pro["plan"] == "pro" and pro["cost_eur"] == round((20 - 10) * 0.49, 2)
     assert pro["monthly_cap_eur"] == 99.0
 
 
 def test_pricing_simulator_matches_frontend_formula():
     """The public simulator and the offres.html script must agree (#201):
-    the page slider counts FICHES at 0,20 €, the server counts credits."""
+    the page slider and the server both count FICHES (#224)."""
     fiches = 100
-    body = client.get("/v1/pricing", params={"credits": fiches * 49}).json()
-    assert body["cost_eur"] == round(min(9 + (fiches - 50) * 0.49, 99), 2) == 33.5
-    assert body["credit_costs"]["report"] == 49
+    body = client.get("/v1/pricing", params={"credits": fiches}).json()
+    assert body["cost_eur"] == round(min((fiches - 10) * 0.49, 99), 2) == 44.1
+    assert body["credit_costs"]["report"] == 1        # one unit = one fiche
     assert body["price_per_fiche_eur"] == 0.49
-    assert body["base_fee_eur"] == 9.0 and body["included_fiches"] == 50
+    assert body["included_fiches"] == 10
 
 
 def test_keyed_call_consumes_credits(tmp_path, monkeypatch):
@@ -632,10 +631,8 @@ def test_keyed_call_consumes_credits(tmp_path, monkeypatch):
     client.get("/v1/lookup", params={"q": "x"}, headers={"X-API-Key": "K1"})
     import hashlib
     kid = hashlib.sha256(b"K1").hexdigest()[:16]
-    assert (main._usage_load().get(main._month_key()) or {}).get(kid) == 1
-    # Anonymous calls stay free: no credit recorded without a key.
-    client.get("/v1/lookup", params={"q": "x"})
-    assert (main._usage_load().get(main._month_key()) or {}).get(kid) == 1
+    # Raw API calls are FREE in v3: only fiches are billed (#224).
+    assert (main._usage_load().get(main._month_key()) or {}).get(kid) is None
 
 def test_free_tiers_enforced(tmp_path, monkeypatch):
     """#206: anonymous 10 fiches/month per IP, free account 30/month, pro
@@ -657,7 +654,7 @@ def test_free_tiers_enforced(tmp_path, monkeypatch):
 
     import hashlib
     kid = hashlib.sha256(b"FREEKEY").hexdigest()[:16]
-    main._usage_add(kid, main.FREE_ACCOUNT_REPORTS * main.CREDIT_COST["report"])
+    main._usage_add(kid, main.FREE_ACCOUNT_REPORTS)
     with pytest.raises(HTTPException) as e2:            # free account exhausted
         main._quota_gate(Req("FREEKEY"), "report")
     assert "Pro" in e2.value.detail
