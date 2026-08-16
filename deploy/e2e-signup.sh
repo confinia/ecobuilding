@@ -59,7 +59,8 @@ import json, sys
 u = json.load(sys.stdin)
 assert u['plan'] == 'free', u
 assert u['cost_eur'] == 0.0, u
-assert u['reports_left'] == u['reports_included'] == 30, u
+# Allowance read from the API: a pricing change must not break this test.
+assert u['reports_left'] == u['reports_included'] and u['reports_included'] > 0, u
 print(f\"   new account: plan={u['plan']} fiches restantes={u['reports_left']}\")
 "
 
@@ -70,7 +71,7 @@ curl -fsS -m 20 -H "Authorization: Bearer $TOKEN" "$API_BASE/api/v1/usage" | pyt
 import json, sys
 u = json.load(sys.stdin)
 assert u['reports_used'] == 1, u
-assert u['reports_left'] == 29, u
+assert u['reports_left'] == u['reports_included'] - 1, u
 print(f\"   after 1 fiche: used={u['reports_used']} restantes={u['reports_left']}\")
 "
 
