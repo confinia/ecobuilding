@@ -22,8 +22,12 @@ printf '{"key":"%s","note":"e2e usage (CI)","created":"%s"}\n' \
   "$KEY" "$(date -u +%FT%TZ)" >> "$KEYS_FILE"
 
 # _load_keys() re-reads the file per request: no restart needed.
-BEFORE=$(curl -fsS -m 20 -H "X-API-Key: $KEY" "$API_BASE/api/v1/usage" \
-  | python3 -c "import json,sys; print(json.load(sys.stdin)['credits'])")
+USAGE0=$(curl -fsS -m 20 -H "X-API-Key: $KEY" "$API_BASE/api/v1/usage")
+BEFORE=$(printf '%s' "$USAGE0" | python3 -c "import json,sys; print(json.load(sys.stdin)['credits'])")
+# Unit prices come from the API itself: a business repricing must not require
+# editing this test (the 5 -> 20 credit fiche change broke the hardcoded one).
+C_BUILDING=$(printf '%s' "$USAGE0" | python3 -c "import json,sys; print(json.load(sys.stdin)['credit_costs']['buildings'])")
+C_REPORT=$(printf '%s' "$USAGE0" | python3 -c "import json,sys; print(json.load(sys.stdin)['credit_costs']['report'])")
 
 for _ in $(seq 1 "$CALLS"); do
   curl -fsS -m 30 -o /dev/null -H "X-API-Key: $KEY" \
@@ -35,7 +39,7 @@ curl -fsS -m 90 -o /dev/null -H "X-API-Key: $KEY" \
 curl -fsS -m 20 -H "X-API-Key: $KEY" "$API_BASE/api/v1/usage" | python3 -c "
 import json, sys
 u = json.load(sys.stdin)
-expected = $BEFORE + $CALLS + 5          # buildings=1 credit each, fiche=5
+expected = $BEFORE + $CALLS * $C_BUILDING + $C_REPORT
 assert u['credits'] == expected, f\"credits: expected {expected}, got {u['credits']}\"
 assert u['monthly_cap_eur'] == 99.0, u
 assert u['cost_eur'] <= u['monthly_cap_eur']
@@ -43,12 +47,12 @@ print(f\"usage e2e OK: {u['credits']} credits, {u['cost_eur']} EUR (cap {u['mont
 "
 
 # Cost model must be identical on the public simulator (page <-> server).
-curl -fsS -m 20 "$API_BASE/api/v1/pricing?credits=5000" | python3 -c "
+curl -fsS -m 20 "$API_BASE/api/v1/pricing?credits=$((50 * C_REPORT))" | python3 -c "
 import json, sys
 p = json.load(sys.stdin)
-assert p['cost_eur'] == 90.0 and p['billable_credits'] == 4500, p
-big = 10**6
-print('pricing simulator OK: 5000 credits ->', p['cost_eur'], 'EUR')
+assert p['cost_eur'] == 10.0, p          # 50 fiches x 0,20 EUR
+assert p['cost_eur'] <= p['monthly_cap_eur']
+print('pricing simulator OK: 50 fiches ->', p['cost_eur'], 'EUR')
 "
 
 if [ -n "${POLAR_ACCESS_TOKEN:-}" ] && [ -n "${POLAR_METER_ID:-}" ]; then

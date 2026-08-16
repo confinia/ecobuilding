@@ -196,6 +196,33 @@ map: "see every building that becomes illegal to rent in 2028/2034, in 3D."
 Pre-announce guard: cache /lookup responses (BDNB 10k calls/month); tiles already go
 browser→BDNB directly (spike-safe for us); attribution displayed (Licence Ouverte ✓).
 
+### Pricing decision — pay-as-you-go from the first fiche (2026-08-16)
+
+**Model (live on /offres.html, implemented in [#201](https://github.com/confinia/ecobuilding/issues/201)):**
+- **0,20 € par fiche PDF, facturée dès la première.** No free monthly
+  allowance on fiches: an earlier draft offered 500 free credits/month, which
+  amounted to 500 free PDFs — a giveaway, not an offer (operator call).
+- **0,01 € par appel API brut** (bâtiment / adresse / reverse); autocomplete
+  free. Raw records are an input, the fiche is the deliverable — 20× apart.
+- **Plafond dur 99 €/mois.** Beyond 495 fiches everything is included. The cap
+  is the pitch for companies that must bound their costs; Polar enforces it
+  server-side too (`cap_amount`), so it is contractual, not just our code.
+- Anonymous browsing (no key) stays free and uncapped — the acquisition layer.
+
+**What it implies (be honest about the arithmetic):** a diagnostiqueur doing
+20 fiches/month pays 4 €; an agency at 100 fiches pays 20 €; the cap is only
+reached by a heavy integrator. So this tier is **volume-dependent revenue, not
+a 10k€ path on its own**: ~40 active customers at ~20 €/month ≈ 10k€/an. The
+≥10k€ deals (RULES.md #7) remain the Entreprise/marque blanche line; PAYG's job
+is to convert self-serve usage into paying accounts and to prove willingness to
+pay before any incorporation.
+
+**Levers if the numbers disappoint:** raise the fiche price (buyers compare it
+to a 100-300 € diagnostic, so 0,20 € is deliberately low-friction), add a
+per-seat or per-domain widget line, or bundle fiches (e.g. 50 fiches/mois
+inclus dans un forfait) once the discovery conversations say which framing
+agencies prefer.
+
 ### Launch success thresholds (set 2026-08-11, before posting — fixed, no goalpost moves)
 
 **Window:** 7 full days from the first public post (timestamp each channel in LAUNCH.md).

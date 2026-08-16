@@ -560,15 +560,21 @@ def test_building_map_enabled_returns_datauri(monkeypatch):
     assert base64.b64decode(out.split(",", 1)[1]) == png
 
 # --- Pay-as-you-go metering (#201) -------------------------------------------
-def test_usage_cost_free_tier_then_price_then_cap():
-    from app.main import _usage_cost
-    free = _usage_cost(500)
-    assert free["cost_eur"] == 0 and free["billable_credits"] == 0
-    mid = _usage_cost(1500)                       # 1000 billable * 0.02
-    assert mid["cost_eur"] == 20.0 and mid["cap_reached"] is False
-    assert mid["saved_vs_cap_eur"] == 79.0        # the cost-control selling point
+def test_usage_cost_bills_from_the_first_fiche_then_caps():
+    """Operator pricing (2026-08-16): 0,20 €/fiche from the FIRST one (no free
+    allowance — that would give the product away), 0,01 € per API record, hard
+    99 € cap reached at 495 fiches."""
+    from app.main import _usage_cost, CREDIT_COST
+    assert CREDIT_COST["report"] == 20            # 20 credits = 0,20 EUR
+    one_fiche = _usage_cost(CREDIT_COST["report"])
+    assert one_fiche["cost_eur"] == 0.20 and one_fiche["billable_credits"] == 20
+    hundred = _usage_cost(100 * CREDIT_COST["report"])
+    assert hundred["cost_eur"] == 20.0 and hundred["cap_reached"] is False
+    assert hundred["saved_vs_cap_eur"] == 79.0    # the cost-control selling point
+    at_cap = _usage_cost(495 * CREDIT_COST["report"])
+    assert at_cap["cost_eur"] == 99.0 and at_cap["cap_reached"] is True
     huge = _usage_cost(1_000_000)                 # cap must hold, always
-    assert huge["cost_eur"] == 99.0 and huge["cap_reached"] is True
+    assert huge["cost_eur"] == 99.0
 
 
 def test_usage_counter_accumulates_per_month(tmp_path, monkeypatch):
@@ -586,17 +592,19 @@ def test_usage_endpoint_requires_key_and_reports_cost(tmp_path, monkeypatch):
     assert client.get("/v1/usage").status_code == 401
     import hashlib
     kid = hashlib.sha256(b"K1").hexdigest()[:16]
-    main._usage_add(kid, 800)
+    main._usage_add(kid, 800)                      # 40 fiches worth of credits
     body = client.get("/v1/usage", headers={"X-API-Key": "K1"}).json()
-    assert body["credits"] == 800 and body["billable_credits"] == 300
-    assert body["cost_eur"] == 6.0 and body["monthly_cap_eur"] == 99.0
+    assert body["credits"] == 800 and body["billable_credits"] == 800
+    assert body["cost_eur"] == 8.0 and body["monthly_cap_eur"] == 99.0
 
 
 def test_pricing_simulator_matches_frontend_formula():
-    """The public simulator and the offres.html script must agree (#201)."""
-    body = client.get("/v1/pricing", params={"credits": 5000}).json()
-    assert body["cost_eur"] == round(min((5000 - 500) * 0.02, 99), 2)
-    assert body["credit_costs"]["report"] == 5
+    """The public simulator and the offres.html script must agree (#201):
+    the page slider counts FICHES at 0,20 €, the server counts credits."""
+    fiches = 50
+    body = client.get("/v1/pricing", params={"credits": fiches * 20}).json()
+    assert body["cost_eur"] == round(min(fiches * 0.20, 99), 2) == 10.0
+    assert body["credit_costs"]["report"] == 20
 
 
 def test_keyed_call_consumes_credits(tmp_path, monkeypatch):
