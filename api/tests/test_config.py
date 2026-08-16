@@ -219,6 +219,10 @@ def test_payg_pricing_is_consistent_everywhere():
     assert 'FREE_ACCOUNT_REPORTS", "10"' in main_py
     assert 'MONTHLY_CAP_EUR", "99"' in main_py
     assert '"report": 1' in main_py                    # one unit = one fiche
+    # PRICING.md is the source of truth and must quote the live numbers.
+    pricing_doc = (ROOT / "PRICING.md").read_text()
+    for n in ("0,49", "99 €", "212 fiches", "3", "10"):
+        assert n in pricing_doc, n
     setup = (ROOT / "deploy/polar-setup.sh").read_text()
     assert "UNIT_CENTS:-49}" in setup and "CAP_CENTS:-9900}" in setup
     assert "fiches PDF" in setup                      # the customer-facing unit
