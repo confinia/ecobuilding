@@ -1,7 +1,7 @@
 """Normalized per-building PDF fiche (weasyprint).
 
 Target user: diagnostiqueurs / pre-sale professionals — a consistent one-page
-document to prepare a visit or a dossier. Free during beta; usage measured
+document to prepare a visit or a dossier. Usage measured
 via the ecobuilding_reports metric.
 """
 
@@ -473,7 +473,7 @@ def _report_html(data: dict, photos: list | None = None, map_img: str | None = N
   Sources : BDNB (CSTB), Base Adresse Nationale, Géorisques — Licence Ouverte, attributions requises.
   Document informatif généré automatiquement à partir de données ouvertes : il ne remplace ni un
   diagnostic de performance énergétique (DPE) officiel, ni un état des risques et pollutions (ERP)
-  réglementaire. Version bêta gratuite. Une question sur cette fiche : contact@confinia.io
+  réglementaire. Une question sur cette fiche : contact@confinia.io
 </footer>
 {_context_page(data, photos, map_img)}
 {_traceability_annex(data, photos)}

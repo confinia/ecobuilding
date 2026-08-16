@@ -6,7 +6,7 @@
   "main": "server.js",
   "dependencies": {
     "express": "^4.21.0",
-    "maplibre-gl": "6.1.0",
+    "maplibre-gl": "6.4.0",
     "puppeteer": "^22.15.0"
   }
 }

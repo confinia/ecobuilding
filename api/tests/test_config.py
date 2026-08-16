@@ -239,3 +239,35 @@ def test_self_service_support_and_signup(needs_repo_ok=None):
     assert "e2e-signup.sh" in wf                       # journey proven per PR
     e2e = (ROOT / "deploy/e2e-signup.sh").read_text()
     assert "reports_left" in e2e and "429" in e2e and "contact@confinia.io" in e2e
+
+@needs_repo
+def test_maplibre_vendored_and_versions_match():
+    """MapLibre is vendored SAME-ORIGIN (a CDN breaks the 6.x worker) and the
+    web app and the PDF render must run the SAME version, or the fiche map
+    silently diverges from what the user saw."""
+    import json
+    # The dist is minified with no reliable version marker, so vendoring
+    # records it in assets/maplibre/VERSION (updated with the files).
+    vendored = (ROOT / "frontend/site/assets/maplibre/VERSION").read_text().strip()
+    render = json.loads((ROOT / "render_stack/package.json").read_text())
+    assert render["dependencies"]["maplibre-gl"] == vendored, (
+        vendored, render["dependencies"]["maplibre-gl"])
+    idx = (ROOT / "frontend/site/index.html").read_text()
+    assert "assets/maplibre/maplibre-gl.mjs" in idx
+    # No CDN *import* (a comment may still mention esm.sh to explain why not).
+    assert "from 'https://esm.sh" not in idx and 'from "https://esm.sh' not in idx
+
+
+@needs_repo
+def test_auth_buttons_never_depend_on_a_cdn():
+    """#215: the sign-up path is the product's front door — it must survive a
+    blocked CDN, a failed adapter import and an IdP hiccup."""
+    app = (ROOT / "frontend/site/app.js").read_text()
+    assert "esm.sh" not in app                      # adapter vendored
+    assert "./assets/keycloak/keycloak.mjs" in app
+    assert (ROOT / "frontend/site/assets/keycloak/keycloak.mjs").stat().st_size > 10_000
+    # Buttons are shown BEFORE any await, and carry working direct URLs.
+    head = app[:app.index("let Keycloak")]
+    assert 'show("signin", true); show("signup", true);' in head
+    assert "openid-connect/${action}" in head          # templated auth URLs
+    assert 'authUrl("registrations")' in head           # sign-up without JS
