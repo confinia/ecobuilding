@@ -105,3 +105,15 @@ button.report-link[disabled] { opacity: .75; cursor: progress; }
 .sim-out { width: 100%; border-collapse: collapse; }
 .sim-out td { padding: 6px 4px; border-bottom: 1px dashed #eee; }
 .sim-out td:last-child { text-align: right; }
+
+/* Payment-mode banner (#221): a sandbox checkout must be unmistakable. */
+#paybanner { position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
+  background: #b3261e; color: #fff; text-align: center; font-size: 13px;
+  font-weight: 600; padding: 6px 10px; }
+body.has-paybanner #topbar { margin-top: 28px; }
+
+/* Account panel (#220): API keys are shown masked; a new key appears once. */
+ul.keys { list-style: none; padding: 0; margin: 6px 0; }
+ul.keys li { padding: 4px 0; border-bottom: 1px dashed #eee; }
+.keynew { background: #eef7f0; border: 1px solid #2b7a4b; border-radius: 8px; padding: 10px; }
+.keynew code { word-break: break-all; display: block; margin: 6px 0; }
