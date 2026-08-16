@@ -945,19 +945,40 @@ M_KEYED_CALLS = _meter.create_counter("ecobuilding_keyed_calls", description="Va
 M_CREDITS = _meter.create_counter("ecobuilding_credits", description="Billable credits consumed", unit="1")
 
 
-def _key_plans() -> dict:
-    """key -> plan ("free" | "pro"). Plans live next to the key so a free
-    account and a subscriber are the same object with one field (#206)."""
-    plans = {}
+def _key_owners() -> dict:
+    """key -> Keycloak sub. Keys are minted for a signed-in user, so a
+    subscription attaches to the ACCOUNT and every key of that account
+    inherits it — nothing to sync when a user rotates a key (#206)."""
+    owners = {}
     try:
         with open(KEYS_PATH) as f:
             import json as _json
             for line in f:
                 rec = _json.loads(line)
-                plans[rec["key"]] = rec.get("plan", "free")
+                owners[rec["key"]] = rec.get("sub") or ""
     except (OSError, ValueError):
         pass
-    return plans
+    return owners
+
+
+def _key_plans() -> dict:
+    """key -> plan ("free" | "pro"), resolved from the LIVE subscription state
+    (pro.json, written by the Polar webhook)."""
+    return {k: ("pro" if _pro_active(sub) else "free")
+            for k, sub in _key_owners().items()}
+
+
+def _bearer_sub(request: Request) -> str | None:
+    """Keycloak sub of the signed-in caller, if the request carries a valid
+    Bearer token. Lets the WEB APP consume the same tiers as API keys: a
+    registered user gets the free-account allowance straight from the browser."""
+    auth = request.headers.get("authorization", "")
+    if not auth.lower().startswith("bearer "):
+        return None
+    try:
+        return _decode_token(auth[7:].strip()).get("sub")
+    except Exception:
+        return None
 
 
 def _load_keys() -> set:
@@ -1131,6 +1152,31 @@ def _quota_gate(request: Request, endpoint: str):
                     f"https://ecobuilding.confinia.io/offres.html")
         _meter_call(request, endpoint, key)
         return "key"
+    sub = _bearer_sub(request)
+    if sub:
+        # Signed-in browser user: same ladder as a key holder, no key needed.
+        uid = "kc:" + hashlib.sha256(sub.encode()).hexdigest()[:14]
+        if _pro_active(sub):
+            if endpoint == "report":
+                _usage_add(uid, CREDIT_COST["report"])
+                M_CREDITS.add(CREDIT_COST["report"], {"endpoint": endpoint, "plan": "pro"})
+                try:
+                    asyncio.get_running_loop().create_task(
+                        _polar_ingest(uid, endpoint, CREDIT_COST["report"]))
+                except RuntimeError:
+                    pass
+            return "user_pro"
+        if endpoint == "report":
+            used = (_usage_load().get(_month_key()) or {}).get(uid, 0) // CREDIT_COST["report"]
+            if used >= FREE_ACCOUNT_REPORTS:
+                raise HTTPException(
+                    429,
+                    f"Compte gratuit : {FREE_ACCOUNT_REPORTS} fiches par mois atteintes. "
+                    f"L'offre Pro ({BASE_FEE_EUR:.0f} €/mois, {INCLUDED_FICHES} fiches incluses, "
+                    f"plafond {MONTHLY_CAP_EUR:.0f} €) : "
+                    f"https://ecobuilding.confinia.io/offres.html")
+            _usage_add(uid, CREDIT_COST["report"])
+        return "user_free"
     ip = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip() or "?"
     if endpoint == "report":
         # Monthly, not daily: a daily cap of 20 was never reached, so nobody
@@ -1205,12 +1251,26 @@ async def usage(request: Request):
     1 credit (0,01 €) per API record, autocomplete free.
     """
     key = request.headers.get("x-api-key") or request.query_params.get("key")
-    if not key or key not in _load_keys():
-        raise HTTPException(401, "Clé API requise (en-tête X-API-Key)")
-    key_id = hashlib.sha256(key.encode()).hexdigest()[:16]
+    sub = _bearer_sub(request)
+    if key and key in _load_keys():
+        bucket = hashlib.sha256(key.encode()).hexdigest()[:16]
+        plan = _key_plans().get(key, "free")
+    elif sub:
+        bucket = "kc:" + hashlib.sha256(sub.encode()).hexdigest()[:14]
+        plan = "pro" if _pro_active(sub) else "free"
+    else:
+        raise HTTPException(401, "Clé API (X-API-Key) ou session requise")
     month = _month_key()
-    credits = (_usage_load().get(month) or {}).get(key_id, 0)
-    return {"month": month, "credit_costs": CREDIT_COST, **_usage_cost(credits)}
+    credits = (_usage_load().get(month) or {}).get(bucket, 0)
+    body = {"month": month, "plan": plan, "credit_costs": CREDIT_COST,
+            **_usage_cost(credits)}
+    if plan != "pro":
+        # A free account owes nothing: show the allowance, not a bill.
+        used = credits // CREDIT_COST["report"]
+        body |= {"cost_eur": 0.0, "reports_used": used,
+                 "reports_included": FREE_ACCOUNT_REPORTS,
+                 "reports_left": max(0, FREE_ACCOUNT_REPORTS - used)}
+    return body
 
 
 @app.get("/v1/pricing", tags=["account"])
