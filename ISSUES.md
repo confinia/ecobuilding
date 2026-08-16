@@ -21,6 +21,8 @@ Last updated: 2026-08-05 (post-promote).
 
 | Issue | Status | Next step |
 |---|---|---|
+| [#201](https://github.com/confinia/ecobuilding/issues/201) Pay-as-you-go pricing + Polar metering | **In production 2026-08-16** (PR [#202](https://github.com/confinia/ecobuilding/pull/202)): 500 crédits offerts, 0,02 €/crédit, plafond 99 €; `/v1/usage` + `/v1/pricing`; simulateur sur la page offres; e2e metering runs in CI (rule 19) | **Operator:** create the Polar sandbox org + token, then `deploy/polar-setup.sh` and set POLAR_* in `sandbox_stack/secrets.env` — the CI Polar leg then runs itself |
+| [#199](https://github.com/confinia/ecobuilding/issues/199) i18n EN + language switcher · [#200](https://github.com/confinia/ecobuilding/issues/200) Mapillary/Wikimedia street view | Filed 2026-08-16 (deferred by the operator) | Later |
 | [#196](https://github.com/confinia/ecobuilding/issues/196) Lead notification email | **In production 2026-08-16** (PR [#197](https://github.com/confinia/ecobuilding/pull/197)); e2e validated on sandbox (`sent: True`, 2 mails to contact@) | — |
 | [#193](https://github.com/confinia/ecobuilding/issues/193) + [#194](https://github.com/confinia/ecobuilding/issues/194) Fiscalité locale + écoles | **In production 2026-08-16** (PR [#195](https://github.com/confinia/ecobuilding/pull/195)): TFB 29.58 %, TEOM, 8 écoles < 2 km; loading narration | — |
 | [#192](https://github.com/confinia/ecobuilding/issues/192) Buyer-data roadmap | Wave 1 done (taxes, écoles). Fibre ARCEP needs a file import (no keyless API); bruit/PEB needs departmental files | Wave 1b: fibre import; wave 2: transports, revenus, commune |
