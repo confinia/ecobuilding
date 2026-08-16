@@ -1253,7 +1253,7 @@ async def create_key(request: Request):
     with open(KEYS_PATH, "a") as f:
         f.write(_json.dumps(rec, ensure_ascii=False) + "\n")
     M_KEYS.add(1, {"event": "created"})
-    return {"api_key": key, "note": "Passez-la en en-tête X-API-Key. Gratuite pendant la bêta."}
+    return {"api_key": key, "note": "Passez-la en en-tête X-API-Key."}
 
 
 @app.get("/v1/usage", tags=["account"])
