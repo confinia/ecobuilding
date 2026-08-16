@@ -456,8 +456,11 @@ async function refreshQuota() {
       ? "Pro"
       : `${u.reports_left} fiche${u.reports_left > 1 ? "s" : ""} restante${u.reports_left > 1 ? "s" : ""} ce mois`;
     el.textContent = el.textContent.split(" · ")[0] + " · " + badge;
+    // Upsell only when the plan is actually purchasable: ECO_PRO_ENABLED is
+    // false in production until RULES.md #7 is met, and a visible button that
+    // 503s would be worse than no button at all.
     const go = document.getElementById("gopro");
-    if (go && u.plan !== "pro") go.hidden = false;   // upsell only for free plans
+    if (go && window.ECO_PRO_ENABLED && u.plan !== "pro") go.hidden = false;
   } catch { /* quota display is cosmetic: never break the app */ }
 }
 
