@@ -196,32 +196,44 @@ map: "see every building that becomes illegal to rent in 2028/2034, in 3D."
 Pre-announce guard: cache /lookup responses (BDNB 10k calls/month); tiles already go
 browser→BDNB directly (spike-safe for us); attribution displayed (Licence Ouverte ✓).
 
-### Pricing decision — pay-as-you-go from the first fiche (2026-08-16)
+### Pricing policy v2 — subscription first (2026-08-16, supersedes the PAYG-only draft)
 
-**Model (live on /offres.html, implemented in [#201](https://github.com/confinia/ecobuilding/issues/201)):**
-- **0,20 € par fiche PDF, facturée dès la première.** No free monthly
-  allowance on fiches: an earlier draft offered 500 free credits/month, which
-  amounted to 500 free PDFs — a giveaway, not an offer (operator call).
-- **0,01 € par appel API brut** (bâtiment / adresse / reverse); autocomplete
-  free. Raw records are an input, the fiche is the deliverable — 20× apart.
-- **Plafond dur 99 €/mois.** Beyond 495 fiches everything is included. The cap
-  is the pitch for companies that must bound their costs; Polar enforces it
-  server-side too (`cap_amount`), so it is contractual, not just our code.
-- Anonymous browsing (no key) stays free and uncapped — the acquisition layer.
+**Principle (operator):** *« la scalabilité, ce n'est pas seulement monter très
+haut très vite, c'est aussi pouvoir démarrer de très bas ».* The offer must be
+enterable at almost no cost, because the first goal is **stable identified
+users, not early revenue** — prices go up later, once retention is proven.
 
-**What it implies (be honest about the arithmetic):** a diagnostiqueur doing
-20 fiches/month pays 4 €; an agency at 100 fiches pays 20 €; the cap is only
-reached by a heavy integrator. So this tier is **volume-dependent revenue, not
-a 10k€ path on its own**: ~40 active customers at ~20 €/month ≈ 10k€/an. The
-≥10k€ deals (RULES.md #7) remain the Entreprise/marque blanche line; PAYG's job
-is to convert self-serve usage into paying accounts and to prove willingness to
-pay before any incorporation.
+| Offre | Prix | Contenu |
+|---|---|---|
+| Découverte (sans compte) | 0 € | carte 3D + API publique illimitées, **10 fiches/mois** |
+| Compte gratuit (bêta) | 0 € | **30 fiches/mois** + clé API + suivi de consommation |
+| **Pro (abonnement)** | **9 €/mois** | **50 fiches incluses**, puis **0,49 €/fiche**, **plafond 99 €/mois** (atteint à 234 fiches) |
+| Entreprise / on-premise / marque blanche | sur devis (dès 10 k€/an) | déploiement chez le client, SLA, marque, champs sur mesure |
 
-**Levers if the numbers disappoint:** raise the fiche price (buyers compare it
-to a 100-300 € diagnostic, so 0,20 € is deliberately low-friction), add a
-per-seat or per-domain widget line, or bundle fiches (e.g. 50 fiches/mois
-inclus dans un forfait) once the discovery conversations say which framing
-agencies prefer.
+**Why a fixed base instead of pure metering.** Pay-as-you-go produces
+transactions, not subscribers: a client at 4 € one month and 0 € the next is
+not a relationship and cannot be shown as MRR. The 9 € base is deliberately
+under any procurement threshold (nobody asks permission), so it maximises
+sign-ups — the metric that matters now — while turning usage into recurring
+revenue. It also expresses the "minimum per report" intent more cleanly: the
+subscription IS the floor.
+
+**Why the free tier is monthly, not daily.** The previous anonymous cap was 20
+fiches/day, which no professional ever reached, so nobody had a reason to
+register. 10/month is enough to evaluate seriously, scarce enough to convert;
+the free *account* (30/month) buys an email, an identity and a usage history —
+the population to upgrade when prices rise.
+
+**Arithmetic, honestly.** A subscriber generating 20 fiches/month pays 9 €;
+100 fiches → 33,50 €; the cap (99 €) lands at 234 fiches. So ~90 subscribers
+at ~9-15 € ≈ 10 k€/an: this tier proves willingness to pay and produces MRR,
+while the ≥10 k€ deals (RULES.md #7) remain the Entreprise/on-premise line.
+Levers if adoption is good but revenue is thin: raise the fiche price (buyers
+compare it to a 100-300 € diagnostic), raise the base, or add a per-domain
+widget line — never lower the free ladder, which is the acquisition engine.
+
+**Status:** published as « bientôt » (rule 7: no real money until a ≥10 k€ deal);
+implemented and metered end to end in [#206](https://github.com/confinia/ecobuilding/issues/206).
 
 ### Launch success thresholds (set 2026-08-11, before posting — fixed, no goalpost moves)
 
