@@ -47,8 +47,8 @@
         <p class="price">0 €</p>
         <ul>
           <li>Carte 3D complète et API JSON publique, sans limite</li>
-          <li><strong>10 fiches PDF par mois</strong> sans créer de compte</li>
-          <li><strong>30 fiches par mois</strong> avec un compte gratuit, plus une clé API</li>
+          <li><strong>3 fiches PDF par mois</strong> sans créer de compte</li>
+          <li><strong>10 fiches par mois</strong> avec un compte gratuit, plus une clé API</li>
           <li><a href="/api/v1/docs">Documentation OpenAPI</a> · attribution requise (Licence Ouverte)</li>
         </ul>
         <a class="cta" href="/api/v1/docs">Essayer l'API</a>
@@ -56,12 +56,12 @@
 
       <section class="tier">
         <h2>Pro <span class="badge soon">bientôt</span></h2>
-        <p class="price">9 €<small> /mois</small></p>
-        <p class="price-sub"><strong>50 fiches incluses</strong>, puis 0,49 € la fiche</p>
+        <p class="price">0,49 €<small> la fiche</small></p>
+        <p class="price-sub"><strong>10 fiches offertes chaque mois</strong>, puis 0,49 € la fiche, <strong>plafonné à 99 €/mois</strong></p>
         <ul>
-          <li>Abonnement sans engagement, résiliable à tout moment</li>
-          <li><strong>Plafond garanti à 99 € par mois</strong> : au-delà de 234 fiches, tout est inclus</li>
-          <li>Appels API bruts : 0,01 € l'unité, autocomplétion gratuite</li>
+          <li>Paiement à l'usage : vous ne payez que les fiches réellement générées, sans abonnement fixe</li>
+          <li><strong>Plafond garanti à 99 € par mois</strong> : au-delà de 212 fiches, tout est inclus</li>
+          <li>Appels API, autocomplétion et carte 3D : gratuits et illimités</li>
           <li>Suivi de consommation en temps réel (<code>GET /v1/usage</code>)</li>
           <li>Clé API dédiée, support par e-mail</li>
         </ul>
@@ -83,12 +83,12 @@
 
     <section class="sim">
       <h2>Simulateur : combien coûte l'offre Pro ?</h2>
-      <p class="hint">9 € par mois, 50 fiches incluses, puis 0,49 € la fiche, et jamais plus de 99 €.</p>
-      <label for="sim-range">Fiches PDF par mois : <output id="sim-vol">50</output></label>
-      <input id="sim-range" type="range" min="0" max="400" step="5" value="50">
+      <p class="hint">10 fiches offertes, puis 0,49 € la fiche, et jamais plus de 99 € par mois.</p>
+      <label for="sim-range">Fiches PDF par mois : <output id="sim-vol">30</output></label>
+      <input id="sim-range" type="range" min="0" max="300" step="5" value="30">
       <table class="sim-out">
-        <tr><td>Abonnement</td><td id="sim-base">9,00 €</td></tr>
-        <tr><td>Fiches au-delà des 50 incluses</td><td id="sim-extra">0</td></tr>
+        <tr><td>Fiches offertes</td><td id="sim-free">10</td></tr>
+        <tr><td>Fiches facturées (0,49 €)</td><td id="sim-extra">20</td></tr>
         <tr><td><strong>Total mensuel</strong></td><td><strong id="sim-cost">9,00 €</strong></td></tr>
       </table>
       <p class="hint" id="sim-note"></p>
@@ -130,21 +130,21 @@
 // Price simulator (#206). Mirrors the server formula; /v1/pricing is the
 // authority and the test suite pins both to the same numbers.
 (function () {
-  const BASE = 9, INCLUDED = 50, PRICE = 0.49, CAP = 99;
+  const INCLUDED = 10, PRICE = 0.49, CAP = 99;
   const r = document.getElementById("sim-range");
   if (!r) return;
   const eur = (n) => n.toFixed(2).replace(".", ",") + " €";
   function render() {
     const fiches = Number(r.value);
     const extra = Math.max(0, fiches - INCLUDED);
-    const cost = Math.min(BASE + extra * PRICE, CAP);
+    const cost = Math.min(extra * PRICE, CAP);
     document.getElementById("sim-vol").textContent = fiches.toLocaleString("fr-FR");
-    document.getElementById("sim-base").textContent = eur(BASE);
+    document.getElementById("sim-free").textContent = Math.min(fiches, INCLUDED);
     document.getElementById("sim-extra").textContent = extra.toLocaleString("fr-FR");
     document.getElementById("sim-cost").textContent = eur(cost);
-    document.getElementById("sim-note").textContent = (BASE + extra * PRICE) >= CAP
-      ? "Plafond atteint (234 fiches) : toute fiche supplémentaire est incluse."
-      : "Sous le plafond : abonnement plus fiches réellement générées.";
+    document.getElementById("sim-note").textContent = (extra * PRICE) >= CAP
+      ? "Plafond atteint (212 fiches) : toute fiche supplémentaire est incluse."
+      : "Vous ne payez que les fiches générées au-delà des 10 offertes.";
   }
   r.addEventListener("input", render);
   render();

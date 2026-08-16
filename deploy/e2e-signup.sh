@@ -59,7 +59,8 @@ import json, sys
 u = json.load(sys.stdin)
 assert u['plan'] == 'free', u
 assert u['cost_eur'] == 0.0, u
-assert u['reports_left'] == u['reports_included'] == 30, u
+# Allowance read from the API: a pricing change must not break this test.
+assert u['reports_left'] == u['reports_included'] and u['reports_included'] > 0, u
 print(f\"   new account: plan={u['plan']} fiches restantes={u['reports_left']}\")
 "
 
@@ -70,7 +71,7 @@ curl -fsS -m 20 -H "Authorization: Bearer $TOKEN" "$API_BASE/api/v1/usage" | pyt
 import json, sys
 u = json.load(sys.stdin)
 assert u['reports_used'] == 1, u
-assert u['reports_left'] == 29, u
+assert u['reports_left'] == u['reports_included'] - 1, u
 print(f\"   after 1 fiche: used={u['reports_used']} restantes={u['reports_left']}\")
 "
 
@@ -89,7 +90,10 @@ bucket = "kc:" + hashlib.sha256(claims["sub"].encode()).hexdigest()[:14]
 path = os.environ["USAGE_FILE"]
 store = json.load(open(path)) if os.path.exists(path) else {}
 month = date.today().strftime("%Y-%m")
-store.setdefault(month, {})[bucket] = 30 * 49          # allowance consumed
+# Consume the allowance (value read from the API, not hardcoded).
+req0 = urllib.request.Request(f"{base}/api/v1/usage", headers={"Authorization": f"Bearer {token}"})
+included = json.load(urllib.request.urlopen(req0))["reports_included"]
+store.setdefault(month, {})[bucket] = included
 json.dump(store, open(path, "w"))
 
 req = urllib.request.Request(
