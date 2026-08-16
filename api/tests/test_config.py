@@ -154,6 +154,9 @@ def test_1pesi_port_migration():
     assert "127.0.0.1:13400:8030" in (ROOT / "sandbox_stack/docker-compose.yml").read_text()
     for f, frag in (("caddy_server/Caddyfile.blue", ":13000"),
                     ("caddy_server/Caddyfile.green", ":13000"),
+                    # staging owns the 1PESI X300 listener (platform 2026-08-16)
+                    ("caddy_server/Caddyfile.blue", ":13300"),
+                    ("caddy_server/Caddyfile.green", ":13300"),
                     ("monitoring_stack/docker-compose.yml", "13040"),
                     ("monitoring_stack/docker-compose.yml", "13050"),
                     ("monitoring/grafana-shared/provisioning/datasources/prometheus.yaml", "13050"),

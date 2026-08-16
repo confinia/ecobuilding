@@ -77,7 +77,7 @@ Intra-stack routing: static frontend + `/api` → the stack's FastAPI.
 | 3005 | bdnb-rest (PostgREST read mirror) |
 
 **1PESI ports (final since 2026-08-15, #173 / platform PR #7)** — band 13xxx,
-read as 1 · product(3) · env · service · instance: 13000 router · 13020
+read as 1 · product(3) · env · service · instance: 13000 router (prod) · 13300 router (staging, 1PESI X300) · 13020
 bdnb-rest · 13040 grafana (0.0.0.0+ufw, gateway consumers) · 13050 prometheus
 · 13060/13061 otel blue/green · 13070 keycloak · 13080 render · 13081
 podman-exporter · 13100/13200 blue/green caddies · 13400 sandbox. All
