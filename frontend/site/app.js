@@ -14,14 +14,33 @@ track("page_view");
 // Keycloak 26 ships the JS adapter as an ESM module (no server-hosted
 // /auth/js/keycloak.js), so we import it dynamically from a pinned CDN.
 (async function initAuth() {
+  // The sign-in / sign-up buttons are the ONLY way a visitor becomes a user,
+  // so they are shown FIRST and never depend on anything loading. Previously
+  // a failed CDN import or a failed init silently returned and the auth UI
+  // stayed hidden — the product looked like it had no accounts at all (#215).
+  const realm = window.ECO_REALM || "confinia";
+  const clientId = window.ECO_CLIENT || "ecobuilding-web";
+  const show = (id, on) => { const el = document.getElementById(id); if (el) el.hidden = !on; };
+  const authUrl = (action) =>
+    `/auth/realms/${encodeURIComponent(realm)}/protocol/openid-connect/${action}` +
+    `?client_id=${encodeURIComponent(clientId)}&response_type=code&scope=openid` +
+    `&redirect_uri=${encodeURIComponent(location.origin + "/?welcome=1")}`;
+  // Fallback wiring: plain Keycloak URLs work with no JS adapter at all.
+  const signinEl = document.getElementById("signin");
+  const signupEl = document.getElementById("signup");
+  if (signinEl) signinEl.href = authUrl("auth");
+  if (signupEl) signupEl.href = authUrl("registrations");
+  show("signin", true); show("signup", true);
+
   let Keycloak;
   try {
-    ({ default: Keycloak } = await import("https://esm.sh/keycloak-js@26.1.0"));
-  } catch { return; }
-  const kc = new Keycloak({ url: "/auth",
-    realm: window.ECO_REALM || "confinia",
-    clientId: window.ECO_CLIENT || "ecobuilding-web" });
-  const show = (id, on) => { document.getElementById(id).hidden = !on; };
+    // Vendored same-origin (assets/keycloak/): a CDN in the auth path is a
+    // single point of failure — the MapLibre lesson, applied to sign-up.
+    ({ default: Keycloak } = await import("./assets/keycloak/keycloak.mjs"));
+  } catch (e) {
+    return;   // buttons already work through the direct URLs above
+  }
+  const kc = new Keycloak({ url: "/auth", realm, clientId });
   kc.init({ onLoad: "check-sso", pkceMethod: "S256",
             silentCheckSsoRedirectUri: location.origin + "/silent-sso.html" })
     .then((authenticated) => {
@@ -29,12 +48,12 @@ track("page_view");
         const t = kc.tokenParsed || {};
         document.getElementById("userlabel").textContent =
           (t.email || t.preferred_username || "compte") + (t.org ? " · " + t.org : "");
-        show("userchip", true);
-        if (window.ECO_PRO_ENABLED) show("gopro", true);   // off in prod until the pro plan is live
-        window.ecoToken = () => kc.token;   // future authenticated API calls
+        show("userchip", true); show("signin", false); show("signup", false);
+        if (window.ECO_PRO_ENABLED) show("gopro", true);
+        window.ecoToken = () => kc.token;
         setInterval(() => kc.updateToken(60).catch(() => {}), 30000);
         track("signed_in_view");
-        refreshQuota();                     // show the monthly allowance (#206)
+        refreshQuota();
         if (new URLSearchParams(location.search).get("welcome") === "1") {
           track("signup_completed");
           showPanel(`<h2>Bienvenue 🎉</h2>
@@ -44,29 +63,33 @@ track("page_view");
             Un problème ? <a href="mailto:contact@confinia.io?subject=EcoBuilding%20-%20aide">contact@confinia.io</a></p>`);
           history.replaceState(null, "", location.pathname);
         }
-      } else {
-        show("signin", true); show("signup", true);
-        // Arriving from the quota page (#212): open registration straight away
-        // instead of making the user hunt for the button.
-        if (new URLSearchParams(location.search).get("signup") === "1") {
-          track("signup_autostart");
-          kc.register({ redirectUri: location.origin + "/?welcome=1" });
-        }
       }
-      document.getElementById("signin").onclick = (e) => { e.preventDefault(); track("signin_click"); kc.login(); };
-      document.getElementById("signup").onclick = (e) => { e.preventDefault(); track("signup_click"); kc.register(); };
-      document.getElementById("signout").onclick = (e) => { e.preventDefault(); kc.logout({ redirectUri: location.origin }); };
-      document.getElementById("gopro").onclick = async (e) => {
+      // Adapter available: prefer its flows (PKCE, silent SSO) over raw URLs.
+      if (signinEl) signinEl.onclick = (e) => { e.preventDefault(); track("signin_click"); kc.login(); };
+      if (signupEl) signupEl.onclick = (e) => {
+        e.preventDefault(); track("signup_click");
+        kc.register({ redirectUri: location.origin + "/?welcome=1" });
+      };
+      const out = document.getElementById("signout");
+      if (out) out.onclick = (e) => { e.preventDefault(); kc.logout({ redirectUri: location.origin }); };
+      const go = document.getElementById("gopro");
+      if (go) go.onclick = async (e) => {
         e.preventDefault(); track("gopro_click");
         try {
           const r = await fetch("/api/v1/pro/checkout", { headers: { Authorization: "Bearer " + kc.token } });
           if (!r.ok) throw new Error(r.status);
           window.location.href = (await r.json()).url;   // -> Polar hosted checkout
-        } catch { alert("Le passage à l'offre Pro est momentanément indisponible."); }
+        } catch { alert("Le passage à l'offre Pro est momentanément indisponible : contact@confinia.io"); }
       };
+      // Arriving from the quota page: open registration immediately.
+      if (!authenticated && new URLSearchParams(location.search).get("signup") === "1") {
+        track("signup_autostart");
+        kc.register({ redirectUri: location.origin + "/?welcome=1" });
+      }
     })
-    .catch(() => { /* IdP unreachable: keep auth UI hidden */ });
+    .catch(() => { /* IdP hiccup: the direct-URL buttons stay usable */ });
 })();
+
 // Live-audience heartbeat: 1/min per visible tab, anonymous like all events.
 setInterval(() => { if (document.visibilityState === "visible") track("heartbeat"); }, 60000);
 
@@ -410,7 +433,7 @@ function renderPanel(s, data) {
     ${kv("Médiane commune, appartement", data.prices.commune_eur_m2?.Appartement?.median ? data.prices.commune_eur_m2.Appartement.median.toLocaleString("fr-FR") + " €/m²" : null)}
     ${(data.prices.sales || []).slice(0, 3).map((s) => kv(`Vente ${String(s.date || "").slice(0, 10)}`, `${(s.valeur_fonciere || 0).toLocaleString("fr-FR")} € (${s.type_local || "?"}${s.surface_m2 ? ", " + Math.round(s.surface_m2) + " m²" : ""})`)).join("")}
     <p class="hint">Transactions réelles DGFiP (DVF) : parcelle du bâtiment et médianes communales.</p>` : ""}
-    <p><button id="report-btn" class="report-link" data-url="${API}/report/${encodeURIComponent(b.bdnb_id)}.pdf${reportParams.length ? "?" + reportParams.join("&") : ""}">📄 Fiche PDF normalisée — gratuit (bêta)</button></p>
+    <p><button id="report-btn" class="report-link" data-url="${API}/report/${encodeURIComponent(b.bdnb_id)}.pdf${reportParams.length ? "?" + reportParams.join("&") : ""}">📄 Fiche PDF normalisée</button></p>
     <div id="streetview"></div>
     <p class="hint">ID BDNB : ${b.bdnb_id}</p>
   `);
