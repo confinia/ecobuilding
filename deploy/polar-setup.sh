@@ -15,7 +15,7 @@
 set -eu
 : "${POLAR_ACCESS_TOKEN:?export POLAR_ACCESS_TOKEN=<polar_oat_...>}"
 BASE="${POLAR_BASE_URL:-https://sandbox-api.polar.sh}"
-EVENT="${POLAR_METER_EVENT:-ecobuilding_credits}"
+EVENT="${POLAR_METER_EVENT:-ecobuilding_fiche}"
 # An ORGANIZATION-scoped token already carries its org and Polar REJECTS an
 # explicit organization_id with it (422 organization_token). Only a personal
 # token needs one, so the field is included only when POLAR_ORG_ID is set AND
@@ -23,8 +23,7 @@ EVENT="${POLAR_METER_EVENT:-ecobuilding_credits}"
 ORG_ID="${POLAR_ORG_ID:-}"
 ORG_TOKEN="${POLAR_ORG_TOKEN:-1}"
 if [ "$ORG_TOKEN" = "1" ] || [ -z "$ORG_ID" ]; then ORG_FIELD=""; else ORG_FIELD=",\"organization_id\": \"$ORG_ID\""; fi
-UNIT_CENTS="${UNIT_CENTS:-1}"        # 0,01 € per credit (49 credits = 0,49 € per fiche)
-BASE_CENTS="${BASE_CENTS:-900}"      # 9 € subscription base (the MRR anchor)
+UNIT_CENTS="${UNIT_CENTS:-49}"       # 0,49 € per FICHE — the unit the customer sees
 CAP_CENTS="${CAP_CENTS:-9900}"       # hard 99 €/month ceiling
 AUTH=(-H "Authorization: Bearer $POLAR_ACCESS_TOKEN" -H "Content-Type: application/json")
 
@@ -34,7 +33,7 @@ import json,sys
 for m in json.load(sys.stdin).get('items', []):
     print(' ', m['id'], m['name'])
 "
-if curl -fsS "${AUTH[@]}" "$BASE/v1/meters/?limit=50" | grep -q "\"name\":\"EcoBuilding credits\""; then
+if curl -fsS "${AUTH[@]}" "$BASE/v1/meters/?limit=50" | grep -q "\"name\":\"EcoBuilding fiches PDF\""; then
   echo "meter already exists — nothing to do (delete it in the dashboard to recreate)"
   exit 0
 fi
@@ -42,10 +41,10 @@ fi
 echo "== create meter (sum of metadata.credits on '$EVENT' events)"
 METER=$(curl -fsS "${AUTH[@]}" -X POST "$BASE/v1/meters/" -d @- <<JSON | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])"
 {
-  "name": "EcoBuilding credits",
+  "name": "EcoBuilding fiches PDF",
   "filter": {"conjunction": "and",
              "clauses": [{"property": "name", "operator": "eq", "value": "$EVENT"}]},
-  "aggregation": {"func": "sum", "property": "credits"}$ORG_FIELD
+  "aggregation": {"func": "sum", "property": "fiches"}$ORG_FIELD
 }
 JSON
 )
@@ -54,11 +53,10 @@ echo "   meter id: $METER"
 echo "== create product (metered unit price, capped)"
 PRODUCT=$(curl -fsS "${AUTH[@]}" -X POST "$BASE/v1/products/" -d @- <<JSON | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])"
 {
-  "name": "EcoBuilding API — paiement à l'usage",
-  "description": "9 € par mois, 50 fiches incluses, puis 0,49 € la fiche, plafonné à 99 € par mois.",
+  "name": "EcoBuilding — fiches PDF à l'usage",
+  "description": "10 fiches offertes chaque mois, puis 0,49 € la fiche, plafonné à 99 € par mois. Sans abonnement fixe.",
   "recurring_interval": "month",
-  "prices": [{"amount_type": "fixed", "price_currency": "eur", "price_amount": $BASE_CENTS},
-             {"amount_type": "metered_unit", "price_currency": "eur",
+  "prices": [{"amount_type": "metered_unit", "price_currency": "eur",
               "meter_id": "$METER", "unit_amount": $UNIT_CENTS, "cap_amount": $CAP_CENTS}]$ORG_FIELD
 }
 JSON

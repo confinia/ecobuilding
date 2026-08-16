@@ -53,10 +53,9 @@ import json, sys
 p = json.load(sys.stdin)
 fiches = 100
 extra = max(0, fiches - p['included_fiches'])
-expected = round(min(p['base_fee_eur'] + extra * p['price_per_fiche_eur'],
-                     p['monthly_cap_eur']), 2)
+expected = round(min(extra * p['price_per_fiche_eur'], p['monthly_cap_eur']), 2)
 assert p['cost_eur'] == expected, (p['cost_eur'], expected)
 assert p['cost_eur'] <= p['monthly_cap_eur']
 print(f\"pricing simulator OK: {fiches} fiches -> {p['cost_eur']} EUR \"
-      f\"(base {p['base_fee_eur']} + {extra} x {p['price_per_fiche_eur']}, cap {p['monthly_cap_eur']})\")
+      f\"({extra} facturees x {p['price_per_fiche_eur']}, cap {p['monthly_cap_eur']})\")
 "

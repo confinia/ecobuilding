@@ -1000,24 +1000,22 @@ def _load_keys() -> set:
 # cheaper (0,01 €) because they are an input, not a deliverable. A HARD monthly
 # cap keeps the worst case knowable — the selling point for cost-controlled
 # companies. Anonymous browsing (no key) stays free and uncapped.
-# Pricing policy v2 (#206) — SUBSCRIPTION FIRST: the goal is stable identified
-# users, not early revenue. "Scalability is not only growing high quickly, it
-# is also the ability to start from very low" (operator, 2026-08-16), hence a
-# 9 EUR entry that nobody needs approval to spend.
-#   anonymous  : 10 fiches/month  (was 20/day — nobody ever registered)
-#   free account: 30 fiches/month + API key
-#   pro        : 9 EUR/month, 50 fiches included, then 0,49 EUR/fiche, cap 99 EUR
-BASE_FEE_EUR = float(os.environ.get("BASE_FEE_EUR", "9"))
-INCLUDED_FICHES = int(os.environ.get("INCLUDED_FICHES", "50"))
-PRICE_PER_CREDIT_EUR = float(os.environ.get("PRICE_PER_CREDIT_EUR", "0.01"))
+# Pricing v3 (#224) — the billed unit is the FICHE, not an internal credit:
+# the Polar checkout showed « credits €0.01/unit », which read as if a PDF cost
+# one cent. Raw API calls are no longer billed at all (they only added noise).
+#   sans compte  : 3 fiches/mois
+#   compte gratuit: 10 fiches/mois
+#   pro          : 10 fiches offertes, puis 0,49 EUR la fiche, plafond 99 EUR
+PRICE_PER_FICHE_EUR = float(os.environ.get("PRICE_PER_FICHE_EUR", "0.49"))
 MONTHLY_CAP_EUR = float(os.environ.get("MONTHLY_CAP_EUR", "99"))
-ANON_MONTHLY_REPORTS = int(os.environ.get("ANON_MONTHLY_REPORTS", "10"))
+ANON_MONTHLY_REPORTS = int(os.environ.get("ANON_MONTHLY_REPORTS", "3"))
+FREE_ACCOUNT_REPORTS = int(os.environ.get("FREE_ACCOUNT_REPORTS", "10"))
+INCLUDED_FICHES = int(os.environ.get("INCLUDED_FICHES", "10"))
 # Self-service means: never leave a user stuck without a way out (#212).
 SUPPORT_EMAIL = os.environ.get("SUPPORT_EMAIL", "contact@confinia.io")
-FREE_ACCOUNT_REPORTS = int(os.environ.get("FREE_ACCOUNT_REPORTS", "30"))
-# 49 credits = 0,49 EUR per fiche; 1 credit = 0,01 EUR per API record.
-CREDIT_COST = {"lookup": 1, "buildings": 1, "reverse": 1, "report": 49, "suggest": 0}
-FREE_CREDITS_MONTH = INCLUDED_FICHES * CREDIT_COST["report"]   # 50 fiches included
+# One unit = one fiche. Everything else is free, so the customer's invoice
+# has exactly one line and needs no explanation.
+CREDIT_COST = {"lookup": 0, "buildings": 0, "reverse": 0, "report": 1, "suggest": 0}
 USAGE_PATH = os.environ.get("USAGE_PATH", "/leads/usage.json")
 
 
@@ -1059,21 +1057,19 @@ def _usage_add(key_id: str, credits: int) -> int:
     return bucket[key_id]
 
 
-def _usage_cost(credits: int) -> dict:
-    """Monthly cost of a PRO subscription: fixed base + metered overage, hard
-    cap. The base is what makes it a subscription (MRR) rather than a series
-    of transactions; the cap is what makes the worst case knowable."""
-    billable = max(0, credits - FREE_CREDITS_MONTH)
-    raw = round(BASE_FEE_EUR + billable * PRICE_PER_CREDIT_EUR, 2)
+def _usage_cost(fiches: int) -> dict:
+    """Monthly cost in FICHES: the first INCLUDED_FICHES are free, the rest
+    cost PRICE_PER_FICHE_EUR each, and the total never exceeds the cap."""
+    billable = max(0, fiches - INCLUDED_FICHES)
+    raw = round(billable * PRICE_PER_FICHE_EUR, 2)
     capped = min(raw, MONTHLY_CAP_EUR)
     return {
-        "credits": credits,
-        "base_fee_eur": BASE_FEE_EUR,
+        "fiches": fiches,
+        "credits": fiches,                  # kept: same number, one unit
         "included_fiches": INCLUDED_FICHES,
-        "free_credits": FREE_CREDITS_MONTH,
+        "billable_fiches": billable,
         "billable_credits": billable,
-        "price_per_credit_eur": PRICE_PER_CREDIT_EUR,
-        "price_per_fiche_eur": round(PRICE_PER_CREDIT_EUR * CREDIT_COST["report"], 2),
+        "price_per_fiche_eur": PRICE_PER_FICHE_EUR,
         "cost_eur": capped,
         "monthly_cap_eur": MONTHLY_CAP_EUR,
         "cap_reached": raw >= MONTHLY_CAP_EUR,
@@ -1096,7 +1092,9 @@ async def _polar_ingest(key_id: str, endpoint: str, credits: int):
             json={"events": [{
                 "name": POLAR_METER_EVENT,
                 "external_customer_id": key_id,
-                "metadata": {"credits": credits, "endpoint": endpoint},
+                # One event = one fiche, so the customer's invoice line reads
+                # "fiches PDF x N" instead of an internal credit count (#224).
+                "metadata": {"fiches": credits, "endpoint": endpoint},
             }]})
     except Exception as e:
         log.warning("Polar ingest failed (%s credits, %s): %s", credits, endpoint, e)
@@ -1149,8 +1147,8 @@ def _quota_gate(request: Request, endpoint: str):
                 raise HTTPException(
                     429,
                     f"Compte gratuit : {FREE_ACCOUNT_REPORTS} fiches par mois atteintes. "
-                    f"L'offre Pro ({BASE_FEE_EUR:.0f} €/mois, {INCLUDED_FICHES} fiches incluses, "
-                    f"plafond {MONTHLY_CAP_EUR:.0f} €) : "
+                    f"L'offre Pro (paiement à l'usage : {INCLUDED_FICHES} fiches offertes, "
+                    f"puis {PRICE_PER_FICHE_EUR:.2f} € la fiche, plafond {MONTHLY_CAP_EUR:.0f} €/mois) : "
                     f"https://ecobuilding.confinia.io/offres.html — une question ? {SUPPORT_EMAIL}")
         _meter_call(request, endpoint, key)
         return "key"
@@ -1174,8 +1172,8 @@ def _quota_gate(request: Request, endpoint: str):
                 raise HTTPException(
                     429,
                     f"Compte gratuit : {FREE_ACCOUNT_REPORTS} fiches par mois atteintes. "
-                    f"L'offre Pro ({BASE_FEE_EUR:.0f} €/mois, {INCLUDED_FICHES} fiches incluses, "
-                    f"plafond {MONTHLY_CAP_EUR:.0f} €) : "
+                    f"L'offre Pro (paiement à l'usage : {INCLUDED_FICHES} fiches offertes, "
+                    f"puis {PRICE_PER_FICHE_EUR:.2f} € la fiche, plafond {MONTHLY_CAP_EUR:.0f} €/mois) : "
                     f"https://ecobuilding.confinia.io/offres.html — une question ? {SUPPORT_EMAIL}")
             _usage_add(uid, CREDIT_COST["report"])
         return "user_free"
@@ -1352,7 +1350,7 @@ POLAR_PRODUCT_ID = os.environ.get("POLAR_PRODUCT_ID", "")
 POLAR_WEBHOOK_SECRET = os.environ.get("POLAR_WEBHOOK_SECRET", "")
 # Usage-based billing (#201): the meter/event name configured on the Polar
 # product; each keyed call ingests one event carrying its credit count.
-POLAR_METER_EVENT = os.environ.get("POLAR_METER_EVENT", "ecobuilding_credits")
+POLAR_METER_EVENT = os.environ.get("POLAR_METER_EVENT", "ecobuilding_fiche")
 PUBLIC_BASE_URL = (os.environ.get("PUBLIC_BASE_URL")
                    or OIDC_ISSUER.split("/auth/")[0]).rstrip("/")
 PRO_PATH = os.environ.get("PRO_PATH", "/leads/pro.json")
