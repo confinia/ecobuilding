@@ -15,21 +15,41 @@ USER="e2e-$(date +%s)@confinia.io"
 PASS="E2e-$(python3 -c 'import secrets; print(secrets.token_urlsafe(12))')"
 KCADM="podman exec -i $KC /opt/keycloak/bin/kcadm.sh"
 
+# E2E_ADMIN_USER exists because a realm's bootstrap admin password can drift
+# from secrets.env (it is only applied at first boot); a dedicated CI admin is
+# recreatable at any time with `kc.sh bootstrap-admin user`.
 $KCADM config credentials --server http://localhost:8080/auth --realm master \
-  --user "${KC_BOOTSTRAP_ADMIN_USERNAME:-admin}" --password "$KC_BOOTSTRAP_ADMIN_PASSWORD" >/dev/null
+  --user "${E2E_ADMIN_USER:-${KC_BOOTSTRAP_ADMIN_USERNAME:-admin}}" \
+  --password "$KC_BOOTSTRAP_ADMIN_PASSWORD" >/dev/null
 
+# The realm JSON is only imported when the realm is CREATED, so the CI client
+# is ensured here (idempotent) rather than assumed.
+if [ -z "$($KCADM get clients -r "$REALM" -q clientId=ecobuilding-e2e --fields id --format csv --noquotes 2>/dev/null)" ]; then
+  $KCADM create clients -r "$REALM" -s clientId=ecobuilding-e2e -s enabled=true \
+    -s publicClient=true -s standardFlowEnabled=false \
+    -s directAccessGrantsEnabled=true -s serviceAccountsEnabled=false >/dev/null
+  echo "== CI client ecobuilding-e2e created (sandbox realm only)"
+fi
+
+# The realm's declarative user profile makes `organization` REQUIRED: without
+# it Keycloak answers "Account is not fully set up" on any login — the same
+# wall a real signup hits if the field is skipped, so the e2e sets it like the
+# registration form does.
 UID_=$($KCADM create users -r "$REALM" -s "username=$USER" -s "email=$USER" \
-        -s enabled=true -s emailVerified=true -i)
+        -s enabled=true -s emailVerified=true -s "firstName=CI" -s "lastName=E2E" \
+        -s "attributes.organization=E2E" -i)
 cleanup() { $KCADM delete "users/$UID_" -r "$REALM" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 $KCADM set-password -r "$REALM" --userid "$UID_" --new-password "$PASS" >/dev/null
 echo "== account created: $USER"
 
 # Token via the sandbox-only direct-grant client (never exists in prod).
-TOKEN=$(podman exec -i "$KC" curl -fsS \
-  -d "client_id=ecobuilding-e2e" -d "username=$USER" -d "password=$PASS" \
-  -d "grant_type=password" \
-  "http://localhost:8080/auth/realms/$REALM/protocol/openid-connect/token" \
+# Requested through the PUBLIC host: the Keycloak image ships no curl, and this
+# exercises the real edge -> router -> keycloak path a browser would take.
+TOKEN=$(curl -fsS -m 30 -X POST \
+  -d "client_id=ecobuilding-e2e" --data-urlencode "username=$USER" \
+  --data-urlencode "password=$PASS" -d "grant_type=password" \
+  "$API_BASE/auth/realms/$REALM/protocol/openid-connect/token" \
   | python3 -c "import json,sys; print(json.load(sys.stdin)['access_token'])")
 echo "== token obtained"
 
