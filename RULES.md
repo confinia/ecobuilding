@@ -105,4 +105,8 @@
     the ops mailbox (alert@confinia.io over IMAP, same OVH creds as the SMTP
     sender): CI notifications, Grafana alerts and above all **bounces** land
     there. A silent mailbox is part of "it works"; an unread bounce is an
-    outage nobody sees.
+    outage nobody sees. Note: `contact@confinia.io` is a REDIRECTION (no
+    mailbox, unreadable by the session) and GitHub notifies the owner's
+    personal inbox only — so each workflow mails its own failures via
+    `deploy/ci-notify.sh` (To contact@, Cc alert@) to keep them visible on
+    both sides.
