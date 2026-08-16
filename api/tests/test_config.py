@@ -182,3 +182,19 @@ def test_1pesi_port_migration():
 def test_registration_email_delivered_e2e():
     """Register a throwaway user on sandbox -> a verification email arrives
     from alert@confinia.io. Manual/e2e only; never faked (rule 9)."""
+
+@needs_repo
+def test_payg_pricing_is_consistent_everywhere():
+    """#201: the offres page, the server formula and the Polar setup script
+    must quote the SAME numbers — a pricing mismatch is a trust bug."""
+    html = (ROOT / "frontend/site/offres.html").read_text()
+    assert "0,02 €" in html and "99 €" in html and "500 crédits" in html
+    assert 'id="sim-range"' in html                    # simulator present
+    main_py = (ROOT / "api/app/main.py").read_text()
+    assert 'FREE_CREDITS_MONTH", "500"' in main_py
+    assert 'PRICE_PER_CREDIT_EUR", "0.02"' in main_py
+    assert 'MONTHLY_CAP_EUR", "99"' in main_py
+    setup = (ROOT / "deploy/polar-setup.sh").read_text()
+    assert "UNIT_CENTS:-2}" in setup and "CAP_CENTS:-9900}" in setup
+    assert "cap_amount" in setup                       # Polar enforces the cap too
+    assert (ROOT / "deploy/polar-sim.sh").exists()

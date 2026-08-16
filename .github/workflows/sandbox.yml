@@ -35,6 +35,11 @@ jobs:
       - name: Test suite (hermetic container)
         run: cd ~/projects/ecobuilding && ./deploy/test.sh
 
+      # Rule 19: app-running tests belong to the pipeline. Drives real keyed
+      # calls through the public sandbox host and asserts the credit counter.
+      - name: Usage metering e2e (#201)
+        run: ssh -o BatchMode=yes localhost 'cd ~/projects/ecobuilding && ./deploy/e2e-usage.sh'
+
       - name: Public smoke
         run: |
           sleep 2

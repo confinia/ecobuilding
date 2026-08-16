@@ -94,3 +94,8 @@
     title to use, whether to reply to an existing thread or open a new one,
     channel etiquette, and where to log the timestamp (LAUNCH.md). The copy
     itself lives in LAUNCH.md; COMMUNICATION.md is the per-channel how.
+19. **App-running tests belong to CI** (rule set 2026-08-16): any test that
+    exercises the RUNNING application (e2e against sandbox/staging, usage or
+    billing simulations, render checks) is executed by the GitHub Actions
+    pipeline, never manually from a workstation. Manual runs are for debugging
+    only; if a check matters, it is a workflow step so every PR re-proves it.

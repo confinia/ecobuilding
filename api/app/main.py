@@ -540,12 +540,14 @@ async def _do_lookup(q, ban_id, address, lon, lat):
 
 @app.get("/v1/lookup", tags=["buildings"])
 async def lookup(
+    request: Request,
     q: str | None = Query(None, description="Free-text address"),
     ban_id: str | None = Query(None, description="BAN interop id, e.g. 80021_6370_00007"),
     lon: float | None = Query(None, description="Longitude (used for the risk report when ban_id is given)"),
     lat: float | None = Query(None, description="Latitude (idem)"),
 ):
     """Address -> geocode (BAN) -> building record (BDNB) -> risk report (Géorisques)."""
+    _meter_if_keyed(request, "lookup")
     if not q and not ban_id:
         raise HTTPException(422, "Provide q or ban_id")
 
@@ -565,10 +567,12 @@ async def lookup(
 
 @app.get("/v1/reverse", tags=["buildings"])
 async def reverse(
+    request: Request,
     lon: float = Query(description="Longitude (e.g. from GPS)"),
     lat: float = Query(description="Latitude"),
 ):
     """GPS position -> nearest address (BAN reverse) -> building record (BDNB)."""
+    _meter_if_keyed(request, "reverse")
     geo = await _cached_get_json(BAN_REVERSE_URL, {"lon": lon, "lat": lat, "type": "housenumber"}, ttl=86400)
     feats = geo.get("features", [])
     if not feats:
@@ -815,8 +819,11 @@ async def building(
     bdnb_id: str,
     lon: float | None = Query(None, description="Longitude (adds the Géorisques area report)"),
     lat: float | None = Query(None, description="Latitude (idem)"),
+    request: Request = None,   # None when called internally by the report route
 ):
     """Full record of one building by its BDNB id (e.g. from a map click)."""
+    if request is not None:
+        _meter_if_keyed(request, "buildings")
     rows = await _cached_get_json(
         BDNB_BASE_URL, {"batiment_groupe_id": f"eq.{bdnb_id}", "limit": "1"}, ttl=86400
     )
@@ -935,6 +942,7 @@ _anon_counts: dict = defaultdict(int)
 _anon_day = {"d": None}
 M_KEYS = _meter.create_counter("ecobuilding_api_keys", description="API key events", unit="1")
 M_KEYED_CALLS = _meter.create_counter("ecobuilding_keyed_calls", description="Value calls per key", unit="1")
+M_CREDITS = _meter.create_counter("ecobuilding_credits", description="Billable credits consumed", unit="1")
 
 
 def _load_keys() -> set:
@@ -949,12 +957,124 @@ def _load_keys() -> set:
     return keys
 
 
+# --- Pay-as-you-go metering (#201) -------------------------------------------
+# One CREDIT = one building record (lookup / buildings / reverse). A PDF fiche
+# costs more because it fans out to every source plus the 3D render. Monthly
+# free allowance, then a per-credit price, and a HARD monthly cap so a client
+# can never be surprised by its bill — the cap is the selling point for
+# cost-controlled companies.
+FREE_CREDITS_MONTH = int(os.environ.get("FREE_CREDITS_MONTH", "500"))
+PRICE_PER_CREDIT_EUR = float(os.environ.get("PRICE_PER_CREDIT_EUR", "0.02"))
+MONTHLY_CAP_EUR = float(os.environ.get("MONTHLY_CAP_EUR", "99"))
+CREDIT_COST = {"lookup": 1, "buildings": 1, "reverse": 1, "report": 5, "suggest": 0}
+USAGE_PATH = os.environ.get("USAGE_PATH", "/leads/usage.json")
+
+
+def _month_key() -> str:
+    return date.today().strftime("%Y-%m")
+
+
+def _usage_load() -> dict:
+    import json as _json
+    try:
+        with open(USAGE_PATH) as f:
+            return _json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def _usage_add(key_id: str, credits: int) -> int:
+    """Add credits to this month's counter; returns the new monthly total.
+    Stored on the shared /leads volume so both blue/green stacks and promotes
+    keep one truth per customer."""
+    import json as _json
+    if not key_id or credits <= 0:
+        return 0
+    store = _usage_load()
+    month = _month_key()
+    bucket = store.setdefault(month, {})
+    bucket[key_id] = bucket.get(key_id, 0) + credits
+    # Keep the current + previous month only (invoice window), tiny file.
+    for old in [m for m in store if m < month][:-1]:
+        store.pop(old, None)
+    try:
+        os.makedirs(os.path.dirname(USAGE_PATH), exist_ok=True)
+        tmp = USAGE_PATH + ".tmp"
+        with open(tmp, "w") as f:
+            _json.dump(store, f)
+        os.replace(tmp, USAGE_PATH)
+    except OSError as e:
+        log.warning("usage not persisted: %s", e)
+    return bucket[key_id]
+
+
+def _usage_cost(credits: int) -> dict:
+    """Pay-as-you-go cost of a month's credits, with the hard cap applied."""
+    billable = max(0, credits - FREE_CREDITS_MONTH)
+    raw = round(billable * PRICE_PER_CREDIT_EUR, 2)
+    capped = min(raw, MONTHLY_CAP_EUR)
+    return {
+        "credits": credits,
+        "free_credits": FREE_CREDITS_MONTH,
+        "billable_credits": billable,
+        "price_per_credit_eur": PRICE_PER_CREDIT_EUR,
+        "cost_eur": capped,
+        "monthly_cap_eur": MONTHLY_CAP_EUR,
+        "cap_reached": raw >= MONTHLY_CAP_EUR,
+        # What the client saves versus the flat 99 €/month plan.
+        "saved_vs_cap_eur": round(MONTHLY_CAP_EUR - capped, 2),
+    }
+
+
+async def _polar_ingest(key_id: str, endpoint: str, credits: int):
+    """Report usage to Polar for metered billing (#201). Fire-and-forget: a
+    billing-provider hiccup must never fail a customer's API call — the local
+    counter stays the source of truth and can be replayed."""
+    if not (POLAR_ACCESS_TOKEN and credits > 0):
+        return
+    try:
+        await _client.post(
+            f"{POLAR_BASE_URL}/v1/events/ingest",
+            headers={"Authorization": f"Bearer {POLAR_ACCESS_TOKEN}"},
+            json={"events": [{
+                "name": POLAR_METER_EVENT,
+                "external_customer_id": key_id,
+                "metadata": {"credits": credits, "endpoint": endpoint},
+            }]})
+    except Exception as e:
+        log.warning("Polar ingest failed (%s credits, %s): %s", credits, endpoint, e)
+
+
+def _meter_call(request: Request, endpoint: str, key: str):
+    """Count the credits of one keyed call and report them to Polar."""
+    credits = CREDIT_COST.get(endpoint, 1)
+    if credits <= 0:
+        return
+    key_id = hashlib.sha256(key.encode()).hexdigest()[:16]
+    _usage_add(key_id, credits)
+    M_CREDITS.add(credits, {"endpoint": endpoint})
+    try:
+        asyncio.get_running_loop().create_task(_polar_ingest(key_id, endpoint, credits))
+    except RuntimeError:  # no loop (unit tests): local counter already updated
+        pass
+
+
+def _meter_if_keyed(request: Request, endpoint: str):
+    """Meter a keyed call WITHOUT applying the anonymous cap: the browse
+    endpoints stay free for anonymous visitors (launch traffic must never be
+    429-ed); only key holders consume credits."""
+    key = request.headers.get("x-api-key") or request.query_params.get("key")
+    if key and key in _load_keys():
+        _meter_call(request, endpoint, key)
+
+
 def _quota_gate(request: Request, endpoint: str):
     """Allow if a known API key is present; else enforce the anonymous daily
     per-IP cap. Returns the caller kind for metrics."""
     key = request.headers.get("x-api-key") or request.query_params.get("key")
     if key and key in _load_keys():
         M_KEYED_CALLS.add(1, {"endpoint": endpoint, "key": hashlib.sha256(key.encode()).hexdigest()[:12]})
+        _meter_call(request, endpoint, key)
         return "key"
     today = date.today().isoformat()
     if _anon_day["d"] != today:
@@ -1021,6 +1141,30 @@ async def create_key(request: Request):
     return {"api_key": key, "note": "Passez-la en en-tête X-API-Key. Gratuite pendant la bêta."}
 
 
+@app.get("/v1/usage", tags=["account"])
+async def usage(request: Request):
+    """Current-month usage and cost for the calling API key (#201).
+
+    Pay-as-you-go: a free monthly allowance, then a per-credit price, and a
+    hard monthly cap — a client can always answer "what is my worst case?".
+    Credits: 1 per building record, 5 per PDF fiche, autocomplete is free.
+    """
+    key = request.headers.get("x-api-key") or request.query_params.get("key")
+    if not key or key not in _load_keys():
+        raise HTTPException(401, "Clé API requise (en-tête X-API-Key)")
+    key_id = hashlib.sha256(key.encode()).hexdigest()[:16]
+    month = _month_key()
+    credits = (_usage_load().get(month) or {}).get(key_id, 0)
+    return {"month": month, "credit_costs": CREDIT_COST, **_usage_cost(credits)}
+
+
+@app.get("/v1/pricing", tags=["account"])
+async def pricing(credits: int = Query(0, ge=0, le=10_000_000,
+                                       description="Simulate this monthly volume")):
+    """Public price simulator (#201): what a given monthly volume costs."""
+    return {"credit_costs": CREDIT_COST, **_usage_cost(credits)}
+
+
 # --- Pro plan via Polar (Merchant of Record) — issue #35 / sandbox #90 --------
 # Self-serve upgrade: a signed-in user starts a Polar checkout; on payment Polar
 # sends a signed webhook (Standard Webhooks) that flips the user to the pro tier.
@@ -1031,6 +1175,9 @@ POLAR_BASE_URL = os.environ.get("POLAR_BASE_URL", "https://api.polar.sh").rstrip
 POLAR_ACCESS_TOKEN = os.environ.get("POLAR_ACCESS_TOKEN", "")
 POLAR_PRODUCT_ID = os.environ.get("POLAR_PRODUCT_ID", "")
 POLAR_WEBHOOK_SECRET = os.environ.get("POLAR_WEBHOOK_SECRET", "")
+# Usage-based billing (#201): the meter/event name configured on the Polar
+# product; each keyed call ingests one event carrying its credit count.
+POLAR_METER_EVENT = os.environ.get("POLAR_METER_EVENT", "ecobuilding_credits")
 PUBLIC_BASE_URL = (os.environ.get("PUBLIC_BASE_URL")
                    or OIDC_ISSUER.split("/auth/")[0]).rstrip("/")
 PRO_PATH = os.environ.get("PRO_PATH", "/leads/pro.json")
