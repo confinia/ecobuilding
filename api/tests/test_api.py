@@ -558,3 +558,64 @@ def test_building_map_enabled_returns_datauri(monkeypatch):
     out = asyncio.run(main._building_map_png(2.3, 48.8, "bdnb-bg-X"))
     assert out.startswith("data:image/png;base64,")
     assert base64.b64decode(out.split(",", 1)[1]) == png
+
+# --- Pay-as-you-go metering (#201) -------------------------------------------
+def test_usage_cost_free_tier_then_price_then_cap():
+    from app.main import _usage_cost
+    free = _usage_cost(500)
+    assert free["cost_eur"] == 0 and free["billable_credits"] == 0
+    mid = _usage_cost(1500)                       # 1000 billable * 0.02
+    assert mid["cost_eur"] == 20.0 and mid["cap_reached"] is False
+    assert mid["saved_vs_cap_eur"] == 79.0        # the cost-control selling point
+    huge = _usage_cost(1_000_000)                 # cap must hold, always
+    assert huge["cost_eur"] == 99.0 and huge["cap_reached"] is True
+
+
+def test_usage_counter_accumulates_per_month(tmp_path, monkeypatch):
+    monkeypatch.setattr(main, "USAGE_PATH", str(tmp_path / "usage.json"))
+    assert main._usage_add("key1", 1) == 1
+    assert main._usage_add("key1", 5) == 6         # a PDF fiche costs 5
+    assert main._usage_add("key2", 2) == 2         # per-customer isolation
+    month = main._month_key()
+    assert main._usage_load()[month] == {"key1": 6, "key2": 2}
+
+
+def test_usage_endpoint_requires_key_and_reports_cost(tmp_path, monkeypatch):
+    monkeypatch.setattr(main, "USAGE_PATH", str(tmp_path / "usage.json"))
+    monkeypatch.setattr(main, "_load_keys", lambda: {"K1"})
+    assert client.get("/v1/usage").status_code == 401
+    import hashlib
+    kid = hashlib.sha256(b"K1").hexdigest()[:16]
+    main._usage_add(kid, 800)
+    body = client.get("/v1/usage", headers={"X-API-Key": "K1"}).json()
+    assert body["credits"] == 800 and body["billable_credits"] == 300
+    assert body["cost_eur"] == 6.0 and body["monthly_cap_eur"] == 99.0
+
+
+def test_pricing_simulator_matches_frontend_formula():
+    """The public simulator and the offres.html script must agree (#201)."""
+    body = client.get("/v1/pricing", params={"credits": 5000}).json()
+    assert body["cost_eur"] == round(min((5000 - 500) * 0.02, 99), 2)
+    assert body["credit_costs"]["report"] == 5
+
+
+def test_keyed_call_consumes_credits(tmp_path, monkeypatch):
+    monkeypatch.setattr(main, "USAGE_PATH", str(tmp_path / "usage.json"))
+    monkeypatch.setattr(main, "_load_keys", lambda: {"K1"})
+    async def fake(url, params, ttl):
+        if "api-adresse" in url:
+            return {"features": [{"properties": {"id": "1", "label": "X"},
+                                  "geometry": {"coordinates": [2.0, 48.0]}}]}
+        return []
+    async def none2(*a, **k): return None
+    monkeypatch.setattr(main, "_cached_get_json", fake)
+    for h in ("_area_risks", "_groundwater", "_solar_pv", "_water_network",
+              "_local_taxes", "_nearby_schools", "_official_dpe"):
+        monkeypatch.setattr(main, h, none2)
+    client.get("/v1/lookup", params={"q": "x"}, headers={"X-API-Key": "K1"})
+    import hashlib
+    kid = hashlib.sha256(b"K1").hexdigest()[:16]
+    assert (main._usage_load().get(main._month_key()) or {}).get(kid) == 1
+    # Anonymous calls stay free: no credit recorded without a key.
+    client.get("/v1/lookup", params={"q": "x"})
+    assert (main._usage_load().get(main._month_key()) or {}).get(kid) == 1
