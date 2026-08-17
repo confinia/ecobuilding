@@ -58,7 +58,11 @@ PRO_WAIT_MS="${PRO_WAIT_MS:-65000}"
 # chaque rendu (_R_imklubsnr5vlb_-form-item) : ne jamais s'y accrocher.
 SEL_CO_EMAIL="${SEL_CO_EMAIL:-css=input[name=\"customer_email\"]}"
 SEL_CO_NAME="${SEL_CO_NAME:-css=input[name=\"customer_name\"]}"
-SEL_CO_SUBMIT="${SEL_CO_SUBMIT:-css=button[type=\"submit\"]}"
+# Le bouton de paiement est visé par son TEXTE : la page porte plusieurs
+# boutons submit/button (code promo, édition d'e-mail) et le premier
+# button[type=submit] n'est pas « Subscribe now » — prouvé au WebDriver nu :
+# même page, clic par texte → redirection ?pro=success en 9 s.
+SEL_CO_SUBMIT="${SEL_CO_SUBMIT:-xpath=//button[contains(.,\"Subscribe\") or contains(.,\"abonner\") or contains(.,\"Payer\")]}"
 SEL_STRIPE_FRAME="${SEL_STRIPE_FRAME:-css=iframe[title=\"Secure payment input frame\"]}"
 SEL_CARD_NUMBER="${SEL_CARD_NUMBER:-css=#payment-numberInput}"
 SEL_CARD_EXPIRY="${SEL_CARD_EXPIRY:-css=#payment-expiryInput}"
