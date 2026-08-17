@@ -82,3 +82,10 @@ correction de prix est un changement de config, pas un déploiement de code.
   changement de tarif ne casse pas le test.
 - `deploy/e2e-signup.sh` (CI) : les paliers gratuits sont réellement appliqués
   et l'épuisement propose l'étape suivante.
+- `e2e/run.sh` (navigateur réel, Selenium IDE) : le parcours complet
+  inscription → fiche → checkout Polar → passage Pro, PLUS un rapport lu depuis
+  `sandbox-api.polar.sh` qui échoue si la grille de Polar (socle, prix
+  unitaire, plafond) contredit celle que l'API annonce. C'est ce rapport qui a
+  détecté que le produit Polar sandbox était resté en v2 (socle 9 € +
+  0,01 €/crédit) après le passage en v3 — corrigé le 2026-08-17 (produit
+  `93fbd58a…`, l'ancien archivé).

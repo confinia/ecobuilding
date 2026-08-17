@@ -21,9 +21,19 @@ fetch(`${API}/config`).then((r) => r.ok && r.json()).then((c) => {
   document.body.classList.add("has-paybanner");
 }).catch(() => {});
 
+// --- Pricing numbers, read from the API and never hardcoded here ------------
+// Every stale number in the UI so far (30 fiches, 9 €/mois) was a copy of a
+// server constant that later changed. The API is the only source of truth.
+let _pricing = null;
+async function ecoPricing() {
+  if (_pricing) return _pricing;
+  try { _pricing = await (await fetch(`${API}/pricing`)).json(); } catch { _pricing = {}; }
+  return _pricing;
+}
+
 // --- Auth (Keycloak, shared /auth) — progressive: UI hides if IdP is down ---
-// Keycloak 26 ships the JS adapter as an ESM module (no server-hosted
-// /auth/js/keycloak.js), so we import it dynamically from a pinned CDN.
+// Keycloak 26 ships the JS adapter as an ESM module; it is vendored
+// same-origin under assets/keycloak/ (#215 — no CDN in the auth path).
 (async function initAuth() {
   // The sign-in / sign-up buttons are the ONLY way a visitor becomes a user,
   // so they are shown FIRST and never depend on anything loading. Previously
@@ -32,15 +42,28 @@ fetch(`${API}/config`).then((r) => r.ok && r.json()).then((c) => {
   const realm = window.ECO_REALM || "confinia";
   const clientId = window.ECO_CLIENT || "ecobuilding-web";
   const show = (id, on) => { const el = document.getElementById(id); if (el) el.hidden = !on; };
-  const authUrl = (action) =>
-    `/auth/realms/${encodeURIComponent(realm)}/protocol/openid-connect/${action}` +
-    `?client_id=${encodeURIComponent(clientId)}&response_type=code&scope=openid` +
-    `&redirect_uri=${encodeURIComponent(location.origin + "/?welcome=1")}`;
-  // Fallback wiring: plain Keycloak URLs work with no JS adapter at all.
+  // Fallback wiring for a dead adapter. The Keycloak client ENFORCES PKCE, so
+  // a bare authorization URL is bounced with « Missing parameter:
+  // code_challenge_method » — the #215 fallback silently died the day PKCE
+  // was enabled. The challenge is hand-rolled here (WebCrypto): the Keycloak
+  // pages then open, the account really gets created; only the silent token
+  // exchange needs the adapter, so the user signs in on their next visit.
+  const authUrl = async (action) => {
+    const b64u = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)))
+      .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    const verifier = b64u(crypto.getRandomValues(new Uint8Array(40)));
+    const challenge = b64u(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier)));
+    return `/auth/realms/${encodeURIComponent(realm)}/protocol/openid-connect/${action}` +
+      `?client_id=${encodeURIComponent(clientId)}&response_type=code&scope=openid` +
+      `&code_challenge=${challenge}&code_challenge_method=S256` +
+      `&redirect_uri=${encodeURIComponent(location.origin + "/?welcome=1")}`;
+  };
   const signinEl = document.getElementById("signin");
   const signupEl = document.getElementById("signup");
-  if (signinEl) signinEl.href = authUrl("auth");
-  if (signupEl) signupEl.href = authUrl("registrations");
+  try {
+    if (signinEl) signinEl.href = await authUrl("auth");
+    if (signupEl) signupEl.href = await authUrl("registrations");
+  } catch {}    // pas de WebCrypto : l'adaptateur ci-dessous reste le chemin
   show("signin", true); show("signup", true);
 
   let Keycloak;
@@ -70,11 +93,14 @@ fetch(`${API}/config`).then((r) => r.ok && r.json()).then((c) => {
         refreshQuota();
         if (new URLSearchParams(location.search).get("welcome") === "1") {
           track("signup_completed");
-          showPanel(`<h2>Bienvenue 🎉</h2>
-            <p>Votre compte est actif : <strong>30 fiches PDF par mois</strong> (au lieu de 10),
-            une clé API et le suivi de votre consommation.</p>
-            <p class="hint">Cliquez un bâtiment sur la carte pour générer une fiche.
-            Un problème ? <a href="mailto:contact@confinia.io?subject=EcoBuilding%20-%20aide">contact@confinia.io</a></p>`);
+          ecoPricing().then((p) => {
+            const free = p.free_tiers?.free_account_reports_month;
+            showPanel(`<h2>Bienvenue 🎉</h2>
+              <p>Votre compte est actif : <strong>${free ?? "vos"} fiches PDF par mois</strong>,
+              une clé API et le suivi de votre consommation.</p>
+              <p class="hint">Cliquez un bâtiment sur la carte pour générer une fiche.
+              Un problème ? <a href="mailto:contact@confinia.io?subject=EcoBuilding%20-%20aide">contact@confinia.io</a></p>`);
+          });
           history.replaceState(null, "", location.pathname);
         }
       }
@@ -621,13 +647,15 @@ async function downloadReport(btn) {
     if (r.status === 429) {
       // Self-service: the app itself says what to do next (#212).
       const signedIn = !!window.ecoToken;
+      const p = await ecoPricing();
+      const anon = p.free_tiers?.anonymous_reports_month, free = p.free_tiers?.free_account_reports_month;
       showPanel(`<h2>Limite atteinte</h2>
         <p>${signedIn
-          ? "Votre compte gratuit couvre 30 fiches par mois."
-          : "Sans compte, 10 fiches par mois sont offertes."}</p>
+          ? `Votre compte gratuit couvre ${free ?? "vos"} fiches par mois.`
+          : `Sans compte, ${anon ?? "quelques"} fiches par mois sont offertes.`}</p>
         <p>${signedIn
-          ? '<a class="report-link" href="/offres.html">Voir l\'offre Pro (9 €/mois)</a>'
-          : '<a class="report-link" href="/?signup=1">Créer un compte gratuit (30 fiches/mois)</a>'}</p>
+          ? `<a class="report-link" href="/offres.html">Passer Pro : ${p.price_per_fiche_eur ?? "0,49"} € la fiche au-delà, plafonné à ${p.monthly_cap_eur ?? 99} €/mois</a>`
+          : `<a class="report-link" href="/?signup=1">Créer un compte gratuit (${free ?? "plus de"} fiches/mois)</a>`}</p>
         <p class="hint">Une question ? <a href="mailto:contact@confinia.io?subject=EcoBuilding%20-%20aide">contact@confinia.io</a></p>`);
       if (tab) tab.close();
       return;
