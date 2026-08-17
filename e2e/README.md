@@ -10,14 +10,22 @@ Les deux moitiés sont nécessaires, et c'est tout l'intérêt du montage :
 
 - le navigateur prouve ce que **voit l'utilisateur** — mais une app peut
   afficher « Pro » sans qu'un centime ait été encaissé ;
-- Polar prouve ce qui est **réellement facturé** — mais un montant correct chez
-  Polar ne dit rien de l'accessibilité du parcours.
+- la plateforme de paiement (Creem) prouve ce qui est **réellement facturé** —
+  mais un montant correct chez elle ne dit rien de l'accessibilité du parcours.
 
 ## Lancer
 
 ```sh
 cp e2e/.env.example e2e/.env      # puis compléter (voir les commentaires)
 ./e2e/run.sh
+```
+
+Sur la **VM**, ne pas mettre l'`.env` dans le dépôt : chaque déploiement CI
+resynchronise l'arbre et **efface les fichiers non suivis** (vécu deux fois).
+Le poser hors du dépôt et le passer explicitement :
+
+```sh
+ENVFILE=~/.config/ecobuilding-e2e.env ./e2e/run.sh
 ```
 
 Aucune installation : le navigateur et le lanceur tournent en conteneurs
@@ -54,14 +62,17 @@ Pour supprimer même cette simulation, il faudrait router le SMTP du realm vers
 une boîte de test lisible par API (Mailpit) — au prix de casser le test manuel
 de courriel en sandbox. Le compromis actuel est délibéré.
 
-## Fragilité assumée : le DOM de Polar
+## Fragilité assumée : le DOM du checkout Creem
 
-Les étapes 04 traversent une page **que nous ne contrôlons pas** (checkout
-hébergé Polar + iframe Stripe). Deux précautions :
+Le parcours payant traverse une page **que nous ne contrôlons pas** (checkout
+hébergé Creem, en deux étapes : coordonnées puis carte via un SDK Yuno en
+iframe `card_form`). Précautions :
 
-- aucun `id` de cette page n'est ciblé — React les régénère à chaque rendu
-  (`_R_imklubsnr5vlb_-form-item`) ; seuls `name` et `title` sont stables ;
-- tous ces sélecteurs vivent dans `.env`, donc une dérive du DOM Polar se
+- sélecteurs par `name`/`title`/placeholder uniquement — jamais d'id générés ;
+- le champ « Cardholder Name » est **ajouté dynamiquement** au document
+  principal une fois la carte reconnue : le scénario l'attend explicitement
+  (sans cette attente : « This field is required » et paiement muet) ;
+- tous ces sélecteurs vivent dans `.env`, donc une dérive du DOM Creem se
   corrige en une ligne, sans toucher au scénario.
 
 Si l'étape 04 échoue, regarder d'abord la capture d'écran dans

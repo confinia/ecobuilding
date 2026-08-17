@@ -599,38 +599,54 @@
         },
         {
           "id": "c0402",
-          "comment": "Checkout hébergé par Polar (DOM externe). Les id React de cette page sont régénérés à chaque rendu — on ne cible que des attributs name/title stables.",
+          "comment": "Étape 1 du checkout Creem (coordonnées). L'e-mail est prérempli par customer.email ; le pays par géo-IP. Il ne reste que le nom.",
           "command": "waitForElementPresent",
-          "target": "${SEL_CO_EMAIL}",
+          "target": "${SEL_CO_NAME}",
           "targets": [],
           "value": "45000"
+        },
+        {
+          "id": "c0403",
+          "comment": "",
+          "command": "type",
+          "target": "${SEL_CO_NAME}",
+          "targets": [],
+          "value": "${E2E_CARD_NAME}"
         },
         {
           "id": "c0404",
-          "comment": "Les champs carte vivent dans une iframe Stripe injectée après hydratation.",
-          "command": "waitForElementPresent",
-          "target": "${SEL_STRIPE_FRAME}",
-          "targets": [],
-          "value": "45000"
-        },
-        {
-          "id": "c0405",
-          "comment": "",
-          "command": "selectFrame",
-          "target": "${SEL_STRIPE_FRAME}",
+          "comment": "« Proceed to payment » / « Continuer vers le paiement » — seul submit visible de l'étape 1.",
+          "command": "click",
+          "target": "${SEL_CO_SUBMIT}",
           "targets": [],
           "value": ""
         },
         {
+          "id": "c0405",
+          "comment": "Étape 2 : l'iframe carte est un SDK Yuno (card-form.html), pas Stripe.",
+          "command": "waitForElementPresent",
+          "target": "${SEL_CARD_FRAME}",
+          "targets": [],
+          "value": "45000"
+        },
+        {
           "id": "c0406",
-          "comment": "sendKeys, PAS type : type clique puis vide le champ avant de saisir, et sur les champs Stripe ce clic échoue par intermittence (hit-test dans l'iframe en headless) puis la re-saisie se perd dans le re-rendu React. Vérifié au WebDriver nu : la saisie directe sans clic tient.",
+          "comment": "",
+          "command": "selectFrame",
+          "target": "${SEL_CARD_FRAME}",
+          "targets": [],
+          "value": ""
+        },
+        {
+          "id": "c0407",
+          "comment": "sendKeys sans clic préalable : leçon Polar — le clic dans l'iframe échoue par intermittence en headless et la re-saisie se perd.",
           "command": "sendKeys",
           "target": "${SEL_CARD_NUMBER}",
           "targets": [],
           "value": "${E2E_CARD_NUMBER}"
         },
         {
-          "id": "c0407",
+          "id": "c0408",
           "comment": "",
           "command": "sendKeys",
           "target": "${SEL_CARD_EXPIRY}",
@@ -638,7 +654,7 @@
           "value": "${E2E_CARD_EXPIRY}"
         },
         {
-          "id": "c0408",
+          "id": "c0409",
           "comment": "",
           "command": "sendKeys",
           "target": "${SEL_CARD_CVC}",
@@ -646,15 +662,15 @@
           "value": "${E2E_CARD_CVC}"
         },
         {
-          "id": "c0408b",
-          "comment": "Preuve que les trois champs ont bien reçu la carte avant de soumettre — sinon le checkout reste silencieusement sur place et on ne le voit qu'au timeout.",
+          "id": "c0409b",
+          "comment": "La saisie a tenu (le SDK reformate avec des espaces).",
           "command": "assertValue",
-          "target": "css=#payment-numberInput",
+          "target": "${SEL_CARD_NUMBER}",
           "targets": [],
-          "value": "4242 4242 4242 4242"
+          "value": "4111 1111 1111 1111"
         },
         {
-          "id": "c0409",
+          "id": "c0410",
           "comment": "",
           "command": "selectFrame",
           "target": "relative=top",
@@ -662,49 +678,52 @@
           "value": ""
         },
         {
-          "id": "c0403",
-          "comment": "Rempli APRÈS que l'iframe Stripe est en place : ce checkout React re-rend le formulaire quand l'élément de paiement arrive, et une valeur saisie avant ce re-rendu est effacée (vécu : « This field is required » après soumission alors que le champ avait été rempli).",
-          "command": "type",
-          "target": "${SEL_CO_NAME}",
-          "targets": [],
-          "value": "${E2E_CARD_NAME}"
-        },
-        {
-          "id": "c0403b",
-          "comment": "La saisie a survécu au re-rendu.",
-          "command": "assertValue",
-          "target": "${SEL_CO_NAME}",
-          "targets": [],
-          "value": "${E2E_CARD_NAME}"
-        },
-        {
-          "id": "c0410",
-          "comment": "",
-          "command": "click",
-          "target": "${SEL_CO_SUBMIT}",
-          "targets": [],
-          "value": ""
-        },
-        {
           "id": "c0411",
-          "comment": "success_url = ${APP_URL}/?pro=success — le retour prouve que Polar a accepté le paiement.",
-          "command": "waitForElementVisible",
-          "target": "id=userchip",
-          "targets": [
-            [
-              "id=userchip",
-              "id"
-            ]
-          ],
-          "value": "120000"
+          "comment": "Le champ « Cardholder Name » n'existe PAS avant que la carte soit reconnue : il est ajouté dynamiquement au document principal. Sans cette attente, il est invisible au moment de la saisie et le paiement échoue sur « This field is required ».",
+          "command": "waitForElementPresent",
+          "target": "${SEL_CO_HOLDER}",
+          "targets": [],
+          "value": "20000"
         },
         {
           "id": "c0412",
           "comment": "",
-          "command": "assertLocation",
-          "target": "${APP_URL}/?pro=success",
+          "command": "type",
+          "target": "${SEL_CO_HOLDER}",
+          "targets": [],
+          "value": "${E2E_CARD_NAME}"
+        },
+        {
+          "id": "c0413",
+          "comment": "Bouton visé par son TEXTE (« Pay €9.00 » / « Payer ») — leçon Polar : le premier button[type=submit] de la page n'est pas forcément lui.",
+          "command": "click",
+          "target": "${SEL_PAY_BUTTON}",
           "targets": [],
           "value": ""
+        },
+        {
+          "id": "c0414",
+          "comment": "success_url = ${APP_URL}/?pro=success — le retour prouve que Creem a accepté le paiement (vérifié : order_id dans l'URL de retour).",
+          "command": "waitForElementVisible",
+          "target": "id=userchip",
+          "targets": [],
+          "value": "120000"
+        },
+        {
+          "id": "c0415",
+          "comment": "",
+          "command": "executeScript",
+          "target": "return location.search.includes('pro=success') ? 'oui' : 'non:' + location.href",
+          "targets": [],
+          "value": "proParam"
+        },
+        {
+          "id": "c0415b",
+          "comment": "",
+          "command": "assert",
+          "target": "proParam",
+          "targets": [],
+          "value": "oui"
         },
         {
           "id": "c0500",

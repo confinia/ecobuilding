@@ -53,24 +53,29 @@ E2E_ADDRESS="${E2E_ADDRESS:-7 rue Pierre Corneille, Amiens}"
 # Carte de test selon le fournisseur : Creem publie 4111…, Stripe/Polar 4242….
 if [ -n "${CREEM_API_KEY:-}" ]; then DEFAULT_CARD=4111111111111111; else DEFAULT_CARD=4242424242424242; fi
 E2E_CARD_NUMBER="${E2E_CARD_NUMBER:-$DEFAULT_CARD}"
+E2E_CARD_EXPIRY="${E2E_CARD_EXPIRY:-12/34}"
+E2E_CARD_CVC="${E2E_CARD_CVC:-123}"
+E2E_CARD_NAME="${E2E_CARD_NAME:-CI Selenium}"
 PDF_WAIT_MS="${PDF_WAIT_MS:-25000}"
 PRO_WAIT_MS="${PRO_WAIT_MS:-65000}"
 
-# Sélecteurs du checkout Polar : DOM externe, susceptible de bouger sans
-# préavis. Ils sont en .env pour qu'une dérive se corrige en une ligne, sans
-# toucher au projet Selenium. Les id React de cette page sont régénérés à
-# chaque rendu (_R_imklubsnr5vlb_-form-item) : ne jamais s'y accrocher.
-SEL_CO_EMAIL="${SEL_CO_EMAIL:-css=input[name=\"customer_email\"]}"
-SEL_CO_NAME="${SEL_CO_NAME:-css=input[name=\"customer_name\"]}"
-# Le bouton de paiement est visé par son TEXTE : la page porte plusieurs
-# boutons submit/button (code promo, édition d'e-mail) et le premier
-# button[type=submit] n'est pas « Subscribe now » — prouvé au WebDriver nu :
-# même page, clic par texte → redirection ?pro=success en 9 s.
-SEL_CO_SUBMIT="${SEL_CO_SUBMIT:-xpath=//button[contains(.,\"Subscribe\") or contains(.,\"abonner\") or contains(.,\"Payer\")]}"
-SEL_STRIPE_FRAME="${SEL_STRIPE_FRAME:-css=iframe[title=\"Secure payment input frame\"]}"
-SEL_CARD_NUMBER="${SEL_CARD_NUMBER:-css=#payment-numberInput}"
-SEL_CARD_EXPIRY="${SEL_CARD_EXPIRY:-css=#payment-expiryInput}"
-SEL_CARD_CVC="${SEL_CARD_CVC:-css=#payment-cvcInput}"
+# Sélecteurs du checkout CREEM (DOM externe, susceptible de bouger sans
+# préavis — en .env pour qu'une dérive se corrige en une ligne). Cartographiés
+# au WebDriver nu le 2026-08-18, paiement réel réussi jusqu'à ?pro=success :
+#   étape 1 (coordonnées) : e-mail prérempli par customer.email, nom #name,
+#     pays prérempli géo-IP, un seul submit visible ;
+#   étape 2 (carte) : iframe SDK Yuno title=card_form, inputs NOMMÉS sans
+#     placeholder ; le champ Cardholder est ajouté DYNAMIQUEMENT au document
+#     principal après reconnaissance de la carte ; bouton « Pay €… » visé par
+#     son texte.
+SEL_CO_NAME="${SEL_CO_NAME:-css=#name}"
+SEL_CO_SUBMIT="${SEL_CO_SUBMIT:-css=button[type=\"submit\"]}"
+SEL_CARD_FRAME="${SEL_CARD_FRAME:-css=iframe[title=\"card_form\"]}"
+SEL_CARD_NUMBER="${SEL_CARD_NUMBER:-css=input[name=\"number\"]}"
+SEL_CARD_EXPIRY="${SEL_CARD_EXPIRY:-css=input[name=\"expirationDate\"]}"
+SEL_CARD_CVC="${SEL_CARD_CVC:-css=input[name=\"cvv\"]}"
+SEL_CO_HOLDER="${SEL_CO_HOLDER:-css=input[placeholder*=\"Cardholder\"]}"
+SEL_PAY_BUTTON="${SEL_PAY_BUTTON:-xpath=//button[contains(.,\"Pay\") or contains(.,\"Payer\")]}"
 
 SELENIUM_IMAGE="${SELENIUM_IMAGE:-docker.io/selenium/standalone-chromium:4.47.0}"
 NODE_IMAGE="${NODE_IMAGE:-docker.io/library/node:20-bookworm-slim}"
@@ -91,7 +96,8 @@ echo "== compte de test : $E2E_EMAIL"
 # (${kcScreen}, ${accountPanel}, posées par storeText) doivent survivre intactes.
 export APP_URL API_URL KC_REALM E2E_EMAIL E2E_EMAIL_NOORG E2E_PASSWORD E2E_ORG \
        E2E_FIRSTNAME E2E_LASTNAME E2E_ADDRESS PDF_WAIT_MS PRO_WAIT_MS \
-       SEL_CO_EMAIL SEL_CO_NAME SEL_CO_SUBMIT SEL_STRIPE_FRAME \
+       E2E_CARD_NUMBER E2E_CARD_EXPIRY E2E_CARD_CVC E2E_CARD_NAME \
+       SEL_CO_NAME SEL_CO_SUBMIT SEL_CARD_FRAME SEL_CO_HOLDER SEL_PAY_BUTTON \
        SEL_CARD_NUMBER SEL_CARD_EXPIRY SEL_CARD_CVC
 python3 - "$OUT" <<'PY'
 import json, os, re, sys
@@ -99,7 +105,7 @@ src = "e2e/ecobuilding.side"
 keys = ["APP_URL","API_URL","KC_REALM","E2E_EMAIL","E2E_EMAIL_NOORG","E2E_PASSWORD",
         "E2E_ORG","E2E_FIRSTNAME","E2E_LASTNAME","E2E_ADDRESS","PDF_WAIT_MS","PRO_WAIT_MS",
         "E2E_CARD_NUMBER","E2E_CARD_EXPIRY","E2E_CARD_CVC","E2E_CARD_NAME",
-        "SEL_CO_EMAIL","SEL_CO_NAME","SEL_CO_SUBMIT","SEL_STRIPE_FRAME",
+        "SEL_CO_NAME","SEL_CO_SUBMIT","SEL_CARD_FRAME","SEL_CO_HOLDER","SEL_PAY_BUTTON",
         "SEL_CARD_NUMBER","SEL_CARD_EXPIRY","SEL_CARD_CVC"]
 missing = [k for k in keys if not os.environ.get(k)]
 if missing:
