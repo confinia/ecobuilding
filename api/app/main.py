@@ -1574,9 +1574,12 @@ async def pro_checkout(request: Request,
         try:
             resp = await _client.post(
                 f"{CREEM_API_BASE}/checkouts",
+                # Creem refuse un customer_email à plat (« property
+                # customer_email should not exist ») : l'e-mail voyage dans
+                # l'objet customer — vérifié contre test-api le 2026-08-17.
                 json={"product_id": product,
                       "success_url": f"{PUBLIC_BASE_URL}/?pro=success",
-                      "customer_email": email,
+                      "customer": {"email": email},
                       "metadata": {"kc_sub": claims.get("sub"), "tier": tier}},
                 headers={"x-api-key": CREEM_API_KEY})
             resp.raise_for_status()

@@ -15,3 +15,9 @@ e2e/.env
 e2e/.run/
 e2e/results/
 e2e/.npm-cache/
+
+# Clé Creem test dans la config MCP locale — jamais suivie.
+.mcp.json
+
+# HAR de session dashboard (contient un jeton de session actif) — jamais suivi.
+www.creem.io.har
