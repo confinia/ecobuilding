@@ -38,7 +38,7 @@ if curl -fsS "${AUTH[@]}" "$BASE/v1/meters/?limit=50" | grep -q "\"name\":\"EcoB
   exit 0
 fi
 
-echo "== create meter (sum of metadata.credits on '$EVENT' events)"
+echo "== create meter (sum of metadata.fiches on '$EVENT' events)"
 METER=$(curl -fsS "${AUTH[@]}" -X POST "$BASE/v1/meters/" -d @- <<JSON | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])"
 {
   "name": "EcoBuilding fiches PDF",

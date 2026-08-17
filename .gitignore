@@ -10,3 +10,8 @@ sandbox_stack/secrets.env
 # Generated on the VM from Caddyfile.$ACTIVE by stack-up/promote — never track.
 caddy_server/Caddyfile
 **/secrets.env
+# e2e : identifiants et résultats de tests locaux, jamais suivis.
+e2e/.env
+e2e/.run/
+e2e/results/
+e2e/.npm-cache/

@@ -41,9 +41,11 @@ import json, sys
 u = json.load(sys.stdin)
 expected = $BEFORE + $CALLS * $C_BUILDING + $C_REPORT
 assert u['credits'] == expected, f\"credits: expected {expected}, got {u['credits']}\"
-assert u['monthly_cap_eur'] == 99.0, u
-assert u['cost_eur'] <= u['monthly_cap_eur']
-print(f\"usage e2e OK: {u['credits']} credits, {u['cost_eur']} EUR (cap {u['monthly_cap_eur']})\")
+# v4 : plus de plafond metered ; un compte GRATUIT ne doit jamais rien devoir,
+# et la grille des paliers arrive avec la réponse.
+assert u['plan'] == 'free' and u['cost_eur'] == 0.0, u
+assert 'tiers' in u and u['tiers']['l']['eur'] == max(t['eur'] for t in u['tiers'].values()), u
+print(f\"usage e2e OK: {u['credits']} credits, plan {u['plan']}, 0 EUR\")
 "
 
 # Cost model must be identical on the public simulator (page <-> server), and
@@ -51,11 +53,12 @@ print(f\"usage e2e OK: {u['credits']} credits, {u['cost_eur']} EUR (cap {u['mont
 curl -fsS -m 20 "$API_BASE/api/v1/pricing?credits=$((100 * C_REPORT))" | python3 -c "
 import json, sys
 p = json.load(sys.stdin)
-fiches = 100
-extra = max(0, fiches - p['included_fiches'])
-expected = round(min(extra * p['price_per_fiche_eur'], p['monthly_cap_eur']), 2)
-assert p['cost_eur'] == expected, (p['cost_eur'], expected)
-assert p['cost_eur'] <= p['monthly_cap_eur']
-print(f\"pricing simulator OK: {fiches} fiches -> {p['cost_eur']} EUR \"
-      f\"({extra} facturees x {p['price_per_fiche_eur']}, cap {p['monthly_cap_eur']})\")
+# v4 : le simulateur recommande le plus petit palier couvrant le volume,
+# entierement derive des champs de l'API (un repricing ne casse pas la CI).
+tier = p['recommended_tier']
+q = p['tiers'][tier]['fiches_month']
+assert q is None or p['fiches'] <= q, p
+assert p['cost_eur'] == (0.0 if p['fiches'] <= p['free_tiers']['free_account_reports_month']
+                         else float(p['tiers'][tier]['eur'])), p
+print(f\"pricing simulator OK: {p['fiches']} fiches -> palier {tier} = {p['cost_eur']} EUR\")
 "

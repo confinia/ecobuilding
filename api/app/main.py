@@ -11,6 +11,7 @@ Data sources (all open, keyless):
 """
 
 import asyncio
+import json
 import logging
 import math
 import os
@@ -1006,11 +1007,18 @@ def _load_keys() -> set:
 #   sans compte  : 3 fiches/mois
 #   compte gratuit: 10 fiches/mois
 #   pro          : 10 fiches offertes, puis 0,49 EUR la fiche, plafond 99 EUR
-PRICE_PER_FICHE_EUR = float(os.environ.get("PRICE_PER_FICHE_EUR", "0.49"))
-MONTHLY_CAP_EUR = float(os.environ.get("MONTHLY_CAP_EUR", "99"))
 ANON_MONTHLY_REPORTS = int(os.environ.get("ANON_MONTHLY_REPORTS", "3"))
 FREE_ACCOUNT_REPORTS = int(os.environ.get("FREE_ACCOUNT_REPORTS", "10"))
-INCLUDED_FICHES = int(os.environ.get("INCLUDED_FICHES", "10"))
+# Pricing v4 (PRICING.md) — subscription tiers. The v3 metered grid
+# (0,49 €/fiche, plafond 99 €) died with the move to Creem as merchant of
+# record: Creem bills fixed recurring amounts only, no metering. Decision
+# 2026-08-17: paliers plutôt que packs (subscription-first, cf BUSINESS.md).
+# JSON env override so a price fix stays a config change, not a deploy.
+PRO_TIERS: dict = json.loads(os.environ.get("PRO_TIERS_JSON", "") or """{
+  "s": {"eur": 9,  "fiches": 30,   "label": "Pro S"},
+  "m": {"eur": 29, "fiches": 100,  "label": "Pro M"},
+  "l": {"eur": 99, "fiches": null, "label": "Pro L"}
+}""")
 # Self-service means: never leave a user stuck without a way out (#212).
 SUPPORT_EMAIL = os.environ.get("SUPPORT_EMAIL", "contact@confinia.io")
 # One unit = one fiche. Everything else is free, so the customer's invoice
@@ -1057,23 +1065,27 @@ def _usage_add(key_id: str, credits: int) -> int:
     return bucket[key_id]
 
 
+def _tier_for(fiches: int) -> str:
+    """Smallest tier whose allowance covers this monthly volume (v4)."""
+    for k in ("s", "m", "l"):
+        q = PRO_TIERS[k]["fiches"]
+        if q is None or fiches <= q:
+            return k
+    return "l"
+
+
 def _usage_cost(fiches: int) -> dict:
-    """Monthly cost in FICHES: the first INCLUDED_FICHES are free, the rest
-    cost PRICE_PER_FICHE_EUR each, and the total never exceeds the cap."""
-    billable = max(0, fiches - INCLUDED_FICHES)
-    raw = round(billable * PRICE_PER_FICHE_EUR, 2)
-    capped = min(raw, MONTHLY_CAP_EUR)
+    """Pricing v4: fixed tiers, no metering. The 'cost' of a volume is the
+    price of the smallest tier that covers it — that is what the simulator
+    and /v1/pricing answer."""
+    tier = _tier_for(fiches)
     return {
         "fiches": fiches,
         "credits": fiches,                  # kept: same number, one unit
-        "included_fiches": INCLUDED_FICHES,
-        "billable_fiches": billable,
-        "billable_credits": billable,
-        "price_per_fiche_eur": PRICE_PER_FICHE_EUR,
-        "cost_eur": capped,
-        "monthly_cap_eur": MONTHLY_CAP_EUR,
-        "cap_reached": raw >= MONTHLY_CAP_EUR,
-        "saved_vs_cap_eur": round(MONTHLY_CAP_EUR - capped, 2),
+        "recommended_tier": tier,
+        "cost_eur": 0.0 if fiches <= FREE_ACCOUNT_REPORTS else float(PRO_TIERS[tier]["eur"]),
+        "tiers": {k: {"eur": v["eur"], "fiches_month": v["fiches"], "label": v["label"]}
+                  for k, v in PRO_TIERS.items()},
         "free_tiers": {"anonymous_reports_month": ANON_MONTHLY_REPORTS,
                        "free_account_reports_month": FREE_ACCOUNT_REPORTS},
     }
@@ -1147,8 +1159,8 @@ def _quota_gate(request: Request, endpoint: str):
                 raise HTTPException(
                     429,
                     f"Compte gratuit : {FREE_ACCOUNT_REPORTS} fiches par mois atteintes. "
-                    f"L'offre Pro (paiement à l'usage : {INCLUDED_FICHES} fiches offertes, "
-                    f"puis {PRICE_PER_FICHE_EUR:.2f} € la fiche, plafond {MONTHLY_CAP_EUR:.0f} €/mois) : "
+                    f"Les offres Pro démarrent à {PRO_TIERS['s']['eur']:.0f} €/mois "
+                    f"({PRO_TIERS['s']['fiches']} fiches) : "
                     f"https://ecobuilding.confinia.io/offres.html — une question ? {SUPPORT_EMAIL}")
         _meter_call(request, endpoint, key)
         return "key"
@@ -1157,14 +1169,30 @@ def _quota_gate(request: Request, endpoint: str):
         # Signed-in browser user: same ladder as a key holder, no key needed.
         uid = "kc:" + hashlib.sha256(sub.encode()).hexdigest()[:14]
         if _pro_active(sub):
+            tier = _pro_tier(sub) or "s"
+            quota = PRO_TIERS[tier]["fiches"]        # None = illimité (fair-use)
             if endpoint == "report":
+                if quota is not None:
+                    used = (_usage_load().get(_month_key()) or {}).get(uid, 0) \
+                           // CREDIT_COST["report"]
+                    if used >= quota:
+                        nxt = {"s": "m", "m": "l"}.get(tier)
+                        raise HTTPException(
+                            429,
+                            f"{PRO_TIERS[tier]['label']} : {quota} fiches par mois atteintes. "
+                            + (f"Passez à {PRO_TIERS[nxt]['label']} "
+                               f"({PRO_TIERS[nxt]['eur']:.0f} €/mois) : "
+                               "https://ecobuilding.confinia.io/offres.html"
+                               if nxt else "")
+                            + f" — une question ? {SUPPORT_EMAIL}")
                 _usage_add(uid, CREDIT_COST["report"])
                 M_CREDITS.add(CREDIT_COST["report"], {"endpoint": endpoint, "plan": "pro"})
-                try:
-                    asyncio.get_running_loop().create_task(
-                        _polar_ingest(uid, endpoint, CREDIT_COST["report"]))
-                except RuntimeError:
-                    pass
+                if PAYMENT_PROVIDER == "polar":
+                    try:
+                        asyncio.get_running_loop().create_task(
+                            _polar_ingest(uid, endpoint, CREDIT_COST["report"]))
+                    except RuntimeError:
+                        pass
             return "user_pro"
         if endpoint == "report":
             used = (_usage_load().get(_month_key()) or {}).get(uid, 0) // CREDIT_COST["report"]
@@ -1172,8 +1200,8 @@ def _quota_gate(request: Request, endpoint: str):
                 raise HTTPException(
                     429,
                     f"Compte gratuit : {FREE_ACCOUNT_REPORTS} fiches par mois atteintes. "
-                    f"L'offre Pro (paiement à l'usage : {INCLUDED_FICHES} fiches offertes, "
-                    f"puis {PRICE_PER_FICHE_EUR:.2f} € la fiche, plafond {MONTHLY_CAP_EUR:.0f} €/mois) : "
+                    f"Les offres Pro démarrent à {PRO_TIERS['s']['eur']:.0f} €/mois "
+                    f"({PRO_TIERS['s']['fiches']} fiches) : "
                     f"https://ecobuilding.confinia.io/offres.html — une question ? {SUPPORT_EMAIL}")
             _usage_add(uid, CREDIT_COST["report"])
         return "user_free"
@@ -1285,29 +1313,40 @@ async def create_key(request: Request):
 
 @app.get("/v1/usage", tags=["account"])
 async def usage(request: Request):
-    """Current-month usage and cost for the calling API key (#201).
+    """Current-month usage and cost for the calling API key.
 
-    Pay-as-you-go from the first fiche, with a hard monthly cap — a client can
-    always answer "what is my worst case?". 20 credits (0,20 €) per PDF fiche,
-    1 credit (0,01 €) per API record, autocomplete free.
-    """
+    Pricing v4 : paliers d'abonnement. Le coût d'un abonné est le prix de son
+    palier ; l'échelle des fiches restantes est montrée pour tous les plans
+    quota-limités (gratuit, Pro S, Pro M)."""
     key = request.headers.get("x-api-key") or request.query_params.get("key")
     sub = _bearer_sub(request)
+    tier = None
     if key and key in _load_keys():
         bucket = hashlib.sha256(key.encode()).hexdigest()[:16]
         plan = _key_plans().get(key, "free")
+        if plan == "pro":
+            tier = _pro_tier(_key_owners().get(key)) or "s"
     elif sub:
         bucket = "kc:" + hashlib.sha256(sub.encode()).hexdigest()[:14]
         plan = "pro" if _pro_active(sub) else "free"
+        if plan == "pro":
+            tier = _pro_tier(sub) or "s"
     else:
         raise HTTPException(401, "Clé API (X-API-Key) ou session requise")
     month = _month_key()
     credits = (_usage_load().get(month) or {}).get(bucket, 0)
+    used = credits // CREDIT_COST["report"]
     body = {"month": month, "plan": plan, "credit_costs": CREDIT_COST,
             **_usage_cost(credits)}
-    if plan != "pro":
+    if plan == "pro":
+        quota = PRO_TIERS[tier]["fiches"]
+        body |= {"tier": tier, "tier_label": PRO_TIERS[tier]["label"],
+                 "cost_eur": float(PRO_TIERS[tier]["eur"]),
+                 "reports_used": used, "reports_included": quota,
+                 "reports_left": (None if quota is None
+                                  else max(0, quota - used))}
+    else:
         # A free account owes nothing: show the allowance, not a bill.
-        used = credits // CREDIT_COST["report"]
         body |= {"cost_eur": 0.0, "reports_used": used,
                  "reports_included": FREE_ACCOUNT_REPORTS,
                  "reports_left": max(0, FREE_ACCOUNT_REPORTS - used)}
@@ -1319,13 +1358,16 @@ async def config():
     """Public runtime facts the UI must not guess (#221): which payment
     environment is wired. A SANDBOX payment mode must be visible in the UI so
     nobody mistakes a test checkout for a real one."""
-    if not POLAR_ACCESS_TOKEN:
-        mode = "disabled"
-    elif "sandbox" in POLAR_BASE_URL:
-        mode = "sandbox"
+    if PAYMENT_PROVIDER == "creem":
+        mode = "sandbox" if "test-api" in CREEM_API_BASE else "live"
+    elif PAYMENT_PROVIDER == "polar":
+        mode = "sandbox" if "sandbox" in POLAR_BASE_URL else "live"
     else:
-        mode = "live"
+        mode = "disabled"
     return {"payment_mode": mode,
+            "payment_provider": PAYMENT_PROVIDER,
+            "pro_tiers": {k: {"eur": v["eur"], "fiches_month": v["fiches"],
+                              "label": v["label"]} for k, v in PRO_TIERS.items()},
             "free_tiers": {"anonymous_reports_month": ANON_MONTHLY_REPORTS,
                            "free_account_reports_month": FREE_ACCOUNT_REPORTS},
             "support_email": SUPPORT_EMAIL}
@@ -1354,6 +1396,22 @@ POLAR_METER_EVENT = os.environ.get("POLAR_METER_EVENT", "ecobuilding_fiche")
 PUBLIC_BASE_URL = (os.environ.get("PUBLIC_BASE_URL")
                    or OIDC_ISSUER.split("/auth/")[0]).rstrip("/")
 PRO_PATH = os.environ.get("PRO_PATH", "/leads/pro.json")
+
+# --- Creem (Merchant of Record, EU/Estonie) — décision 2026-08-17 ------------
+# Souveraineté : le client veut un MoR incorporé dans l'UE qui émet la facture
+# (report de la création d'entreprise). SANDBOX UNIQUEMENT pour l'instant :
+# une clé creem_test_ pointe d'elle-même sur l'environnement de test isolé.
+CREEM_API_KEY = os.environ.get("CREEM_API_KEY", "")
+CREEM_API_BASE = (os.environ.get("CREEM_API_BASE")
+                  or ("https://test-api.creem.io/v1" if CREEM_API_KEY.startswith("creem_test_")
+                      else "https://api.creem.io/v1")).rstrip("/")
+CREEM_WEBHOOK_SECRET = os.environ.get("CREEM_WEBHOOK_SECRET", "")
+# tier -> product id Creem, créés par deploy/creem-setup.sh
+CREEM_PRODUCTS: dict = json.loads(os.environ.get("CREEM_PRODUCTS_JSON", "") or "{}")
+# Un seul fournisseur actif à la fois ; Creem gagne s'il est configuré.
+PAYMENT_PROVIDER = ("creem" if CREEM_API_KEY
+                    else "polar" if os.environ.get("POLAR_ACCESS_TOKEN")
+                    else "none")
 M_PRO = _meter.create_counter("ecobuilding_pro_events", description="Pro plan events", unit="1")
 
 
@@ -1419,12 +1477,69 @@ def _polar_subscription_active(ext_id: str) -> bool:
     return active
 
 
+def _pro_tier(ext_id: str | None) -> str | None:
+    """Palier actif ("s"/"m"/"l") d'un abonné, None sinon. Un enregistrement
+    actif sans palier (donnée d'avant la v4) est traité comme "s" : ne jamais
+    accorder plus que ce qui a été payé par défaut."""
+    if not ext_id:
+        return None
+    rec = _pro_load().get(ext_id, {})
+    if rec.get("status") == "active":
+        t = rec.get("tier")
+        return t if t in PRO_TIERS else "s"
+    return None
+
+
+def _creem_subscription_active(ext_id: str) -> bool:
+    """Réconciliation Creem : le webhook est une optimisation, pas une
+    dépendance (même philosophie que #228 côté Polar). Creem ne sait pas
+    filtrer par external_id : au checkout on note l'e-mail du compte dans
+    pro.json (statut pending), et on remonte e-mail -> customer ->
+    abonnements actifs. Échec = False : un incident fournisseur ne doit
+    jamais accorder l'accès."""
+    rec = _pro_load().get(ext_id, {})
+    email = rec.get("email")
+    if not (CREEM_API_KEY and email):
+        return False
+    try:
+        with httpx.Client(timeout=6.0, headers={"x-api-key": CREEM_API_KEY}) as c:
+            r = c.get(f"{CREEM_API_BASE}/customers", params={"email": email})
+            r.raise_for_status()
+            cust = r.json() or {}
+            cust_id = cust.get("id") or ((cust.get("items") or [{}])[0].get("id"))
+            if not cust_id:
+                return False
+            r = c.get(f"{CREEM_API_BASE}/subscriptions/search",
+                      params={"customer_id": cust_id, "status": "active"})
+            r.raise_for_status()
+            items = (r.json().get("items") if isinstance(r.json(), dict) else r.json()) or []
+            for sub in items:
+                if sub.get("status") == "active":
+                    prod = (sub.get("product") or {}).get("id") or sub.get("product_id")
+                    tier = next((t for t, pid in CREEM_PRODUCTS.items() if pid == prod), "s")
+                    _pro_set(ext_id, True, source="reconciled", tier=tier,
+                             subscription_id=sub.get("id"))
+                    return True
+    except Exception as e:
+        log.warning("Creem subscription check failed for %s: %s", ext_id, e)
+    return False
+
+
 def _pro_active(ext_id: str | None) -> bool:
     if not ext_id:
         return False
     if _pro_load().get(ext_id, {}).get("status") == "active":
         return True
-    # Not active locally: reconcile with Polar (webhook may never have come).
+    # Pas actif localement : réconcilier avec le fournisseur (le webhook a pu
+    # ne jamais arriver).
+    if PAYMENT_PROVIDER == "creem":
+        now = time.monotonic()
+        hit = _pro_check.get(ext_id)
+        if hit and now - hit[0] < PRO_RECHECK_TTL:
+            return hit[1]
+        active = _creem_subscription_active(ext_id)
+        _pro_check[ext_id] = (now, active)
+        return active
     return _polar_subscription_active(ext_id)
 
 
@@ -1437,11 +1552,13 @@ def _sub_external_id(data: dict) -> str | None:
 
 
 @app.get("/v1/pro/checkout", tags=["account"])
-async def pro_checkout(request: Request):
-    """Start a Polar checkout for the pro plan (signed-in users). Returns the
-    Polar-hosted checkout URL as JSON (the frontend redirects to it); the user's
-    Keycloak sub travels as the customer external_id so the webhook can upgrade
-    the right account."""
+async def pro_checkout(request: Request,
+                       tier: str = Query("s", pattern="^[sml]$",
+                                         description="Palier v4 : s, m ou l")):
+    """Start a hosted checkout for a pro tier (signed-in users). Returns the
+    provider-hosted checkout URL as JSON (the frontend redirects to it); the
+    user's Keycloak sub travels in the metadata so the webhook (or the
+    reconciliation) can upgrade the right account."""
     auth = request.headers.get("authorization", "")
     if not auth.lower().startswith("bearer "):
         raise HTTPException(401, "Bearer token required")
@@ -1449,13 +1566,41 @@ async def pro_checkout(request: Request):
         claims = _decode_token(auth[7:].strip())
     except Exception:
         raise HTTPException(401, "Invalid token")
+    email = claims.get("email") or claims.get("preferred_username")
+    if PAYMENT_PROVIDER == "creem":
+        product = CREEM_PRODUCTS.get(tier)
+        if not product:
+            raise HTTPException(503, "Pro plan not configured")
+        try:
+            resp = await _client.post(
+                f"{CREEM_API_BASE}/checkouts",
+                json={"product_id": product,
+                      "success_url": f"{PUBLIC_BASE_URL}/?pro=success",
+                      "customer_email": email,
+                      "metadata": {"kc_sub": claims.get("sub"), "tier": tier}},
+                headers={"x-api-key": CREEM_API_KEY})
+            resp.raise_for_status()
+        except httpx.HTTPError as e:
+            log.warning("Creem checkout failed: %s", e)
+            raise HTTPException(502, "Checkout provider error")
+        # L'e-mail est la clé de réconciliation côté Creem (pas d'external_id
+        # chez eux) : on le note tout de suite, sans activer quoi que ce soit.
+        _pro_set(claims.get("sub"), False, email=email, tier=tier, source="checkout")
+        M_PRO.add(1, {"event": "checkout", "provider": "creem", "tier": tier})
+        body = resp.json()
+        return {"url": body.get("checkout_url") or body.get("url"),
+                "checkout_id": body.get("id")}
     if not (POLAR_ACCESS_TOKEN and POLAR_PRODUCT_ID):
         raise HTTPException(503, "Pro plan not configured")
     payload = {
         "products": [POLAR_PRODUCT_ID],
         "success_url": f"{PUBLIC_BASE_URL}/?pro=success",
-        "customer_email": claims.get("email") or claims.get("preferred_username"),
+        "customer_email": email,
         "customer_external_id": claims.get("sub"),
+        # Prefilled billing country: the product is FR-only today (#118 will
+        # revisit), and every field removed from the hosted checkout is one
+        # less place to abandon. The customer can still change it on the page.
+        "customer_billing_address": {"country": "FR"},
         # Polar rejects EMPTY metadata values (min_length 1), so only non-empty
         # entries are sent: a user without an `org` claim would otherwise get a
         # 422 on every checkout attempt.
@@ -1477,11 +1622,40 @@ async def pro_checkout(request: Request):
 
 @app.post("/v1/pro/webhook", tags=["account"], status_code=202)
 async def pro_webhook(request: Request):
-    """Polar webhook (Standard Webhooks, signed). Verifies the signature, then
-    flips the subscriber's tier: active -> pro, canceled/revoked -> free."""
+    """Webhook du fournisseur de paiement, signé. Bascule l'abonné :
+    actif -> pro (avec palier), annulé/impayé -> free.
+    Creem : en-tête `creem-signature` = HMAC-SHA256 hex du corps brut.
+    Polar : Standard Webhooks (conservé tant que la bascule n'est pas actée
+    en production)."""
+    body = await request.body()
+    if PAYMENT_PROVIDER == "creem":
+        if not CREEM_WEBHOOK_SECRET:
+            raise HTTPException(503, "Webhook not configured")
+        import hmac as _hmac
+        expected = _hmac.new(CREEM_WEBHOOK_SECRET.encode(), body,
+                             hashlib.sha256).hexdigest()
+        got = request.headers.get("creem-signature", "")
+        if not _hmac.compare_digest(expected, got):
+            M_PRO.add(1, {"event": "webhook_rejected", "provider": "creem"})
+            raise HTTPException(401, "Invalid signature")
+        event = json.loads(body)
+        etype = event.get("eventType") or event.get("type", "")
+        data = event.get("object") or event.get("data") or {}
+        meta = data.get("metadata") or {}
+        ext_id = meta.get("kc_sub")
+        prod = (data.get("product") or {}).get("id") or data.get("product_id")
+        tier = (meta.get("tier")
+                or next((t for t, pid in CREEM_PRODUCTS.items() if pid == prod), None)
+                or "s")
+        if etype in ("checkout.completed", "subscription.active", "subscription.paid"):
+            _pro_set(ext_id, True, tier=tier, subscription_id=data.get("id"),
+                     product_id=prod, source="webhook")
+        elif etype in ("subscription.canceled", "subscription.past_due", "subscription.expired"):
+            _pro_set(ext_id, False, subscription_id=data.get("id"), source="webhook")
+        M_PRO.add(1, {"event": "webhook", "provider": "creem", "type": etype})
+        return {"received": True, "type": etype}
     if not POLAR_WEBHOOK_SECRET:
         raise HTTPException(503, "Webhook not configured")
-    body = await request.body()
     try:
         from standardwebhooks import Webhook
         wh = Webhook(POLAR_WEBHOOK_SECRET)
