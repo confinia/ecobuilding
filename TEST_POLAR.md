@@ -62,7 +62,7 @@ clés API du compte deviennent « pro » automatiquement (le plan suit le COMPTE
 |---|---|
 | Inscription → quota compte | `deploy/e2e-signup.sh` : compte jetable, 30 fiches, décompte sur le compte, 429 avec upsell |
 | Consommation → facturation | `deploy/e2e-usage.sh` : crédits locaux = crédits ingérés dans le meter Polar (53 = 53) |
-| Objets Polar | meter `aba28fdd…` + produit `a908bb90…` (base 9 € fixe + metered 1 c/crédit, `cap_amount` 9900) |
+| Objets Polar | meter `b8afa9bb…` (somme des fiches) + produit `93fbd58a…` (0,49 €/fiche, `cap_amount` 9900, **sans socle** — v3) ; l'ancien couple v2 `aba28fdd…`/`a908bb90…` (base 9 € + 1 c/crédit) est **archivé** 2026-08-17 |
 | Checkout | URL de checkout sandbox obtenue via l'API avec un vrai compte (2026-08-16) |
 | Passage Pro | réconciliation testée unitairement (bascule + cache + échec sans octroi d'accès) ; la validation grandeur nature demande un vrai paiement carte, seule étape non automatisable |
 

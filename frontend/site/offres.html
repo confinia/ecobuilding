@@ -54,18 +54,38 @@
         <a class="cta" href="/api/v1/docs">Essayer l'API</a>
       </section>
 
-      <section class="tier">
-        <h2>Pro <span class="badge soon">bientôt</span></h2>
-        <p class="price">0,49 €<small> la fiche</small></p>
-        <p class="price-sub"><strong>10 fiches offertes chaque mois</strong>, puis 0,49 € la fiche, <strong>plafonné à 99 €/mois</strong></p>
+      <section class="tier" id="tier-s">
+        <h2>Pro S <span class="badge soon">bientôt</span></h2>
+        <p class="price">9 €<small> / mois</small></p>
+        <p class="price-sub"><strong>30 fiches PDF par mois</strong>, sans engagement</p>
         <ul>
-          <li>Paiement à l'usage : vous ne payez que les fiches réellement générées, sans abonnement fixe</li>
-          <li><strong>Plafond garanti à 99 € par mois</strong> : au-delà de 212 fiches, tout est inclus</li>
           <li>Appels API, autocomplétion et carte 3D : gratuits et illimités</li>
           <li>Suivi de consommation en temps réel (<code>GET /v1/usage</code>)</li>
           <li>Clé API dédiée, support par e-mail</li>
         </ul>
-        <a class="cta" href="#lead-form">Rejoindre la liste d'attente</a>
+        <a class="cta" href="/?gopro=s">Choisir Pro S</a>
+      </section>
+
+      <section class="tier" id="tier-m">
+        <h2>Pro M <span class="badge soon">bientôt</span></h2>
+        <p class="price">29 €<small> / mois</small></p>
+        <p class="price-sub"><strong>100 fiches PDF par mois</strong>, sans engagement</p>
+        <ul>
+          <li>Tout Pro S, avec plus de volume</li>
+          <li>Passage de palier à tout moment, au mois le mois</li>
+        </ul>
+        <a class="cta" href="/?gopro=m">Choisir Pro M</a>
+      </section>
+
+      <section class="tier" id="tier-l">
+        <h2>Pro L <span class="badge soon">bientôt</span></h2>
+        <p class="price">99 €<small> / mois</small></p>
+        <p class="price-sub"><strong>Fiches illimitées</strong> (usage raisonnable), sans engagement</p>
+        <ul>
+          <li>Votre facture ne dépasse jamais 99 € par mois</li>
+          <li>Support prioritaire par e-mail</li>
+        </ul>
+        <a class="cta" href="/?gopro=l">Choisir Pro L</a>
       </section>
 
       <section class="tier">
@@ -82,13 +102,13 @@
     </div>
 
     <section class="sim">
-      <h2>Simulateur : combien coûte l'offre Pro ?</h2>
-      <p class="hint">10 fiches offertes, puis 0,49 € la fiche, et jamais plus de 99 € par mois.</p>
+      <h2>Quel palier pour votre volume ?</h2>
+      <p class="hint">3 fiches par mois sans compte, 10 fiches avec un compte gratuit,
+      puis Pro S / M / L selon votre consommation.</p>
       <label for="sim-range">Fiches PDF par mois : <output id="sim-vol">30</output></label>
       <input id="sim-range" type="range" min="0" max="300" step="5" value="30">
       <table class="sim-out">
-        <tr><td>Fiches offertes</td><td id="sim-free">10</td></tr>
-        <tr><td>Fiches facturées (0,49 €)</td><td id="sim-extra">20</td></tr>
+        <tr><td>Palier recommandé</td><td id="sim-tier">Pro S</td></tr>
         <tr><td><strong>Total mensuel</strong></td><td><strong id="sim-cost">9,00 €</strong></td></tr>
       </table>
       <p class="hint" id="sim-note"></p>
@@ -127,24 +147,31 @@
   </script>
 
 <script>
-// Price simulator (#206). Mirrors the server formula; /v1/pricing is the
-// authority and the test suite pins both to the same numbers.
+// Simulateur v4 : recommande le plus petit palier couvrant le volume.
+// /v1/pricing fait autorité ; la suite de tests épingle page et serveur sur
+// les mêmes nombres.
 (function () {
-  const INCLUDED = 10, PRICE = 0.49, CAP = 99;
+  const FREE = 10;
+  const TIERS = [["Pro S", 9, 30], ["Pro M", 29, 100], ["Pro L", 99, null]];
   const r = document.getElementById("sim-range");
   if (!r) return;
   const eur = (n) => n.toFixed(2).replace(".", ",") + " €";
   function render() {
     const fiches = Number(r.value);
-    const extra = Math.max(0, fiches - INCLUDED);
-    const cost = Math.min(extra * PRICE, CAP);
     document.getElementById("sim-vol").textContent = fiches.toLocaleString("fr-FR");
-    document.getElementById("sim-free").textContent = Math.min(fiches, INCLUDED);
-    document.getElementById("sim-extra").textContent = extra.toLocaleString("fr-FR");
-    document.getElementById("sim-cost").textContent = eur(cost);
-    document.getElementById("sim-note").textContent = (extra * PRICE) >= CAP
-      ? "Plafond atteint (212 fiches) : toute fiche supplémentaire est incluse."
-      : "Vous ne payez que les fiches générées au-delà des 10 offertes.";
+    if (fiches <= FREE) {
+      document.getElementById("sim-tier").textContent = "Compte gratuit";
+      document.getElementById("sim-cost").textContent = eur(0);
+      document.getElementById("sim-note").textContent =
+        `Jusqu'à ${FREE} fiches par mois, le compte gratuit suffit.`;
+      return;
+    }
+    const [label, price] = TIERS.find(([, , q]) => q === null || fiches <= q);
+    document.getElementById("sim-tier").textContent = label;
+    document.getElementById("sim-cost").textContent = eur(price);
+    document.getElementById("sim-note").textContent = label === "Pro L"
+      ? "Fiches illimitées (usage raisonnable) : votre facture ne dépasse jamais 99 €."
+      : "Sans engagement : changez de palier à tout moment.";
   }
   r.addEventListener("input", render);
   render();

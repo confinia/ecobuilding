@@ -76,6 +76,16 @@ Last updated: 2026-08-16 (triage + promote).
   que les diagnostiqueurs et les collectivités citent, et c'est le prérequis
   pour parler crédiblement sur le forum GéoCommuns (canal ci-dessous).
 
+- **Fuite de processus Chromium du service render** (fiabilité VM). Des
+  processus `chrome` de générations PRÉCÉDENTES du conteneur
+  `ecobuilding-render_render_1` survivent à sa recréation (constaté
+  2026-08-17 : des chrome vieux de 15 jours alors que le conteneur date de
+  23 h ; ~20 orphelins > 1 jour, ~1,5 Go de RSS au total). Piste : Puppeteer
+  relancé sans que l'ancien navigateur soit attendu (`browser.close()` absent
+  d'un chemin d'erreur), et les processus ré-adoptés hors du cgroup du
+  conteneur. À faire : trouver le chemin qui fuit dans `render_stack/server.js`,
+  et un garde-fou (pkill des chrome orphelins au démarrage du conteneur).
+
 - **Canal : [Forum GéoCommuns](https://forum.geocommuns.fr)** (Discourse de
   l'écosystème géocommuns : Panoramax 421 sujets, RTK-Centipede 178, RNB 24,
   BAN, base routière). Audience = producteurs et réutilisateurs des données

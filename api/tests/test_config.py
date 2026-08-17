@@ -229,32 +229,29 @@ def test_account_tier_is_wired_in_the_app():
 
 
 @needs_repo
-def test_payg_pricing_is_consistent_everywhere():
-    """#201: the offres page, the server formula and the Polar setup script
-    must quote the SAME numbers — a pricing mismatch is a trust bug."""
+def test_tier_pricing_is_consistent_everywhere():
+    """v4 : la page offres, les constantes serveur, PRICING.md et le script
+    Creem doivent citer LES MÊMES nombres — un écart de prix est un bug de
+    confiance (et polar_report l'a prouvé : le produit v2 a survécu à la v3)."""
     html = (ROOT / "frontend/site/offres.html").read_text()
-    assert "0,49 €" in html and "99 €" in html
+    for n in ("9 €", "29 €", "99 €", "30 fiches", "100 fiches"):
+        assert n in html, n
     assert "3 fiches" in html and "10 fiches" in html  # free ladder
-    assert "212 fiches" in html                        # where the cap lands
     assert "crédit" not in html.lower()                # billed unit = la fiche
-    assert "500 crédits" not in html                   # the giveaway draft is gone
-    assert 'id="sim-range"' in html                    # simulator present
     main_py = (ROOT / "api/app/main.py").read_text()
-    assert 'PRICE_PER_FICHE_EUR", "0.49"' in main_py   # the billed unit
-    assert 'INCLUDED_FICHES", "10"' in main_py
+    assert '"s": {"eur": 9,  "fiches": 30' in main_py
+    assert '"m": {"eur": 29, "fiches": 100' in main_py
+    assert '"l": {"eur": 99, "fiches": null' in main_py
     assert 'ANON_MONTHLY_REPORTS", "3"' in main_py
     assert 'FREE_ACCOUNT_REPORTS", "10"' in main_py
-    assert 'MONTHLY_CAP_EUR", "99"' in main_py
     assert '"report": 1' in main_py                    # one unit = one fiche
     # PRICING.md is the source of truth and must quote the live numbers.
     pricing_doc = (ROOT / "PRICING.md").read_text()
-    for n in ("0,49", "99 €", "212 fiches", "3", "10"):
+    for n in ("v4", "9 €", "29 €", "99 €", "Creem"):
         assert n in pricing_doc, n
-    setup = (ROOT / "deploy/polar-setup.sh").read_text()
-    assert "UNIT_CENTS:-49}" in setup and "CAP_CENTS:-9900}" in setup
-    assert "fiches PDF" in setup                      # the customer-facing unit
-    assert "cap_amount" in setup                       # Polar enforces the cap too
-    assert (ROOT / "deploy/polar-sim.sh").exists()
+    setup = (ROOT / "deploy/creem-setup.sh").read_text()
+    for n in ("900", "2900", "9900"):                  # cents des trois paliers
+        assert n in setup, n
 
 @needs_repo
 def test_self_service_support_and_signup(needs_repo_ok=None):

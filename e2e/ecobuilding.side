@@ -1,0 +1,823 @@
+{
+  "id": "ecb-e2e-signup-payment",
+  "version": "2.0",
+  "name": "EcoBuilding — inscription & paiement",
+  "url": "${APP_URL}",
+  "tests": [
+    {
+      "id": "t01-inscription",
+      "name": "01 · inscription (formulaire Keycloak réel)",
+      "commands": [
+        {
+          "id": "c0100",
+          "comment": "Le parcours part de l'app, jamais d'une URL Keycloak construite à la main : le client impose PKCE, donc une URL sans code_challenge_method est rejetée. Cliquer le bouton est le seul chemin qu'un vrai utilisateur emprunte.",
+          "command": "open",
+          "target": "/",
+          "targets": [],
+          "value": ""
+        },
+        {
+          "id": "c0101",
+          "comment": "",
+          "command": "setWindowSize",
+          "target": "1400x1000",
+          "targets": [],
+          "value": ""
+        },
+        {
+          "id": "c0102",
+          "comment": "#215 : ce bouton doit apparaître même si l'adaptateur Keycloak ne se charge pas. S'il manque, le produit n'a plus d'inscription du tout.",
+          "command": "waitForElementVisible",
+          "target": "id=signup",
+          "targets": [
+            [
+              "id=signup",
+              "id"
+            ],
+            [
+              "css=#signup",
+              "css:finder"
+            ]
+          ],
+          "value": "20000"
+        },
+        {
+          "id": "c0103",
+          "comment": "",
+          "command": "click",
+          "target": "id=signup",
+          "targets": [
+            [
+              "id=signup",
+              "id"
+            ]
+          ],
+          "value": ""
+        },
+        {
+          "id": "c0104",
+          "comment": "Formulaire d'inscription Keycloak (realm ${KC_REALM}).",
+          "command": "waitForElementVisible",
+          "target": "id=email",
+          "targets": [
+            [
+              "id=email",
+              "id"
+            ],
+            [
+              "name=email",
+              "name"
+            ]
+          ],
+          "value": "30000"
+        },
+        {
+          "id": "c0105",
+          "comment": "",
+          "command": "type",
+          "target": "id=email",
+          "targets": [
+            [
+              "id=email",
+              "id"
+            ]
+          ],
+          "value": "${E2E_EMAIL}"
+        },
+        {
+          "id": "c0106",
+          "comment": "",
+          "command": "type",
+          "target": "id=password",
+          "targets": [
+            [
+              "id=password",
+              "id"
+            ]
+          ],
+          "value": "${E2E_PASSWORD}"
+        },
+        {
+          "id": "c0107",
+          "comment": "",
+          "command": "type",
+          "target": "id=password-confirm",
+          "targets": [
+            [
+              "id=password-confirm",
+              "id"
+            ]
+          ],
+          "value": "${E2E_PASSWORD}"
+        },
+        {
+          "id": "c0108",
+          "comment": "",
+          "command": "type",
+          "target": "id=firstName",
+          "targets": [
+            [
+              "id=firstName",
+              "id"
+            ]
+          ],
+          "value": "${E2E_FIRSTNAME}"
+        },
+        {
+          "id": "c0109",
+          "comment": "",
+          "command": "type",
+          "target": "id=lastName",
+          "targets": [
+            [
+              "id=lastName",
+              "id"
+            ]
+          ],
+          "value": "${E2E_LASTNAME}"
+        },
+        {
+          "id": "c0110",
+          "comment": "Organisation est OBLIGATOIRE (user profile déclaratif). L'omettre produit « Account is not fully set up » à la connexion suivante, pas une erreur sur ce formulaire — d'où le test explicite 06.",
+          "command": "type",
+          "target": "id=organization",
+          "targets": [
+            [
+              "id=organization",
+              "id"
+            ]
+          ],
+          "value": "${E2E_ORG}"
+        },
+        {
+          "id": "c0111",
+          "comment": "",
+          "command": "click",
+          "target": "css=input[type=\"submit\"]",
+          "targets": [
+            [
+              "css=input[type=\"submit\"]",
+              "css:finder"
+            ]
+          ],
+          "value": ""
+        },
+        {
+          "id": "c0112",
+          "comment": "Le formulaire a disparu : Keycloak a accepté l'inscription. Assertion STRUCTURELLE, pas textuelle — le thème s'affiche dans la langue du navigateur, et un test qui dépend d'une traduction casse au premier changement de locale.",
+          "command": "waitForElementNotPresent",
+          "target": "id=organization",
+          "targets": [],
+          "value": "30000"
+        },
+        {
+          "id": "c0113",
+          "comment": "Et on n'est pas retombé sur le formulaire avec une erreur de champ.",
+          "command": "assertElementNotPresent",
+          "target": "css=#input-error-organization",
+          "targets": [],
+          "value": ""
+        },
+        {
+          "id": "c0114",
+          "comment": "L'existence réelle du compte (et le fait que la vérification e-mail soit bien EXIGÉE) est vérifiée côté serveur par run.sh, qui interroge Keycloak.",
+          "command": "echo",
+          "target": "inscription soumise pour ${E2E_EMAIL}",
+          "targets": [],
+          "value": ""
+        }
+      ]
+    },
+    {
+      "id": "t06-org-obligatoire",
+      "name": "06 · l'organisation manquante est refusée sur le formulaire",
+      "commands": [
+        {
+          "id": "c0600",
+          "comment": "Régression connue : sans organisation, Keycloak laissait passer l'inscription puis bloquait la connexion par « Account is not fully set up » — un mur sans issue pour l'utilisateur. Le refus doit avoir lieu SUR le formulaire.",
+          "command": "open",
+          "target": "/",
+          "targets": [],
+          "value": ""
+        },
+        {
+          "id": "c0600b",
+          "comment": "",
+          "command": "setWindowSize",
+          "target": "1400x1000",
+          "targets": [],
+          "value": ""
+        },
+        {
+          "id": "c0601",
+          "comment": "",
+          "command": "waitForElementVisible",
+          "target": "id=signup",
+          "targets": [
+            [
+              "id=signup",
+              "id"
+            ]
+          ],
+          "value": "20000"
+        },
+        {
+          "id": "c0602",
+          "comment": "",
+          "command": "click",
+          "target": "id=signup",
+          "targets": [
+            [
+              "id=signup",
+              "id"
+            ]
+          ],
+          "value": ""
+        },
+        {
+          "id": "c0603",
+          "comment": "",
+          "command": "waitForElementVisible",
+          "target": "id=email",
+          "targets": [
+            [
+              "id=email",
+              "id"
+            ]
+          ],
+          "value": "30000"
+        },
+        {
+          "id": "c0604",
+          "comment": "",
+          "command": "type",
+          "target": "id=email",
+          "targets": [
+            [
+              "id=email",
+              "id"
+            ]
+          ],
+          "value": "${E2E_EMAIL_NOORG}"
+        },
+        {
+          "id": "c0605",
+          "comment": "",
+          "command": "type",
+          "target": "id=password",
+          "targets": [
+            [
+              "id=password",
+              "id"
+            ]
+          ],
+          "value": "${E2E_PASSWORD}"
+        },
+        {
+          "id": "c0606",
+          "comment": "",
+          "command": "type",
+          "target": "id=password-confirm",
+          "targets": [
+            [
+              "id=password-confirm",
+              "id"
+            ]
+          ],
+          "value": "${E2E_PASSWORD}"
+        },
+        {
+          "id": "c0607",
+          "comment": "Organisation laissée vide, volontairement.",
+          "command": "click",
+          "target": "css=input[type=\"submit\"]",
+          "targets": [],
+          "value": ""
+        },
+        {
+          "id": "c0608",
+          "comment": "Laisser l'aller-retour POST se faire avant de conclure.",
+          "command": "pause",
+          "target": "",
+          "targets": [],
+          "value": "4000"
+        },
+        {
+          "id": "c0609",
+          "comment": "",
+          "command": "assertElementPresent",
+          "target": "id=organization",
+          "targets": [
+            [
+              "id=organization",
+              "id"
+            ]
+          ],
+          "value": ""
+        },
+        {
+          "id": "c0610",
+          "comment": "Toujours sur le formulaire = refusé au bon endroit. S'il avait été accepté, on serait sur l'écran de vérification d'e-mail.",
+          "command": "assertElementPresent",
+          "target": "id=organization",
+          "targets": [],
+          "value": ""
+        },
+        {
+          "id": "c0611",
+          "comment": "Et l'erreur est portée par le CHAMP, pas par un message global illisible.",
+          "command": "assertElementPresent",
+          "target": "css=#input-error-organization",
+          "targets": [],
+          "value": ""
+        }
+      ]
+    },
+    {
+      "id": "t02-05-parcours-payant",
+      "name": "02-05 · parcours payant : connexion → fiche → paiement → Pro",
+      "commands": [
+        {
+          "id": "cm000",
+          "comment": "Un seul test Selenium pour tout le parcours payant. Ce n'est pas un choix de style : selenium-side-runner 4.0.13 termine chaque test par driver.close() même en persistSession, et fermer la DERNIÈRE fenêtre de Chromium tue la session — un découpage en 4 tests perd donc la connexion entre deux tests. Le parcours est de toute façon UNE session utilisateur continue.",
+          "command": "echo",
+          "target": "début du parcours payant",
+          "targets": [],
+          "value": ""
+        },
+        {
+          "id": "c0200",
+          "comment": "L'adresse a été vérifiée entre les deux suites (voir run.sh) : la boîte de réception est un vrai mailbox externe, non lisible depuis la CI.",
+          "command": "open",
+          "target": "/",
+          "targets": [],
+          "value": ""
+        },
+        {
+          "id": "c0201",
+          "comment": "",
+          "command": "waitForElementVisible",
+          "target": "id=signin",
+          "targets": [
+            [
+              "id=signin",
+              "id"
+            ]
+          ],
+          "value": "20000"
+        },
+        {
+          "id": "c0202",
+          "comment": "",
+          "command": "click",
+          "target": "id=signin",
+          "targets": [
+            [
+              "id=signin",
+              "id"
+            ]
+          ],
+          "value": ""
+        },
+        {
+          "id": "c0203",
+          "comment": "",
+          "command": "waitForElementVisible",
+          "target": "id=username",
+          "targets": [
+            [
+              "id=username",
+              "id"
+            ]
+          ],
+          "value": "30000"
+        },
+        {
+          "id": "c0204",
+          "comment": "",
+          "command": "type",
+          "target": "id=username",
+          "targets": [
+            [
+              "id=username",
+              "id"
+            ]
+          ],
+          "value": "${E2E_EMAIL}"
+        },
+        {
+          "id": "c0205",
+          "comment": "",
+          "command": "type",
+          "target": "id=password",
+          "targets": [
+            [
+              "id=password",
+              "id"
+            ]
+          ],
+          "value": "${E2E_PASSWORD}"
+        },
+        {
+          "id": "c0206",
+          "comment": "",
+          "command": "click",
+          "target": "id=kc-login",
+          "targets": [
+            [
+              "id=kc-login",
+              "id"
+            ],
+            [
+              "css=#kc-login",
+              "css:finder"
+            ]
+          ],
+          "value": ""
+        },
+        {
+          "id": "c0207",
+          "comment": "Retour sur l'app connecté : la pastille compte remplace les boutons.",
+          "command": "waitForElementVisible",
+          "target": "id=userchip",
+          "targets": [
+            [
+              "id=userchip",
+              "id"
+            ]
+          ],
+          "value": "40000"
+        },
+        {
+          "id": "c0208",
+          "comment": "Le libellé doit porter l'adresse du compte : sinon la session appartient à quelqu'un d'autre.",
+          "command": "assertElementPresent",
+          "target": "xpath=//span[@id='userlabel'][contains(text(),'${E2E_EMAIL}')]",
+          "targets": [],
+          "value": ""
+        },
+        {
+          "id": "c0209",
+          "comment": "",
+          "command": "echo",
+          "target": "connecté en tant que ${E2E_EMAIL}",
+          "targets": [],
+          "value": ""
+        },
+        {
+          "id": "c0300",
+          "comment": "",
+          "command": "waitForElementVisible",
+          "target": "id=search",
+          "targets": [
+            [
+              "id=search",
+              "id"
+            ]
+          ],
+          "value": "20000"
+        },
+        {
+          "id": "c0301",
+          "comment": "",
+          "command": "click",
+          "target": "id=search",
+          "targets": [
+            [
+              "id=search",
+              "id"
+            ]
+          ],
+          "value": ""
+        },
+        {
+          "id": "c0302",
+          "comment": "",
+          "command": "type",
+          "target": "id=search",
+          "targets": [
+            [
+              "id=search",
+              "id"
+            ]
+          ],
+          "value": "${E2E_ADDRESS}"
+        },
+        {
+          "id": "c0303",
+          "comment": "Autocomplétion BAN.",
+          "command": "waitForElementVisible",
+          "target": "css=#suggestions li",
+          "targets": [
+            [
+              "css=#suggestions li",
+              "css:finder"
+            ]
+          ],
+          "value": "30000"
+        },
+        {
+          "id": "c0304",
+          "comment": "",
+          "command": "click",
+          "target": "css=#suggestions li:first-child",
+          "targets": [
+            [
+              "css=#suggestions li:first-child",
+              "css:finder"
+            ]
+          ],
+          "value": ""
+        },
+        {
+          "id": "c0305",
+          "comment": "Le panneau agrège une dizaine de sources ouvertes : il peut être lent, d'où l'attente longue.",
+          "command": "waitForElementVisible",
+          "target": "id=report-btn",
+          "targets": [
+            [
+              "id=report-btn",
+              "id"
+            ]
+          ],
+          "value": "90000"
+        },
+        {
+          "id": "c0306",
+          "comment": "",
+          "command": "click",
+          "target": "id=report-btn",
+          "targets": [
+            [
+              "id=report-btn",
+              "id"
+            ]
+          ],
+          "value": ""
+        },
+        {
+          "id": "c0307",
+          "comment": "Génération WeasyPrint côté serveur : laisser le décompte s'appliquer avant de relire le quota.",
+          "command": "pause",
+          "target": "",
+          "targets": [],
+          "value": "${PDF_WAIT_MS}"
+        },
+        {
+          "id": "c0308",
+          "comment": "",
+          "command": "echo",
+          "target": "fiche demandée pour ${E2E_ADDRESS}",
+          "targets": [],
+          "value": ""
+        },
+        {
+          "id": "c0400",
+          "comment": "« Passer Pro » n'existe qu'avec ECO_PRO_ENABLED : masqué en production (rule 7), visible en sandbox.",
+          "command": "waitForElementVisible",
+          "target": "id=gopro",
+          "targets": [
+            [
+              "id=gopro",
+              "id"
+            ]
+          ],
+          "value": "30000"
+        },
+        {
+          "id": "c0401",
+          "comment": "",
+          "command": "click",
+          "target": "id=gopro",
+          "targets": [
+            [
+              "id=gopro",
+              "id"
+            ]
+          ],
+          "value": ""
+        },
+        {
+          "id": "c0402",
+          "comment": "Checkout hébergé par Polar (DOM externe). Les id React de cette page sont régénérés à chaque rendu — on ne cible que des attributs name/title stables.",
+          "command": "waitForElementPresent",
+          "target": "${SEL_CO_EMAIL}",
+          "targets": [],
+          "value": "45000"
+        },
+        {
+          "id": "c0404",
+          "comment": "Les champs carte vivent dans une iframe Stripe injectée après hydratation.",
+          "command": "waitForElementPresent",
+          "target": "${SEL_STRIPE_FRAME}",
+          "targets": [],
+          "value": "45000"
+        },
+        {
+          "id": "c0405",
+          "comment": "",
+          "command": "selectFrame",
+          "target": "${SEL_STRIPE_FRAME}",
+          "targets": [],
+          "value": ""
+        },
+        {
+          "id": "c0406",
+          "comment": "sendKeys, PAS type : type clique puis vide le champ avant de saisir, et sur les champs Stripe ce clic échoue par intermittence (hit-test dans l'iframe en headless) puis la re-saisie se perd dans le re-rendu React. Vérifié au WebDriver nu : la saisie directe sans clic tient.",
+          "command": "sendKeys",
+          "target": "${SEL_CARD_NUMBER}",
+          "targets": [],
+          "value": "${E2E_CARD_NUMBER}"
+        },
+        {
+          "id": "c0407",
+          "comment": "",
+          "command": "sendKeys",
+          "target": "${SEL_CARD_EXPIRY}",
+          "targets": [],
+          "value": "${E2E_CARD_EXPIRY}"
+        },
+        {
+          "id": "c0408",
+          "comment": "",
+          "command": "sendKeys",
+          "target": "${SEL_CARD_CVC}",
+          "targets": [],
+          "value": "${E2E_CARD_CVC}"
+        },
+        {
+          "id": "c0408b",
+          "comment": "Preuve que les trois champs ont bien reçu la carte avant de soumettre — sinon le checkout reste silencieusement sur place et on ne le voit qu'au timeout.",
+          "command": "assertValue",
+          "target": "css=#payment-numberInput",
+          "targets": [],
+          "value": "4242 4242 4242 4242"
+        },
+        {
+          "id": "c0409",
+          "comment": "",
+          "command": "selectFrame",
+          "target": "relative=top",
+          "targets": [],
+          "value": ""
+        },
+        {
+          "id": "c0403",
+          "comment": "Rempli APRÈS que l'iframe Stripe est en place : ce checkout React re-rend le formulaire quand l'élément de paiement arrive, et une valeur saisie avant ce re-rendu est effacée (vécu : « This field is required » après soumission alors que le champ avait été rempli).",
+          "command": "type",
+          "target": "${SEL_CO_NAME}",
+          "targets": [],
+          "value": "${E2E_CARD_NAME}"
+        },
+        {
+          "id": "c0403b",
+          "comment": "La saisie a survécu au re-rendu.",
+          "command": "assertValue",
+          "target": "${SEL_CO_NAME}",
+          "targets": [],
+          "value": "${E2E_CARD_NAME}"
+        },
+        {
+          "id": "c0410",
+          "comment": "",
+          "command": "click",
+          "target": "${SEL_CO_SUBMIT}",
+          "targets": [],
+          "value": ""
+        },
+        {
+          "id": "c0411",
+          "comment": "success_url = ${APP_URL}/?pro=success — le retour prouve que Polar a accepté le paiement.",
+          "command": "waitForElementVisible",
+          "target": "id=userchip",
+          "targets": [
+            [
+              "id=userchip",
+              "id"
+            ]
+          ],
+          "value": "120000"
+        },
+        {
+          "id": "c0412",
+          "comment": "",
+          "command": "assertLocation",
+          "target": "${APP_URL}/?pro=success",
+          "targets": [],
+          "value": ""
+        },
+        {
+          "id": "c0500",
+          "comment": "La bascule ne dépend plus d'un webhook (#228) : _pro_active() réconcilie contre Polar avec un cache de 60 s. On laisse ce délai s'écouler.",
+          "command": "pause",
+          "target": "",
+          "targets": [],
+          "value": "${PRO_WAIT_MS}"
+        },
+        {
+          "id": "c0501",
+          "comment": "",
+          "command": "open",
+          "target": "/",
+          "targets": [],
+          "value": ""
+        },
+        {
+          "id": "c0502",
+          "comment": "",
+          "command": "waitForElementVisible",
+          "target": "id=userlabel",
+          "targets": [
+            [
+              "id=userlabel",
+              "id"
+            ]
+          ],
+          "value": "40000"
+        },
+        {
+          "id": "c0503",
+          "comment": "Ouvre le panneau compte (plan, quota, clés API).",
+          "command": "click",
+          "target": "id=userlabel",
+          "targets": [
+            [
+              "id=userlabel",
+              "id"
+            ]
+          ],
+          "value": ""
+        },
+        {
+          "id": "c0504",
+          "comment": "",
+          "command": "waitForElementVisible",
+          "target": "id=panel-content",
+          "targets": [
+            [
+              "id=panel-content",
+              "id"
+            ]
+          ],
+          "value": "30000"
+        },
+        {
+          "id": "c0505",
+          "comment": "Le panneau doit annoncer le plan Pro. C'est l'assertion côté APP ; l'assertion côté PLATEFORME DE PAIEMENT est faite par polar_report.py, qui lit sandbox-api.polar.sh.",
+          "command": "assertElementPresent",
+          "target": "xpath=//*[@id='panel-content'][contains(translate(.,'PRO','pro'),'pro')]",
+          "targets": [],
+          "value": ""
+        },
+        {
+          "id": "c0506",
+          "comment": "",
+          "command": "storeText",
+          "target": "id=panel-content",
+          "targets": [
+            [
+              "id=panel-content",
+              "id"
+            ]
+          ],
+          "value": "accountPanel"
+        },
+        {
+          "id": "c0507",
+          "comment": "",
+          "command": "echo",
+          "target": "panneau compte : ${accountPanel}",
+          "targets": [],
+          "value": ""
+        }
+      ]
+    }
+  ],
+  "suites": [
+    {
+      "id": "s01-inscription",
+      "name": "inscription",
+      "persistSession": false,
+      "parallel": false,
+      "timeout": 600,
+      "tests": [
+        "t01-inscription",
+        "t06-org-obligatoire"
+      ]
+    },
+    {
+      "id": "s02-paiement",
+      "name": "paiement",
+      "persistSession": false,
+      "parallel": false,
+      "timeout": 900,
+      "tests": [
+        "t02-05-parcours-payant"
+      ]
+    }
+  ],
+  "urls": [
+    "${APP_URL}"
+  ],
+  "plugins": []
+}
