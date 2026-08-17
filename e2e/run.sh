@@ -137,6 +137,11 @@ if [ "$E2E_NETWORK" = auto ]; then
 fi
 # Port du grid : dans la bande 13xxx d'ecobuilding (1PESI) et non le 4444 par
 # défaut, parce qu'en réseau « host » il est réellement ouvert sur la machine.
+# DISPLAY dédié (113) : en réseau host, les sockets Unix ABSTRAITS sont
+# partagés entre conteneurs — deux Selenium en host-network se disputent le
+# Xvfb :99 par défaut, et le second meurt proprement (supervisord SIGTERM,
+# exit 0) ~2 s après le démarrage. Vécu : une sonde WebDriver oubliée a tué
+# tous les grids suivants, readiness comprise, sans le moindre message.
 GRID_PORT="${GRID_PORT:-13095}"
 if [ "$E2E_NETWORK" = host ]; then
   NETARGS=(--network host); GRID_URL="http://localhost:$GRID_PORT"
@@ -151,6 +156,7 @@ $CR run -d --name "$GRID" "${NETARGS[@]}" --shm-size=2g \
   -e SE_NODE_SESSION_TIMEOUT="${SE_NODE_SESSION_TIMEOUT:-900}" \
   -e SE_START_VNC="${SE_START_VNC:-false}" \
   -e SE_OPTS="--port $GRID_PORT" \
+  -e DISPLAY_NUM="${DISPLAY_NUM:-113}" \
   "$SELENIUM_IMAGE" >/dev/null
 # Armé immédiatement après le démarrage du conteneur : une sortie en erreur
 # entre ici et la fin ne doit pas laisser un navigateur orphelin sur la machine.
@@ -174,8 +180,10 @@ echo "   navigateur prêt"
 # est CODÉ EN DUR dans @seleniumhq/side-runtime (webdriver.js) : impossible de
 # l'allonger. Deux parades, parce qu'un premier démarrage de Chromium sur une
 # machine chargée dépasse facilement 30 s :
-#   1. headless — supprime tout le coût X11 ; les écrans traversés (formulaires
-#      Keycloak, checkout Polar, panneau compte) sont du DOM, pas du WebGL ;
+#   1. headless — supprime tout le coût X11. PAS de --disable-gpu : la carte
+#      MapLibre a besoin de WebGL (SwiftShader en headless), et un échec
+#      d'init de la carte casse le handler du clic d'adresse — panneau jamais
+#      ouvert, carte blanche, timeout muet sur report-btn (vécu run 6) ;
 #   2. une session d'échauffement jetée avant de lancer la suite, pour que le
 #      coût de démarrage à froid soit payé HORS de la fenêtre des 30 s.
 # pageLoadStrategy=eager, en plus : le checkout Polar garde des connexions
@@ -185,7 +193,7 @@ echo "   navigateur prêt"
 # Locale française : le thème Keycloak suit la langue du navigateur, et nos
 # utilisateurs sont français. Un Chromium par défaut joue le parcours en
 # anglais, c'est-à-dire pas celui qui part en production.
-CHROME_ARGS="${CHROME_ARGS:-[--lang=fr-FR,--accept-lang=fr-FR,--no-sandbox,--disable-dev-shm-usage,--disable-gpu,--disable-extensions,--disable-search-engine-choice-screen$([ "${E2E_HEADLESS:-true}" = true ] && echo ",--headless=new")]}"
+CHROME_ARGS="${CHROME_ARGS:-[--lang=fr-FR,--accept-lang=fr-FR,--no-sandbox,--disable-dev-shm-usage,--disable-extensions,--disable-search-engine-choice-screen$([ "${E2E_HEADLESS:-true}" = true ] && echo ",--headless=new")]}"
 echo "   échauffement du navigateur"
 $CR exec -e P="$GRID_PORT" "$GRID" bash -c 'SID=$(curl -s -m 150 -X POST "http://localhost:$P/session" \
     -H "Content-Type: application/json" \
@@ -207,7 +215,13 @@ if [ -n "${KC_ADMIN_PASSWORD:-}" ]; then
   kcadm config credentials --server http://localhost:8080/auth --realm master \
     --user "${KC_ADMIN_USER:-ci-admin}" --password "$KC_ADMIN_PASSWORD" >/dev/null 2>&1 && kc_ready=1
 fi
-[ "$kc_ready" = 1 ] || echo "   AVERTISSEMENT: pas d'accès admin Keycloak (KC_ADMIN_PASSWORD absent) — la vérification e-mail ne pourra pas être franchie"
+if [ "$kc_ready" != 1 ]; then
+  if [ -n "${KC_ADMIN_PASSWORD:-}" ]; then
+    echo "   AVERTISSEMENT: login admin Keycloak REFUSÉ (mot de passe erroné, ou Keycloak en cours de redéploiement) — la vérification e-mail ne pourra pas être franchie"
+  else
+    echo "   AVERTISSEMENT: pas d'accès admin Keycloak (KC_ADMIN_PASSWORD absent) — la vérification e-mail ne pourra pas être franchie"
+  fi
+fi
 kc_user_id() { [ "$kc_ready" = 1 ] || return 1
   kcadm get users -r "$KC_REALM" -q "email=$1" --fields id --format csv --noquotes 2>/dev/null | tr -d '\r' | head -1; }
 kc_delete_user() { [ "$kc_ready" = 1 ] || return 0
