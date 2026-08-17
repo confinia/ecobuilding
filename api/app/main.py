@@ -1384,8 +1384,48 @@ def _pro_set(ext_id: str, active: bool, **extra):
     os.replace(tmp, PRO_PATH)
 
 
+# Reconciliation cache: {ext_id: (checked_at, active)}. Polar is the source of
+# truth for money; pro.json is our fast local copy.
+_pro_check: dict = {}
+PRO_RECHECK_TTL = float(os.environ.get("PRO_RECHECK_TTL", "60"))
+
+
+def _polar_subscription_active(ext_id: str) -> bool:
+    """Ask Polar whether this account has an ACTIVE subscription (#228).
+
+    The webhook is an optimisation, not a dependency: declaring it needs a
+    token scope we do not have, and webhooks can be missed anyway. A short
+    cache keeps this to at most one upstream call per user per minute, and any
+    failure answers False so a Polar hiccup never grants nor breaks access."""
+    if not (POLAR_ACCESS_TOKEN and ext_id):
+        return False
+    now = time.monotonic()
+    hit = _pro_check.get(ext_id)
+    if hit and now - hit[0] < PRO_RECHECK_TTL:
+        return hit[1]
+    active = False
+    try:
+        with httpx.Client(timeout=6.0) as c:
+            r = c.get(f"{POLAR_BASE_URL}/v1/subscriptions/",
+                      params={"external_customer_id": ext_id, "active": "true", "limit": 1},
+                      headers={"Authorization": f"Bearer {POLAR_ACCESS_TOKEN}"})
+            r.raise_for_status()
+            active = bool((r.json().get("items") or []))
+    except Exception as e:
+        log.warning("Polar subscription check failed for %s: %s", ext_id, e)
+    _pro_check[ext_id] = (now, active)
+    if active:
+        _pro_set(ext_id, True, source="reconciled")
+    return active
+
+
 def _pro_active(ext_id: str | None) -> bool:
-    return bool(ext_id) and _pro_load().get(ext_id, {}).get("status") == "active"
+    if not ext_id:
+        return False
+    if _pro_load().get(ext_id, {}).get("status") == "active":
+        return True
+    # Not active locally: reconcile with Polar (webhook may never have come).
+    return _polar_subscription_active(ext_id)
 
 
 def _sub_external_id(data: dict) -> str | None:

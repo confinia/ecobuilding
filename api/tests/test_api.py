@@ -740,3 +740,42 @@ def test_polar_checkout_omits_empty_metadata(monkeypatch):
     assert r.status_code == 200, r.text
     assert sent["metadata"] == {"kc_sub": "u-1"}          # no empty values
     assert "" not in sent["metadata"].values()
+
+def test_pro_reconciles_without_webhook(tmp_path, monkeypatch):
+    """#228: a paid subscription must activate even if the webhook never
+    arrives — and the check must be cached and failure-safe."""
+    monkeypatch.setattr(main, "PRO_PATH", str(tmp_path / "pro.json"))
+    monkeypatch.setattr(main, "POLAR_ACCESS_TOKEN", "tok")
+    main._pro_check.clear()
+    calls = {"n": 0}
+
+    class Resp:
+        def raise_for_status(self): pass
+        def json(self): return {"items": [{"id": "sub_1"}]}
+    class FakeClient:
+        def __init__(self, *a, **k): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def get(self, url, params=None, headers=None):
+            calls["n"] += 1
+            return Resp()
+    monkeypatch.setattr(main.httpx, "Client", FakeClient)
+
+    assert main._pro_active("user-9") is True        # reconciled from Polar
+    assert calls["n"] == 1
+    assert main._pro_active("user-9") is True        # served from pro.json now
+    assert calls["n"] == 1                            # no second upstream call
+    assert main._pro_load()["user-9"]["status"] == "active"
+
+
+def test_pro_reconciliation_failure_never_grants_access(tmp_path, monkeypatch):
+    monkeypatch.setattr(main, "PRO_PATH", str(tmp_path / "pro.json"))
+    monkeypatch.setattr(main, "POLAR_ACCESS_TOKEN", "tok")
+    main._pro_check.clear()
+    class Boom:
+        def __init__(self, *a, **k): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def get(self, *a, **k): raise RuntimeError("polar down")
+    monkeypatch.setattr(main.httpx, "Client", Boom)
+    assert main._pro_active("user-x") is False       # fails closed, no crash
