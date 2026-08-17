@@ -112,15 +112,24 @@ async function ecoPricing() {
       };
       const out = document.getElementById("signout");
       if (out) out.onclick = (e) => { e.preventDefault(); kc.logout({ redirectUri: location.origin }); };
-      const go = document.getElementById("gopro");
-      if (go) go.onclick = async (e) => {
-        e.preventDefault(); track("gopro_click");
+      // v4 : trois paliers. Le bouton du bandeau démarre Pro S en un clic ;
+      // la page /offres.html propose le choix via des liens /?gopro=s|m|l.
+      const startCheckout = async (tier) => {
+        track("gopro_click", { tier });
         try {
-          const r = await fetch("/api/v1/pro/checkout", { headers: { Authorization: "Bearer " + kc.token } });
+          const r = await fetch(`/api/v1/pro/checkout?tier=${tier}`,
+                                { headers: { Authorization: "Bearer " + kc.token } });
           if (!r.ok) throw new Error(r.status);
-          window.location.href = (await r.json()).url;   // -> Polar hosted checkout
+          window.location.href = (await r.json()).url;   // -> checkout hébergé (Creem)
         } catch { alert("Le passage à l'offre Pro est momentanément indisponible : contact@confinia.io"); }
       };
+      const go = document.getElementById("gopro");
+      if (go) go.onclick = (e) => { e.preventDefault(); startCheckout("s"); };
+      const wantedTier = new URLSearchParams(location.search).get("gopro");
+      if (wantedTier && /^[sml]$/.test(wantedTier)) {
+        if (authenticated) { history.replaceState(null, "", location.pathname); startCheckout(wantedTier); }
+        else kc.login({ redirectUri: location.origin + "/?gopro=" + wantedTier });
+      }
       // Arriving from the quota page: open registration immediately.
       if (!authenticated && new URLSearchParams(location.search).get("signup") === "1") {
         track("signup_autostart");

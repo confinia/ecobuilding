@@ -561,17 +561,20 @@ def test_building_map_enabled_returns_datauri(monkeypatch):
     assert base64.b64decode(out.split(",", 1)[1]) == png
 
 # --- Pay-as-you-go metering (#201) -------------------------------------------
-def test_pro_payg_curve():
-    """Pricing v3 (#224): the billed unit IS the fiche — 10 offertes, then
-    0,49 € each, hard 99 € cap (reached at 212). No base fee, no credits."""
-    from app.main import _usage_cost, CREDIT_COST
+def test_pro_tier_grid_v4():
+    """Pricing v4 (bascule Creem, 2026-08-17) : paliers fixes, plus de metering.
+    Pro S 9 € (30 fiches) · Pro M 29 € (100) · Pro L 99 € (illimité fair-use).
+    Le simulateur recommande le plus petit palier couvrant le volume."""
+    from app.main import _usage_cost, _tier_for, CREDIT_COST, PRO_TIERS
     assert CREDIT_COST["report"] == 1 and CREDIT_COST["lookup"] == 0
-    assert _usage_cost(0)["cost_eur"] == 0.0        # nothing used, nothing due
-    assert _usage_cost(10)["cost_eur"] == 0.0       # 10 offertes
-    assert _usage_cost(30)["cost_eur"] == 9.8       # 20 x 0,49
-    assert _usage_cost(212)["cost_eur"] == 98.98    # just under the cap
-    capped = _usage_cost(10_000)
-    assert capped["cost_eur"] == 99.0 and capped["cap_reached"] is True
+    assert PRO_TIERS["s"]["eur"] == 9 and PRO_TIERS["s"]["fiches"] == 30
+    assert PRO_TIERS["m"]["eur"] == 29 and PRO_TIERS["m"]["fiches"] == 100
+    assert PRO_TIERS["l"]["eur"] == 99 and PRO_TIERS["l"]["fiches"] is None
+    assert _usage_cost(0)["cost_eur"] == 0.0        # rien consommé, rien dû
+    assert _usage_cost(10)["cost_eur"] == 0.0       # couvert par le compte gratuit
+    assert _tier_for(30) == "s" and _usage_cost(30)["cost_eur"] == 9.0
+    assert _tier_for(31) == "m" and _usage_cost(100)["cost_eur"] == 29.0
+    assert _tier_for(101) == "l" and _usage_cost(10_000)["cost_eur"] == 99.0
     tiers = _usage_cost(0)["free_tiers"]
     assert tiers["anonymous_reports_month"] == 3
     assert tiers["free_account_reports_month"] == 10
@@ -597,22 +600,24 @@ def test_usage_endpoint_requires_key_and_reports_cost(tmp_path, monkeypatch):
     # A FREE account sees its allowance, not a bill (#206).
     assert body["plan"] == "free" and body["cost_eur"] == 0.0
     assert body["reports_used"] == 20 and body["reports_left"] == 0
-    # A PRO subscriber sees the subscription cost instead.
+    # A PRO subscriber sees the fixed tier price and the tier allowance (v4).
     monkeypatch.setattr(main, "_key_plans", lambda: {"K1": "pro"})
+    monkeypatch.setattr(main, "_key_owners", lambda: {"K1": "sub-1"})
+    monkeypatch.setattr(main, "_pro_tier", lambda sub: "s")
     pro = client.get("/v1/usage", headers={"X-API-Key": "K1"}).json()
-    assert pro["plan"] == "pro" and pro["cost_eur"] == round((20 - 10) * 0.49, 2)
-    assert pro["monthly_cap_eur"] == 99.0
+    assert pro["plan"] == "pro" and pro["tier"] == "s"
+    assert pro["cost_eur"] == 9.0
+    assert pro["reports_used"] == 20 and pro["reports_left"] == 10   # sur 30
 
 
 def test_pricing_simulator_matches_frontend_formula():
-    """The public simulator and the offres.html script must agree (#201):
-    the page slider and the server both count FICHES (#224)."""
-    fiches = 100
-    body = client.get("/v1/pricing", params={"credits": fiches}).json()
-    assert body["cost_eur"] == round(min((fiches - 10) * 0.49, 99), 2) == 44.1
+    """The public simulator and the offres.html script must agree: both
+    recommend the smallest tier covering the monthly volume (v4)."""
+    body = client.get("/v1/pricing", params={"credits": 100}).json()
+    assert body["recommended_tier"] == "m" and body["cost_eur"] == 29.0
     assert body["credit_costs"]["report"] == 1        # one unit = one fiche
-    assert body["price_per_fiche_eur"] == 0.49
-    assert body["included_fiches"] == 10
+    assert body["tiers"]["l"]["fiches_month"] is None  # illimité fair-use
+    assert client.get("/v1/pricing", params={"credits": 8}).json()["cost_eur"] == 0.0
 
 
 def test_keyed_call_consumes_credits(tmp_path, monkeypatch):
@@ -712,14 +717,20 @@ def test_keys_listing_is_scoped_and_masked(tmp_path, monkeypatch):
 
 
 def test_config_exposes_payment_mode(monkeypatch):
-    """#221: the UI must be able to warn that payments are in SANDBOX mode."""
-    monkeypatch.setattr(main, "POLAR_ACCESS_TOKEN", "")
+    """#221: the UI must be able to warn that payments are in SANDBOX mode —
+    provider-aware since the Creem switch (rule 21)."""
+    monkeypatch.setattr(main, "PAYMENT_PROVIDER", "none")
     assert client.get("/v1/config").json()["payment_mode"] == "disabled"
-    monkeypatch.setattr(main, "POLAR_ACCESS_TOKEN", "tok")
+    monkeypatch.setattr(main, "PAYMENT_PROVIDER", "creem")
+    monkeypatch.setattr(main, "CREEM_API_BASE", "https://test-api.creem.io/v1")
+    body = client.get("/v1/config").json()
+    assert body["payment_mode"] == "sandbox" and body["payment_provider"] == "creem"
+    assert body["pro_tiers"]["s"]["eur"] == 9          # la grille arrive au front
+    monkeypatch.setattr(main, "CREEM_API_BASE", "https://api.creem.io/v1")
+    assert client.get("/v1/config").json()["payment_mode"] == "live"
+    monkeypatch.setattr(main, "PAYMENT_PROVIDER", "polar")
     monkeypatch.setattr(main, "POLAR_BASE_URL", "https://sandbox-api.polar.sh")
     assert client.get("/v1/config").json()["payment_mode"] == "sandbox"
-    monkeypatch.setattr(main, "POLAR_BASE_URL", "https://api.polar.sh")
-    assert client.get("/v1/config").json()["payment_mode"] == "live"
 
 def test_polar_checkout_omits_empty_metadata(monkeypatch):
     """Polar rejects empty metadata values (422): a user without an `org`

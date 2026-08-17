@@ -623,8 +623,8 @@
         },
         {
           "id": "c0406",
-          "comment": "Carte de TEST Stripe. Aucun euro réel : l'organisation Polar est en sandbox.",
-          "command": "type",
+          "comment": "sendKeys, PAS type : type clique puis vide le champ avant de saisir, et sur les champs Stripe ce clic échoue par intermittence (hit-test dans l'iframe en headless) puis la re-saisie se perd dans le re-rendu React. Vérifié au WebDriver nu : la saisie directe sans clic tient.",
+          "command": "sendKeys",
           "target": "${SEL_CARD_NUMBER}",
           "targets": [],
           "value": "${E2E_CARD_NUMBER}"
@@ -632,7 +632,7 @@
         {
           "id": "c0407",
           "comment": "",
-          "command": "type",
+          "command": "sendKeys",
           "target": "${SEL_CARD_EXPIRY}",
           "targets": [],
           "value": "${E2E_CARD_EXPIRY}"
@@ -640,10 +640,18 @@
         {
           "id": "c0408",
           "comment": "",
-          "command": "type",
+          "command": "sendKeys",
           "target": "${SEL_CARD_CVC}",
           "targets": [],
           "value": "${E2E_CARD_CVC}"
+        },
+        {
+          "id": "c0408b",
+          "comment": "Preuve que les trois champs ont bien reçu la carte avant de soumettre — sinon le checkout reste silencieusement sur place et on ne le voit qu'au timeout.",
+          "command": "assertValue",
+          "target": "css=#payment-numberInput",
+          "targets": [],
+          "value": "4242 4242 4242 4242"
         },
         {
           "id": "c0409",

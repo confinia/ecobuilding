@@ -4,7 +4,7 @@ Ce répertoire joue le parcours qu'un client réel suit pour devenir payant :
 il s'inscrit, se connecte, génère une fiche, paie, et son compte bascule en Pro.
 Le scénario est un projet **Selenium IDE** (`ecobuilding.side`), rejouable à la
 main dans l'extension comme en ligne de commande, et il est doublé d'une
-vérification **côté plateforme de paiement** (`polar_report.py`).
+vérification **côté plateforme de paiement** (`payment_report.py` — Creem test mode, règle 21 ; Polar sandbox en héritage).
 
 Les deux moitiés sont nécessaires, et c'est tout l'intérêt du montage :
 

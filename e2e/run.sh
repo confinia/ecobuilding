@@ -1,7 +1,8 @@
 #!/bin/bash
 # EcoBuilding — parcours e2e INSCRIPTION + PAIEMENT, joué dans un vrai
 # navigateur par Selenium IDE (projet e2e/ecobuilding.side) et vérifié côté
-# plateforme de paiement par e2e/polar_report.py (sandbox-api.polar.sh).
+# plateforme de paiement par e2e/payment_report.py (Creem test mode ;
+# Polar sandbox en héritage).
 #
 #   cp e2e/.env.example e2e/.env   # puis compléter
 #   ./e2e/run.sh
@@ -49,6 +50,9 @@ E2E_ORG="${E2E_ORG:-E2E}"
 E2E_FIRSTNAME="${E2E_FIRSTNAME:-CI}"
 E2E_LASTNAME="${E2E_LASTNAME:-Selenium}"
 E2E_ADDRESS="${E2E_ADDRESS:-7 rue Pierre Corneille, Amiens}"
+# Carte de test selon le fournisseur : Creem publie 4111…, Stripe/Polar 4242….
+if [ -n "${CREEM_API_KEY:-}" ]; then DEFAULT_CARD=4111111111111111; else DEFAULT_CARD=4242424242424242; fi
+E2E_CARD_NUMBER="${E2E_CARD_NUMBER:-$DEFAULT_CARD}"
 PDF_WAIT_MS="${PDF_WAIT_MS:-25000}"
 PRO_WAIT_MS="${PRO_WAIT_MS:-65000}"
 
@@ -253,7 +257,7 @@ fi
 # --- 5. rapport depuis la plateforme de paiement ------------------------------
 # Le compte de test est supprimé à la sortie : interroger Polar AVANT le ménage.
 rc_polar=0
-python3 e2e/polar_report.py \
+python3 e2e/payment_report.py \
   --out "$OUT" --env "$ECO_ENV" --app-url "$APP_URL" --api-url "$API_URL" \
   --email "$E2E_EMAIL" --signup-rc "$rc_signup" \
   --payment-rc "$([ "$pay_ran" = 1 ] && echo "$rc_pay" || echo -1)" || rc_polar=$?

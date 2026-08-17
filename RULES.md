@@ -110,3 +110,13 @@
     personal inbox only — so each workflow mails its own failures via
     `deploy/ci-notify.sh` (To contact@, Cc alert@) to keep them visible on
     both sides.
+21. **Payment provider is creem.io** (rule set 2026-08-17): the merchant of
+    record is Creem (EU-incorporated, Estonia) — sovereignty decision: the
+    customer invoice is issued by an EU entity, and no French company has to
+    be created yet (the operator still needs a micro-entrepreneur status to
+    receive payouts; that is a declaration, not a company). **Test Mode
+    ONLY for now** — `creem_test_` keys, `test-api.creem.io`, the existing
+    dashboard product « ecobuilding » is adopted by `deploy/creem-setup.sh`.
+    Production keeps ZERO payment configuration (rule 7 unchanged). Polar
+    remains sandbox test-harness history; its code path stays until the
+    Creem journey is proven end to end, then dies.

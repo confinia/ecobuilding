@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Rapport e2e depuis la PLATEFORME DE PAIEMENT (sandbox-api.polar.sh).
+"""Rapport e2e depuis la PLATEFORME DE PAIEMENT (Creem test mode, ou Polar
+sandbox en héritage).
 
 Le scénario Selenium prouve ce que voit l'utilisateur ; ce script prouve ce que
 voit Polar. Les deux sont nécessaires : l'app peut afficher « Pro » alors que
@@ -19,6 +20,12 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+CREEM_KEY = os.environ.get("CREEM_API_KEY", "")
+CREEM_BASE = (os.environ.get("CREEM_API_BASE")
+              or ("https://test-api.creem.io/v1" if CREEM_KEY.startswith("creem_test_")
+                  else "https://api.creem.io/v1")).rstrip("/")
+CREEM_PRODUCTS = json.loads(os.environ.get("CREEM_PRODUCTS_JSON", "") or "{}")
+PROVIDER = "creem" if CREEM_KEY else "polar"
 BASE = os.environ.get("POLAR_BASE_URL", "https://sandbox-api.polar.sh").rstrip("/")
 TOKEN = os.environ.get("POLAR_ACCESS_TOKEN", "")
 PRODUCT_ID = os.environ.get("POLAR_PRODUCT_ID", "")
@@ -37,7 +44,10 @@ def get(url, params=None, token=TOKEN, timeout=25):
     req.add_header("User-Agent", "ecobuilding-e2e/1.0 (+https://ecobuilding.confinia.io)")
     req.add_header("Accept", "application/json")
     if token:
-        req.add_header("Authorization", f"Bearer {token}")
+        if PROVIDER == "creem":
+            req.add_header("x-api-key", token)
+        else:
+            req.add_header("Authorization", f"Bearer {token}")
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return json.loads(r.read().decode()), None
@@ -77,11 +87,42 @@ def main():
     }
     report["annonce_ecobuilding"] = ours
 
-    # 2. Ce que Polar facture réellement.
-    if not TOKEN:
+    if PROVIDER == "creem":
+        # 2. Ce que Creem facture réellement : chaque palier annoncé par
+        #    /v1/config doit exister comme produit récurrent au même prix.
+        cfg, err = get(f"{a.api_url}/v1/config", token=None)
+        tiers = (cfg or {}).get("pro_tiers") or {}
+        report["paliers_annoncés"] = tiers
+        if err:
+            problems.append(f"/v1/config illisible : {err}")
+        for t, pid in CREEM_PRODUCTS.items():
+            prod, perr = get(f"{CREEM_BASE}/products", {"product_id": pid}, token=CREEM_KEY)
+            if perr:
+                problems.append(f"produit Creem {t} ({pid}) illisible : {perr}")
+                continue
+            cents = int(prod.get("price") or 0)
+            want = tiers.get(t, {}).get("eur")
+            report.setdefault("produits_creem", {})[t] = {
+                "id": pid, "nom": prod.get("name"), "prix_eur": cents / 100,
+                "récurrence": prod.get("billing_period")}
+            if want is not None and cents != int(want) * 100:
+                problems.append(f"palier {t} : Creem facture {cents/100:.2f} € "
+                                f"≠ {want} € annoncés (PRICING.md v4)")
+        if a.email and CREEM_KEY:
+            cust, cerr = get(f"{CREEM_BASE}/customers", {"email": a.email}, token=CREEM_KEY)
+            found = bool(cust and (cust.get("id") or (cust.get("items") or [])))
+            report["client_creem"] = {"trouvé": found, "erreur": cerr}
+            if not found:
+                problems.append(f"aucun client Creem pour {a.email} : le checkout n'a pas abouti")
+        # le bloc Polar ci-dessous ne joue pas en mode creem
+        problems_len_before = len(problems)
+
+    # 2bis. Ce que Polar facture réellement (héritage).
+    if PROVIDER == "polar" and not TOKEN:
         problems.append("POLAR_ACCESS_TOKEN absent de e2e/.env — aucune vérification côté paiement")
-    product, err = (get(f"{BASE}/v1/products/{PRODUCT_ID}") if (TOKEN and PRODUCT_ID)
-                    else (None, "POLAR_PRODUCT_ID absent"))
+    product, err = (get(f"{BASE}/v1/products/{PRODUCT_ID}")
+                    if (PROVIDER == "polar" and TOKEN and PRODUCT_ID)
+                    else (None, None if PROVIDER == "creem" else "POLAR_PRODUCT_ID absent"))
     if err:
         problems.append(f"produit Polar illisible : {err}")
     if product:
@@ -115,7 +156,7 @@ def main():
                 problems.append(f"plafond Polar {cap} € ≠ plafond annoncé {ours['plafond_mensuel_eur']} €")
 
     # 3. Le compte du scénario, vu par Polar : client, abonnement, encaissement.
-    if TOKEN and a.email:
+    if PROVIDER == "polar" and TOKEN and a.email:
         customers, err = get(f"{BASE}/v1/customers/", {"email": a.email, "limit": 5})
         items = (customers or {}).get("items", [])
         report["client_polar"] = {"trouvé": bool(items), "erreur": err,
