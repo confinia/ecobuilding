@@ -17,6 +17,7 @@ solar potential — all from open data (BDNB/CSTB, BAN, Géorisques).
 | [SOURCES.md](SOURCES.md) | Open-data inventory: live, planned, candidate (incl. health, EU/US) |
 | [COMMUNICATION.md](COMMUNICATION.md) | Posting playbook: channel URLs, identities, titles, etiquette |
 | [PRICING.md](PRICING.md) | Pricing grid, rules, decision history, where each number lives |
+| [e2e/README.md](e2e/README.md) | Real-browser signup + payment journey (Selenium IDE), verified against Polar |
 | [BUSINESS.md](BUSINESS.md) | Market analysis, strategy, decision log |
 | [TODO.md](TODO.md) | Actions (business + product) |
 
