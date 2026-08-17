@@ -58,6 +58,32 @@ http://staging.ecobuilding.confinia.io:13300 {
 }
 
 
+# Dedicated API hosts (platform-agreed naming, environment leftmost). They
+# reuse the SAME entry ports as their environment — a dedicated prod API port
+# would force the platform edge to know which colour is active, i.e. put
+# application logic upstream (platform RULES.md §1). The path is prefixed with
+# /api so the stack caddy's existing handle_path strips it and reaches the API.
+http://api.ecobuilding.confinia.io:13000 {
+	log {
+		output stdout
+		format json
+	}
+	import block_scanners
+	rewrite * /api{uri}
+	reverse_proxy 127.0.0.1:13100
+}
+
+http://staging.api.ecobuilding.confinia.io:13000,
+http://staging.api.ecobuilding.confinia.io:13300 {
+	log {
+		output stdout
+		format json
+	}
+	import block_scanners
+	rewrite * /api{uri}
+	reverse_proxy 127.0.0.1:13200
+}
+
 :13000 {
 	respond "ecobuilding router (active: blue)" 200
 }
