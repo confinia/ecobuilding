@@ -159,6 +159,22 @@ def test_1pesi_port_migration():
     assert "127.0.0.1:13080:8040" in (ROOT / "render_stack/docker-compose.yml").read_text()
     assert "127.0.0.1:13020:3005" in (ROOT / "bdnb_stack/docker-compose.yml").read_text()
     assert "127.0.0.1:13400:8030" in (ROOT / "sandbox_stack/docker-compose.yml").read_text()
+    # Dedicated API hostnames: environment leftmost, SAME entry port as the
+    # environment (a dedicated prod API port would push colour-awareness into
+    # the platform edge), path prefixed so the stack caddy strips it.
+    for f in ("caddy_server/Caddyfile.blue", "caddy_server/Caddyfile.green"):
+        c = (ROOT / f).read_text()
+        assert "http://api.ecobuilding.confinia.io:13000" in c
+        assert "http://staging.api.ecobuilding.confinia.io:13300" in c
+        assert "api.staging.ecobuilding" not in c      # wrong ordering
+        assert "rewrite * /api{uri}" in c
+    sb = (ROOT / "sandbox_stack/Caddyfile").read_text()
+    assert "sandbox.api.ecobuilding.confinia.io" in sb
+    # The path form must keep working during the transition (dual-publish).
+    for f in ("caddy_server/Caddyfile.blue", "caddy_server/Caddyfile.green"):
+        assert "handle /auth/*" in (ROOT / f).read_text()
+    assert "handle_path /api/*" in (ROOT / "stack_caddy/Caddyfile").read_text()
+
     # Admin address inside the band and unique per caddy (1PESI, VM rule 2).
     for f in ("caddy_server/Caddyfile.blue", "caddy_server/Caddyfile.green"):
         assert "admin 127.0.0.1:13090" in (ROOT / f).read_text()
