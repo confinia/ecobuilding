@@ -1,16 +1,20 @@
 #!/bin/bash
-# EcoBuilding #128 — Keycloak realm email, as code. Configures SMTP on the
-# `confinia` realm and enables the "verify email" flow so every new
-# registration gets a confirmation mail from alert@confinia.io.
-# Idempotent: kcadm `update` overwrites the same fields on every run.
-# Run ON the VM (called by deploy.sh; safe to run standalone). Reads SMTP_*
-# from deploy/secrets.env; exits quietly if they are not provisioned yet.
+# EcoBuilding #128 — Keycloak realm email, as code. Configures SMTP on a realm
+# and enables the "verify email" flow so registrations and PASSWORD RESETS can
+# actually send mail. Idempotent: kcadm `update` overwrites the same fields.
+# Run ON the VM (called by stack-up.sh and sandbox.sh; safe standalone).
+#
+# Defaults to production; the sandbox stack calls it with its own realm:
+#   REALM=sandbox-ecobuilding KC_CONTAINER=ecobuilding-sandbox_sandbox-keycloak_1 \
+#   SECRETS=sandbox_stack/secrets.env ADMIN_USER=ci-admin ./deploy/kc-smtp.sh
 set -eu
 cd "$(dirname "$0")/.."
-. deploy/secrets.env
+REALM="${REALM:-confinia}"
+SECRETS="${SECRETS:-deploy/secrets.env}"
+. "$SECRETS"
 
 if [ -z "${SMTP_HOST:-}" ] || [ -z "${SMTP_PASSWORD:-}" ]; then
-  echo "kc-smtp: SMTP_* not in deploy/secrets.env — skipping (realm unchanged)"
+  echo "kc-smtp: SMTP_* not in $SECRETS — skipping (realm $REALM unchanged)"
   exit 0
 fi
 
@@ -19,7 +23,7 @@ fi
 if ! python3 - <<'PY'
 import os, smtplib, ssl, sys
 env = {}
-for line in open("deploy/secrets.env"):
+for line in open(os.environ.get("SECRETS", "deploy/secrets.env")):
     if "=" in line and not line.startswith("#"):
         k, _, v = line.strip().partition("=")
         env[k] = v
@@ -41,17 +45,17 @@ then
   exit 0
 fi
 
-KC=ecobuilding-auth_keycloak_1
+KC="${KC_CONTAINER:-ecobuilding-auth_keycloak_1}"
 KCADM="podman exec -i $KC /opt/keycloak/bin/kcadm.sh"
 
 $KCADM config credentials --server http://localhost:8080/auth \
-  --realm master --user "${KC_BOOTSTRAP_ADMIN_USERNAME:-admin}" \
+  --realm master --user "${ADMIN_USER:-${KC_BOOTSTRAP_ADMIN_USERNAME:-admin}}" \
   --password "$KC_BOOTSTRAP_ADMIN_PASSWORD" >/dev/null
 
 # Port 587 = STARTTLS (starttls=true, ssl=false); 465 would be the inverse.
 if [ "${SMTP_PORT:-587}" = "465" ]; then TLS=false SSL=true; else TLS=true SSL=false; fi
 
-$KCADM update realms/confinia \
+$KCADM update "realms/$REALM" \
   -s "smtpServer.host=$SMTP_HOST" \
   -s "smtpServer.port=${SMTP_PORT:-587}" \
   -s "smtpServer.starttls=$TLS" \
@@ -64,4 +68,4 @@ $KCADM update realms/confinia \
   -s "smtpServer.replyTo=${ALERT_RCPT:-}" \
   -s verifyEmail=true
 
-echo "kc-smtp: realm confinia SMTP + verifyEmail configured (from ${SMTP_FROM:-$SMTP_USER})"
+echo "kc-smtp: realm $REALM SMTP + verifyEmail configured (from ${SMTP_FROM:-$SMTP_USER})"

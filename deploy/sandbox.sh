@@ -45,6 +45,15 @@ done
 #    confinia/platform REPO (its PR #3) — never hand-edit the edge from here:
 #    a platform redeploy reverts it, and a duplicate site block breaks reload.
 
+# 4b. Realm email as code for the SANDBOX realm too (#229): without it,
+#     « mot de passe oublié » and the verification mail fail with
+#     « Erreur lors de l'envoi du courriel ».
+REALM=sandbox-ecobuilding \
+  KC_CONTAINER=ecobuilding-sandbox_sandbox-keycloak_1 \
+  SECRETS="$PWD/sandbox_stack/secrets.env" \
+  ADMIN_USER="${E2E_ADMIN_USER:-ci-admin}" \
+  ./deploy/kc-smtp.sh || echo "   WARN: sandbox realm email unchanged"
+
 # 5. health
 sleep 3
 echo "== sandbox health =="

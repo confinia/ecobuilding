@@ -54,6 +54,13 @@ def test_keycloak_email_is_code():
     assert "pre-flight" in sh.lower()          # never enabled with bad creds
     stack = (ROOT / "deploy/stack-up.sh").read_text()
     assert "kc-smtp.sh" in stack               # applied on every deploy
+    # #229: the SANDBOX realm needs it too, or « mot de passe oublié » fails
+    # with « Erreur lors de l'envoi du courriel ».
+    sandbox_sh = (ROOT / "deploy/sandbox.sh").read_text()
+    assert "kc-smtp.sh" in sandbox_sh and "REALM=sandbox-ecobuilding" in sandbox_sh
+    kc_smtp = (ROOT / "deploy/kc-smtp.sh").read_text()
+    assert 'REALM="${REALM:-confinia}"' in kc_smtp        # parameterised
+    assert 'KC_CONTAINER' in kc_smtp and 'SECRETS' in kc_smtp
     assert "set -a; . deploy/secrets.env" in stack  # compose substitution source
 
 
