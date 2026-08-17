@@ -64,4 +64,25 @@ Last updated: 2026-08-16 (triage + promote).
 
 ## To file (prose awaiting approval, rule 11)
 
-- (none)
+- **Exposer l'ID-RNB à côté de l'identifiant BDNB** (produit + interopérabilité).
+  Le [Référentiel National des Bâtiments](https://rnb.beta.gouv.fr/) donne à
+  chaque bâtiment un identifiant unique et *permanent* de 12 caractères, et
+  c'est lui — pas l'id BDNB — qui sert de **clé pivot entre cadastre, BAN,
+  BDNB et ADEME**. Nous clefons aujourd'hui sur l'id BDNB : nos URLs et notre
+  API ne sont donc pas jointes au reste de l'écosystème, et un id BDNB peut
+  bouger d'une version à l'autre (voir [#28](https://github.com/confinia/ecobuilding/issues/28)).
+  À faire : renvoyer `rnb_id` dans `/v1/buildings/{id}`, l'accepter en entrée,
+  et l'afficher sur la fiche PDF. Bénéfice commercial : c'est l'identifiant
+  que les diagnostiqueurs et les collectivités citent, et c'est le prérequis
+  pour parler crédiblement sur le forum GéoCommuns (canal ci-dessous).
+
+- **Canal : [Forum GéoCommuns](https://forum.geocommuns.fr)** (Discourse de
+  l'écosystème géocommuns : Panoramax 421 sujets, RTK-Centipede 178, RNB 24,
+  BAN, base routière). Audience = producteurs et réutilisateurs des données
+  exactes que nous consommons, dont des nœuds très centraux de l'open data géo
+  français. **Ce n'est pas un canal publicitaire** : y poster une annonce
+  produit se retournerait contre nous. Format à tenir : un *retour
+  d'expérience de réutilisateur* dans les catégories Panoramax et RNB — ce que
+  nous consommons, ce qui a manqué, ce que nous renvoyons — avec le lien vers
+  EcoBuilding en signature et non en objet. Prose à rédiger et à faire valider
+  avant publication (voir [COMMUNICATION.md](COMMUNICATION.md)).
