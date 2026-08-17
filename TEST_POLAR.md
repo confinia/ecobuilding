@@ -24,27 +24,15 @@ celui qui partira en production.
 
 ## Procédure complète (validée 2026-08-16)
 
-### 1. Une fois : déclarer le webhook Polar (seule étape manuelle)
+### 1. Rien à préparer : le webhook n'est plus nécessaire (#228)
 
-Le token d'organisation courant n'a pas le scope `webhooks:write`, donc la
-création par API échoue (`insufficient_scope`). Deux options :
-
-- **Dashboard** : sandbox.polar.sh → org `ecobuilding` → Settings → Webhooks →
-  Add endpoint
-  - URL : `https://sandbox.ecobuilding.confinia.io/api/v1/pro/webhook`
-  - Format : **Raw** (Standard Webhooks — c'est ce que l'API vérifie)
-  - Events : `subscription.created`, `subscription.active`,
-    `subscription.updated`, `subscription.canceled`, `subscription.revoked`
-  - Copier le **secret** généré.
-- ou régénérer un token avec `webhooks:write` et relancer la création par API.
-
-Puis sur la VM :
-```sh
-ssh ecobuilding
-nano ~/projects/ecobuilding/sandbox_stack/secrets.env   # POLAR_WEBHOOK_SECRET=whsec_…
-cd ~/projects/ecobuilding/sandbox_stack && set -a && . secrets.env && set +a \
-  && podman-compose -p ecobuilding-sandbox -f docker-compose.yml up -d --force-recreate sandbox-api
-```
+Le passage en Pro ne dépend **plus** d'un webhook. `_pro_active()` lit d'abord
+l'état local puis, si le compte n'est pas actif, interroge Polar
+(`GET /v1/subscriptions?external_customer_id=…&active=true`, en cache 60 s).
+Un abonnement payé devient donc actif **en moins d'une minute sans aucune
+configuration**. Déclarer le webhook (dashboard → Settings → Webhooks, format
+Raw, secret dans `POLAR_WEBHOOK_SECRET`) ne fait que rendre le basculement
+instantané — c'est une optimisation, pas un prérequis.
 
 ### 2. Payer avec une carte de test
 
@@ -76,7 +64,7 @@ clés API du compte deviennent « pro » automatiquement (le plan suit le COMPTE
 | Consommation → facturation | `deploy/e2e-usage.sh` : crédits locaux = crédits ingérés dans le meter Polar (53 = 53) |
 | Objets Polar | meter `aba28fdd…` + produit `a908bb90…` (base 9 € fixe + metered 1 c/crédit, `cap_amount` 9900) |
 | Checkout | URL de checkout sandbox obtenue via l'API avec un vrai compte (2026-08-16) |
-| Webhook → passage Pro | **manuel pour l'instant** : nécessite l'étape 1 |
+| Passage Pro | réconciliation testée unitairement (bascule + cache + échec sans octroi d'accès) ; la validation grandeur nature demande un vrai paiement carte, seule étape non automatisable |
 
 ## Bugs trouvés en faisant ce test (et corrigés)
 
@@ -89,3 +77,7 @@ clés API du compte deviennent « pro » automatiquement (le plan suit le COMPTE
 - Token d'organisation Polar : interdit d'envoyer `organization_id` (422).
 - Realm Keycloak : `organization` est un attribut REQUIS ; sans lui, toute
   connexion échoue avec « Account is not fully set up ».
+- Polar refuse de créer un abonnement payant par API (« the customer should go
+  through a checkout ») et la création de client demande un scope absent : la
+  saisie de carte est **la seule étape qui exige un humain**, d'où la
+  réconciliation (#228) plutôt qu'une dépendance au webhook.
