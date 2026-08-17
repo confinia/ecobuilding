@@ -606,14 +606,6 @@
           "value": "45000"
         },
         {
-          "id": "c0403",
-          "comment": "",
-          "command": "type",
-          "target": "${SEL_CO_NAME}",
-          "targets": [],
-          "value": "${E2E_CARD_NAME}"
-        },
-        {
           "id": "c0404",
           "comment": "Les champs carte vivent dans une iframe Stripe injectée après hydratation.",
           "command": "waitForElementPresent",
@@ -660,6 +652,22 @@
           "target": "relative=top",
           "targets": [],
           "value": ""
+        },
+        {
+          "id": "c0403",
+          "comment": "Rempli APRÈS que l'iframe Stripe est en place : ce checkout React re-rend le formulaire quand l'élément de paiement arrive, et une valeur saisie avant ce re-rendu est effacée (vécu : « This field is required » après soumission alors que le champ avait été rempli).",
+          "command": "type",
+          "target": "${SEL_CO_NAME}",
+          "targets": [],
+          "value": "${E2E_CARD_NAME}"
+        },
+        {
+          "id": "c0403b",
+          "comment": "La saisie a survécu au re-rendu.",
+          "command": "assertValue",
+          "target": "${SEL_CO_NAME}",
+          "targets": [],
+          "value": "${E2E_CARD_NAME}"
         },
         {
           "id": "c0410",
