@@ -13,14 +13,15 @@ Last updated: 2026-08-16 (triage + promote).
 
 | Environment | Runs | Note |
 |---|---|---|
-| [Production](https://ecobuilding.confinia.io) | `main` @ `55c2a18` — **promoted 2026-08-05** (green stack; blue kept for rollback) | Includes [#113](https://github.com/confinia/ecobuilding/issues/113), [#119](https://github.com/confinia/ecobuilding/issues/119), [#121](https://github.com/confinia/ecobuilding/issues/121), [#125](https://github.com/confinia/ecobuilding/issues/125); shared render container rebuilt (marker) |
-| [Staging](https://staging.ecobuilding.confinia.io) | candidate = blue (pre-promote prod) | **Routing fixed 2026-08-11** (platform PR [#3](https://github.com/confinia/platform/pull/3)) — validate-on-staging gate restored |
-| [Sandbox](https://sandbox.ecobuilding.confinia.io) | sandbox stack (:8030) | Publicly routed again (platform PR [#3](https://github.com/confinia/platform/pull/3)) |
+| [Production](https://ecobuilding.confinia.io) · API [api.ecobuilding.confinia.io](https://api.ecobuilding.confinia.io) | `main` @ `dda0a28` — **promoted 2026-08-17** (green stack; blue kept for rollback) | Includes [#113](https://github.com/confinia/ecobuilding/issues/113), [#119](https://github.com/confinia/ecobuilding/issues/119), [#121](https://github.com/confinia/ecobuilding/issues/121), [#125](https://github.com/confinia/ecobuilding/issues/125); shared render container rebuilt (marker) |
+| [Staging](https://staging.ecobuilding.confinia.io) · API `staging.api.ecobuilding.confinia.io` | candidate = blue (pre-promote prod) | **Routing fixed 2026-08-11** (platform PR [#3](https://github.com/confinia/platform/pull/3)) — validate-on-staging gate restored |
+| [Sandbox](https://sandbox.ecobuilding.confinia.io) · API `sandbox.api.ecobuilding.confinia.io` | sandbox stack (:8030) | Publicly routed again (platform PR [#3](https://github.com/confinia/platform/pull/3)) |
 
 ## Open / recently shipped issues
 
 | Issue | Status | Next step |
 |---|---|---|
+| [#232](https://github.com/confinia/ecobuilding/issues/232) Entrée API dédiée (`api.` / `staging.api.` / `sandbox.api.`) | **In production 2026-08-17** (PR [#233](https://github.com/confinia/ecobuilding/pull/233)) : chaque hôte API réutilise le port d'entrée de son environnement (13000/13300/13400) — un port API dédié en prod obligerait l'edge plateforme à connaître la couleur active, donc de la logique applicative en amont. Vérifié sur la VM : les hôtes API renvoient le JSON FastAPI, l'hôte applicatif la SPA ; les chemins `/api` restent servis (dual-publish, rollback = ne rien faire) | **Plateforme** : ajouter les 3 blocs edge → 13000 / 13300 / 13400 (DNS déjà résolu vers 5.135.143.93) |
 | [#224](https://github.com/confinia/ecobuilding/issues/224) Pricing v3 (facturer la fiche) | **In production 2026-08-16** (PR [#225](https://github.com/confinia/ecobuilding/pull/225)): 3 / 10 gratuites, puis 0,49 € la fiche, plafond 99 € ; plus aucun « crédit » côté client ; [PRICING.md](PRICING.md) est la source de vérité | — |
 | [#220](https://github.com/confinia/ecobuilding/issues/220) Clé API introuvable dans l'UI · [#221](https://github.com/confinia/ecobuilding/issues/221) bandeau sandbox · [#222](https://github.com/confinia/ecobuilding/issues/222) marqueur sur le toit | **In production 2026-08-16** (PR [#223](https://github.com/confinia/ecobuilding/pull/223)) ; #221 et #222 fermées | — |
 | [#219](https://github.com/confinia/ecobuilding/pull/219) Checkout Polar : metadata vides (422) | **In production 2026-08-16** : bloquait tout utilisateur sans organisation | — |
