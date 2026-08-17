@@ -60,9 +60,9 @@ SEL_CO_EMAIL="${SEL_CO_EMAIL:-css=input[name=\"customer_email\"]}"
 SEL_CO_NAME="${SEL_CO_NAME:-css=input[name=\"customer_name\"]}"
 SEL_CO_SUBMIT="${SEL_CO_SUBMIT:-css=button[type=\"submit\"]}"
 SEL_STRIPE_FRAME="${SEL_STRIPE_FRAME:-css=iframe[title=\"Secure payment input frame\"]}"
-SEL_CARD_NUMBER="${SEL_CARD_NUMBER:-css=#Field-numberInput}"
-SEL_CARD_EXPIRY="${SEL_CARD_EXPIRY:-css=#Field-expiryInput}"
-SEL_CARD_CVC="${SEL_CARD_CVC:-css=#Field-cvcInput}"
+SEL_CARD_NUMBER="${SEL_CARD_NUMBER:-css=#payment-numberInput}"
+SEL_CARD_EXPIRY="${SEL_CARD_EXPIRY:-css=#payment-expiryInput}"
+SEL_CARD_CVC="${SEL_CARD_CVC:-css=#payment-cvcInput}"
 
 SELENIUM_IMAGE="${SELENIUM_IMAGE:-docker.io/selenium/standalone-chromium:4.47.0}"
 NODE_IMAGE="${NODE_IMAGE:-docker.io/library/node:20-bookworm-slim}"
@@ -164,6 +164,10 @@ echo "   navigateur prêt"
 #      Keycloak, checkout Polar, panneau compte) sont du DOM, pas du WebGL ;
 #   2. une session d'échauffement jetée avant de lancer la suite, pour que le
 #      coût de démarrage à froid soit payé HORS de la fenêtre des 30 s.
+# pageLoadStrategy=eager, en plus : le checkout Polar garde des connexions
+# ouvertes et ne déclenche jamais l'événement load en headless — en stratégie
+# normale, la navigation bloque jusqu'au timeout et la session du grid meurt
+# d'inactivité pendant ce blocage (vécu : premier crash de la suite paiement).
 # Locale française : le thème Keycloak suit la langue du navigateur, et nos
 # utilisateurs sont français. Un Chromium par défaut joue le parcours en
 # anglais, c'est-à-dire pas celui qui part en production.
@@ -203,7 +207,7 @@ side() {   # side <regex-de-suite> <étiquette>
     -e npm_config_cache=/root/.npm \
     "$NODE_IMAGE" npx -y "selenium-side-runner@$RUNNER_VERSION" \
       --server "$GRID_URL" --base-url "$APP_URL" \
-      -c "browserName=chrome goog:chromeOptions.args=$CHROME_ARGS" --filter "$1" \
+      -c "browserName=chrome pageLoadStrategy=eager goog:chromeOptions.args=$CHROME_ARGS" --filter "$1" \
       --retries "${E2E_RETRIES:-0}" \
       --timeout 30000 --jest-timeout 900000 \
       --output-directory "/e2e/results/$STAMP" \

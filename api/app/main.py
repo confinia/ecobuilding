@@ -1456,6 +1456,10 @@ async def pro_checkout(request: Request):
         "success_url": f"{PUBLIC_BASE_URL}/?pro=success",
         "customer_email": claims.get("email") or claims.get("preferred_username"),
         "customer_external_id": claims.get("sub"),
+        # Prefilled billing country: the product is FR-only today (#118 will
+        # revisit), and every field removed from the hosted checkout is one
+        # less place to abandon. The customer can still change it on the page.
+        "customer_billing_address": {"country": "FR"},
         # Polar rejects EMPTY metadata values (min_length 1), so only non-empty
         # entries are sent: a user without an `org` claim would otherwise get a
         # 422 on every checkout attempt.
