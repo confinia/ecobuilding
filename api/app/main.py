@@ -11,6 +11,7 @@ Data sources (all open, keyless):
 """
 
 import asyncio
+import copy as _copy
 import json
 import logging
 import math
@@ -240,6 +241,9 @@ _client = httpx.AsyncClient(timeout=15.0, headers={"User-Agent": "ecobuilding.co
 # (10k calls/month) against traffic spikes; building data changes rarely.
 _CACHE: OrderedDict = OrderedDict()
 _CACHE_MAX = 5000
+# Agrégat bâtiment : 6 h par défaut — les sources ouvertes bougent lentement
+# (millésime BDNB annuel, DPE mensuel, piézométrie quotidienne).
+BUILDING_CACHE_TTL = float(os.environ.get("BUILDING_CACHE_TTL", "21600"))
 M_CACHE = _meter.create_counter("ecobuilding_upstream_cache", description="Upstream cache hits/misses", unit="1")
 
 
@@ -525,7 +529,7 @@ async def _do_lookup(q, ban_id, address, lon, lat):
         sources.append("DGFiP — Fiscalité directe locale — Licence Ouverte")
     if schools:
         sources.append("Annuaire de l'éducation (MENJ) — Licence Ouverte")
-    return {
+    result = {
         "query": {"q": q, "ban_id": ban_id, "address": address, "lon": lon, "lat": lat},
         "buildings": [_normalize_building(r) for r in rows],
         "area_risks": risks,
@@ -537,6 +541,7 @@ async def _do_lookup(q, ban_id, address, lon, lat):
         "schools": schools,
         "sources": sources,
     }
+    return result
 
 
 @app.get("/v1/lookup", tags=["buildings"])
@@ -825,6 +830,20 @@ async def building(
     """Full record of one building by its BDNB id (e.g. from a map click)."""
     if request is not None:
         _meter_if_keyed(request, "buildings")
+    # Cache de l'AGRÉGAT (demande opérateur) : chaque affichage refaisait
+    # l'orchestration complète (BDNB, Géorisques, Hub'Eau, DVF, ADEME,
+    # fiscalité, écoles, PVGIS…) même quand chaque source était en cache.
+    # Clé = bâtiment + position arrondie (~11 m) : l'arbitrage d'adresse (#152)
+    # dépend du point cliqué. COPIE défensive à la lecture ET à l'écriture —
+    # la route PDF mute query.address et contaminerait l'entrée sinon.
+    cache_key = (f"building:{bdnb_id}:"
+                 f"{round(lon, 4) if lon is not None else '-'}:"
+                 f"{round(lat, 4) if lat is not None else '-'}")
+    hit = _CACHE.get(cache_key)
+    if hit and time.monotonic() - hit[0] < BUILDING_CACHE_TTL:
+        _CACHE.move_to_end(cache_key)
+        M_CACHE.add(1, {"result": "hit_building"})
+        return _copy.deepcopy(hit[1])
     rows = await _cached_get_json(
         BDNB_BASE_URL, {"batiment_groupe_id": f"eq.{bdnb_id}", "limit": "1"}, ttl=86400
     )
@@ -856,7 +875,7 @@ async def building(
         sources.append("DGFiP — Fiscalité directe locale — Licence Ouverte")
     if schools:
         sources.append("Annuaire de l'éducation (MENJ) — Licence Ouverte")
-    return {
+    result = {
         # Prefer the group-member address at the clicked point (#152); the
         # principal address stays on buildings[0].address for the UI's row.
         "query": {"bdnb_id": bdnb_id,
@@ -873,6 +892,11 @@ async def building(
         "prices": prices,
         "sources": sources,
     }
+    _CACHE[cache_key] = (time.monotonic(), _copy.deepcopy(result))
+    _CACHE.move_to_end(cache_key)
+    while len(_CACHE) > _CACHE_MAX:
+        _CACHE.popitem(last=False)
+    return result
 
 
 # --- Identity (Keycloak, shared /auth) ---------------------------------------
@@ -1523,38 +1547,43 @@ def _pro_tier(ext_id: str | None) -> str | None:
     return None
 
 
+def _creem_find_subscription(email: str) -> dict | None:
+    """L'abonnement Creem ACTIF d'un e-mail, ou None. Creem ne sait pas
+    filtrer par external_id : on remonte e-mail -> customer -> abonnements.
+    /subscriptions/search refuse tout filtre customer_id (400 « property
+    customer_id should not exist ») : la forme qui marche est la ressource
+    imbriquée — vérifié contre test-api le 2026-08-18."""
+    if not (CREEM_API_KEY and email):
+        return None
+    with httpx.Client(timeout=6.0, headers={"x-api-key": CREEM_API_KEY}) as c:
+        r = c.get(f"{CREEM_API_BASE}/customers", params={"email": email})
+        r.raise_for_status()
+        cust = r.json() or {}
+        cust_id = cust.get("id") or ((cust.get("items") or [{}])[0].get("id"))
+        if not cust_id:
+            return None
+        r = c.get(f"{CREEM_API_BASE}/customers/{cust_id}/subscriptions")
+        r.raise_for_status()
+        items = (r.json().get("items") if isinstance(r.json(), dict) else r.json()) or []
+        return next((s for s in items if s.get("status") == "active"), None)
+
+
+def _creem_tier_of(sub: dict) -> str:
+    prod = (sub.get("product") or {}).get("id") or sub.get("product_id")
+    return next((t for t, pid in CREEM_PRODUCTS.items() if pid == prod), "s")
+
+
 def _creem_subscription_active(ext_id: str) -> bool:
     """Réconciliation Creem : le webhook est une optimisation, pas une
-    dépendance (même philosophie que #228 côté Polar). Creem ne sait pas
-    filtrer par external_id : au checkout on note l'e-mail du compte dans
-    pro.json (statut pending), et on remonte e-mail -> customer ->
-    abonnements actifs. Échec = False : un incident fournisseur ne doit
-    jamais accorder l'accès."""
-    rec = _pro_load().get(ext_id, {})
-    email = rec.get("email")
-    if not (CREEM_API_KEY and email):
-        return False
+    dépendance (même philosophie que #228 côté Polar). Échec = False : un
+    incident fournisseur ne doit jamais accorder l'accès."""
+    email = _pro_load().get(ext_id, {}).get("email")
     try:
-        with httpx.Client(timeout=6.0, headers={"x-api-key": CREEM_API_KEY}) as c:
-            r = c.get(f"{CREEM_API_BASE}/customers", params={"email": email})
-            r.raise_for_status()
-            cust = r.json() or {}
-            cust_id = cust.get("id") or ((cust.get("items") or [{}])[0].get("id"))
-            if not cust_id:
-                return False
-            # /subscriptions/search refuse tout filtre customer_id (400
-            # « property customer_id should not exist ») : la forme qui marche
-            # est la ressource imbriquée — vérifié contre test-api le 2026-08-18.
-            r = c.get(f"{CREEM_API_BASE}/customers/{cust_id}/subscriptions")
-            r.raise_for_status()
-            items = (r.json().get("items") if isinstance(r.json(), dict) else r.json()) or []
-            for sub in items:
-                if sub.get("status") == "active":
-                    prod = (sub.get("product") or {}).get("id") or sub.get("product_id")
-                    tier = next((t for t, pid in CREEM_PRODUCTS.items() if pid == prod), "s")
-                    _pro_set(ext_id, True, source="reconciled", tier=tier,
-                             subscription_id=sub.get("id"))
-                    return True
+        sub = _creem_find_subscription(email)
+        if sub:
+            _pro_set(ext_id, True, source="reconciled", tier=_creem_tier_of(sub),
+                     subscription_id=sub.get("id"))
+            return True
     except Exception as e:
         log.warning("Creem subscription check failed for %s: %s", ext_id, e)
     return False
@@ -1603,6 +1632,11 @@ async def pro_checkout(request: Request,
         raise HTTPException(401, "Invalid token")
     email = claims.get("email") or claims.get("preferred_username")
     if PAYMENT_PROVIDER == "creem":
+        # Déjà abonné : un checkout créerait un DEUXIÈME abonnement qui
+        # s'additionne — le changement de palier passe par /v1/pro/upgrade
+        # (prorata géré par Creem). 409 pour que le client route vers lui.
+        if _pro_active(claims.get("sub")):
+            raise HTTPException(409, "Déjà abonné — utilisez /v1/pro/upgrade")
         product = CREEM_PRODUCTS.get(tier)
         if not product:
             raise HTTPException(503, "Pro plan not configured")
@@ -1656,6 +1690,46 @@ async def pro_checkout(request: Request,
     M_PRO.add(1, {"event": "checkout"})
     body = resp.json()
     return {"url": body["url"], "checkout_id": body.get("id")}
+
+
+@app.post("/v1/pro/upgrade", tags=["account"])
+async def pro_upgrade(request: Request,
+                      tier: str = Query(..., pattern="^[sml]$")):
+    """Changer de palier (montée OU descente) : upgrade de l'abonnement Creem
+    EXISTANT, prorata immédiat géré par Creem — jamais un second checkout."""
+    auth = request.headers.get("authorization", "")
+    if not auth.lower().startswith("bearer "):
+        raise HTTPException(401, "Bearer token required")
+    try:
+        claims = _decode_token(auth[7:].strip())
+    except Exception:
+        raise HTTPException(401, "Invalid token")
+    sub_id_kc = claims.get("sub")
+    email = claims.get("email") or claims.get("preferred_username")
+    target = CREEM_PRODUCTS.get(tier)
+    if not (PAYMENT_PROVIDER == "creem" and target):
+        raise HTTPException(503, "Changement d'offre indisponible")
+    try:
+        cur = _creem_find_subscription(email)
+    except Exception as e:
+        log.warning("Creem lookup failed for upgrade (%s): %s", email, e)
+        raise HTTPException(502, "Fournisseur de paiement injoignable")
+    if not cur:
+        raise HTTPException(409, "Aucun abonnement actif — utilisez le checkout")
+    if _creem_tier_of(cur) == tier:
+        raise HTTPException(409, "Vous êtes déjà sur ce palier")
+    try:
+        resp = await _client.post(
+            f"{CREEM_API_BASE}/subscriptions/{cur['id']}/upgrade",
+            json={"product_id": target},
+            headers={"x-api-key": CREEM_API_KEY})
+        resp.raise_for_status()
+    except httpx.HTTPError as e:
+        log.warning("Creem upgrade failed: %s", e)
+        raise HTTPException(502, "Échec du changement d'offre")
+    _pro_set(sub_id_kc, True, tier=tier, subscription_id=cur["id"], source="upgrade")
+    M_PRO.add(1, {"event": "upgrade", "tier": tier})
+    return {"tier": tier, "label": PRO_TIERS[tier]["label"]}
 
 
 @app.post("/v1/pro/webhook", tags=["account"], status_code=202)
