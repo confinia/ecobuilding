@@ -279,12 +279,13 @@ map.on("load", () => {
     type: "fill-extrusion",
     minzoom: 13,
     paint: {
-      // Survol : le bâtiment CLIGNOTE (deux verts alternés par feature-state)
-      // pour lever toute ambiguïté avant le clic — en vue inclinée, le volume
-      // sous le curseur n'est pas celui qu'on croit viser au sol (#237).
+      // Survol : couleur STABLE (demande opérateur — pas de clignotement au
+      // survol) pour lever l'ambiguïté avant le clic. Le clignotement est
+      // réservé au CHARGEMENT du bâtiment cliqué (feature-state "loading").
       "fill-extrusion-color": ["case",
-        ["boolean", ["feature-state", "hover"], false],
+        ["boolean", ["feature-state", "loading"], false],
         ["case", ["boolean", ["feature-state", "pulse"], false], "#a7e3c1", "#2b7a4b"],
+        ["boolean", ["feature-state", "hover"], false], "#2b7a4b",
         DPE_COLORS],
       "fill-extrusion-height": ["coalesce", ["get", "hauteur_mean"], 6],
       // Opacité FIXE : fill-extrusion-opacity ne supporte pas les expressions
@@ -294,14 +295,13 @@ map.on("load", () => {
     },
   });
 
-  // Un seul bâtiment survolé à la fois ; le pouls ne tourne que pendant un
-  // survol (aucun timer à vide le reste du temps).
-  let hoverId = null, pulseTimer = null, pulseOn = false;
+  // Un seul bâtiment survolé à la fois — surlignage STABLE (demande
+  // opérateur : pas de clignotement au survol), sans timer.
+  let hoverId = null;
   const setHover = (id, state) => safeMap(() =>
     map.setFeatureState({ source: "bdnb", sourceLayer: "sql_statement", id }, state));
   function stopHover() {
-    if (pulseTimer) { clearInterval(pulseTimer); pulseTimer = null; }
-    if (hoverId !== null) { setHover(hoverId, { hover: false, pulse: false }); hoverId = null; }
+    if (hoverId !== null) { setHover(hoverId, { hover: false }); hoverId = null; }
     removeHoverMarker();
   }
   map.on("mousemove", "bdnb-dpe-3d", (e) => {
@@ -310,19 +310,34 @@ map.on("load", () => {
     if (id === undefined || id === hoverId) return;
     stopHover();
     hoverId = id;
-    pulseOn = false;
-    setHover(id, { hover: true, pulse: false });
-    // Épingle d'aperçu sur le TOIT du bâtiment survolé : centroïde + hauteur
-    // lus dans la tuile — même repère visuel que la sélection, avant le clic.
+    setHover(id, { hover: true });
     const c = ecoGeo.featuresCenter([f]);
     if (c) placeHoverMarker(c[0], c[1]);
-    pulseTimer = setInterval(() => {
-      if (hoverId === null) return;
-      pulseOn = !pulseOn;
-      setHover(hoverId, { hover: true, pulse: pulseOn });
-    }, 350);
   });
   map.on("mouseleave", "bdnb-dpe-3d", stopHover);
+
+  // CHARGEMENT d'un bâtiment cliqué : lui, il CLIGNOTE (feature-state
+  // loading+pulse) et porte une icône d'attente — le retour visuel est sur
+  // l'objet. Arrêté par le premier rendu final (showPanel sans keepLoadingFx).
+  let fxId = null, fxTimer = null, fxOn = false;
+  window.ecoStartLoadingFx = (id, lon, lat) => {
+    window.ecoStopLoadingFx();
+    if (id != null) {
+      fxId = id;
+      setHover(id, { loading: true, pulse: false });
+      fxTimer = setInterval(() => {
+        if (fxId === null) return;
+        fxOn = !fxOn;
+        setHover(fxId, { loading: true, pulse: fxOn });
+      }, 350);
+    }
+    if (lon != null) placeLoadingMarker(lon, lat);
+  };
+  window.ecoStopLoadingFx = () => {
+    if (fxTimer) { clearInterval(fxTimer); fxTimer = null; }
+    if (fxId !== null) { setHover(fxId, { loading: false, pulse: false }); fxId = null; }
+    removeLoadingMarker();
+  };
   document.getElementById("legend").hidden = false;
 
   // Initial selection: ?b= from the URL, else the showcase (no-hash visits).
@@ -372,6 +387,21 @@ function placeHoverMarker(lon, lat) {
 function removeHoverMarker() {
   if (hoverMarker) { hoverMarker.remove(); hoverMarker = null; }
 }
+// Icône d'attente posée sur le bâtiment en cours de chargement (altitude 0,
+// comme toutes les épingles en attendant les marqueurs élevés natifs).
+let loadingMarker = null;
+function placeLoadingMarker(lon, lat) {
+  removeLoadingMarker();
+  const el = document.createElement("div");
+  el.className = "building-loading";
+  el.innerHTML = '<div class="building-loading-spin"></div>';
+  el.style.pointerEvents = "none";
+  loadingMarker = new maplibregl.Marker({ element: el }).setLngLat([lon, lat]).addTo(map);
+  updateMarkerVisibility();
+}
+function removeLoadingMarker() {
+  if (loadingMarker) { loadingMarker.remove(); loadingMarker = null; }
+}
 
 // Identifying pin (issue #113): drop it at a point immediately, then re-anchor
 // onto the target building's footprint centroid once its tile is loaded, so the
@@ -395,7 +425,7 @@ const BUILDINGS_MINZOOM = 13;   // minzoom de la couche bdnb-dpe-3d
 // « pas d'épingle sans bâtiment » (masquées sous le minzoom de la couche).
 function updateMarkerVisibility() {
   const visible = map.getZoom() >= BUILDINGS_MINZOOM;
-  for (const m of [marker, hoverMarker]) {
+  for (const m of [marker, hoverMarker, loadingMarker]) {
     if (m) m.getElement().style.display = visible ? "" : "none";
   }
 }
@@ -461,6 +491,7 @@ async function select(s) {
   // Full address: fly to the building and open its record.
   safeMap(() => map.flyTo({ center: [s.lon, s.lat], zoom: 17.5, pitch: 55, bearing: -18, duration: 2500 }));
   safeMap(() => placeMarker(s.lon, s.lat));
+  window.ecoStartLoadingFx?.(null, s.lon, s.lat);
   showLoadingPanel('Chargement des données du bâtiment…');
   try {
     const r = await fetch(`${API}/lookup?ban_id=${encodeURIComponent(s.ban_id)}&lon=${s.lon}&lat=${s.lat}`);
@@ -478,7 +509,10 @@ const panel = document.getElementById("panel");
 const content = document.getElementById("panel-content");
 document.getElementById("close").onclick = () => { panel.hidden = true; setUrlBuilding(null); };
 
-function showPanel(html) { content.innerHTML = html; panel.hidden = false; }
+function showPanel(html, opts) {
+  // L'effet de chargement (clignotement + spinner sur le bâtiment) s'arrête
+  // au premier rendu FINAL — l'écran de chargement, lui, le laisse vivre.
+  if (!opts?.keepLoadingFx) window.ecoStopLoadingFx?.(); content.innerHTML = html; panel.hidden = false; }
 
 // Panoramax street-level photos near the building (issue #22).
 async function loadStreetview(lon, lat) {
@@ -497,14 +531,26 @@ async function loadStreetview(lon, lat) {
 async function openBuildingById(id, lon, lat) {
   placeMarker(lon, lat);
   anchorMarkerToBuilding(id);   // id is the tile's batiment_groupe_id -> pin on the footprint
+  window.ecoStartLoadingFx?.(id, lon, lat);
   showLoadingPanel('Chargement des données du bâtiment…');
   try {
     const r = await fetch(`${API}/buildings/${encodeURIComponent(id)}?lon=${lon}&lat=${lat}`);
+    // 404 = vraie absence de fiche ; tout le reste (réseau, 5xx, redéploiement
+    // en cours) est PASSAGER et mérite un « Réessayer » — l'ancien message
+    // unique faisait croire à un trou de données définitif (vécu : un clic
+    // pendant un redéploiement affichait « Données indisponibles »).
+    if (r.status === 404) {
+      showPanel('<p class="hint">Pas de fiche BDNB pour ce bâtiment.</p>');
+      return;
+    }
     if (!r.ok) throw new Error(r.status);
     const data = await r.json();
     renderPanel({ label: data.query.address || "Bâtiment" }, data);
   } catch {
-    showPanel('<p class="hint">Données indisponibles pour ce bâtiment.</p>');
+    showPanel(`<p class="hint">Données momentanément indisponibles.</p>
+      <p><button id="retry-building" class="report-link">Réessayer</button></p>`);
+    const b = document.getElementById("retry-building");
+    if (b) b.onclick = () => openBuildingById(id, lon, lat);
   }
 }
 
@@ -631,7 +677,16 @@ async function refreshQuota() {
     // false in production until RULES.md #7 is met, and a visible button that
     // 503s would be worse than no button at all.
     const go = document.getElementById("gopro");
-    if (go && window.ECO_PRO_ENABLED && u.plan !== "pro") go.hidden = false;
+    if (go && window.ECO_PRO_ENABLED) {
+      go.hidden = false;
+      // Abonné : « Passer Pro » n'a plus de sens — le bouton devient l'accès
+      // au changement de palier (panneau compte), jamais un second checkout.
+      if (u.plan === "pro") {
+        go.textContent = "Changer d'offre";
+        go.title = "Changer de palier (prorata immédiat)";
+        go.onclick = (e) => { e.preventDefault(); showAccount(); };
+      }
+    }
   } catch { /* quota display is cosmetic: never break the app */ }
 }
 
@@ -647,18 +702,49 @@ async function showAccount() {
       fetch(`${API}/keys`, { headers: auth }).then((r) => r.json()),
     ]);
     const quota = usage.plan === "pro"
-      ? `<p>Offre <strong>Pro</strong> — ${usage.credits} crédits ce mois, ${usage.cost_eur} € (plafond ${usage.monthly_cap_eur} €).</p>`
+      ? `<p>Offre <strong>${usage.tier_label || "Pro"}</strong> (${usage.cost_eur} €/mois) —
+         ${usage.reports_included == null
+           ? `${usage.reports_used} fiche${usage.reports_used > 1 ? "s" : ""} ce mois (illimité, usage raisonnable)`
+           : `<strong>${usage.reports_left}</strong> fiches restantes sur ${usage.reports_included} ce mois`}.</p>`
       : `<p>Compte gratuit — <strong>${usage.reports_left}</strong> fiches restantes sur ${usage.reports_included} ce mois.</p>`;
+    const p = await ecoPricing();
+    const tiers = p?.tiers || {};
+    const switchers = usage.plan === "pro"
+      ? `<h3>Changer d'offre</h3><p>${Object.entries(tiers)
+          .filter(([t]) => t !== usage.tier)
+          .map(([t, v]) => `<button class="report-link tier-switch" data-tier="${t}">
+            ${v.label} — ${v.eur} €/mois${v.fiches_month ? ` (${v.fiches_month} fiches)` : " (illimité)"}</button>`)
+          .join(" ")}</p>
+         <p class="hint">Changement immédiat, prorata géré par le prestataire de paiement.</p>`
+      : "";
     const list = (keys.keys || []).length
       ? `<ul class="keys">${keys.keys.map((k) => `<li><code>${k.masked}</code> <span class="hint">créée le ${String(k.created || "").slice(0, 10)}</span></li>`).join("")}</ul>`
       : '<p class="hint">Aucune clé API pour le moment.</p>';
-    showPanel(`<h2>Mon compte</h2>${quota}
+    showPanel(`<h2>Mon compte</h2>${quota}${switchers}
       <h3>Clés API</h3>${list}
       <p><button id="newkey" class="report-link">Générer une clé API</button></p>
       <div id="keyout"></div>
       <p class="hint">Passez la clé en en-tête <code>X-API-Key</code>.
       Documentation : <a href="/api/v1/docs">/api/v1/docs</a>.<br>
       Une question ? <a href="mailto:contact@confinia.io?subject=EcoBuilding%20-%20aide">contact@confinia.io</a></p>`);
+    document.querySelectorAll(".tier-switch").forEach((b) => {
+      b.onclick = async () => {
+        const t = b.dataset.tier;
+        if (!confirm(`Passer à ${b.textContent.trim()} ? Le changement est immédiat (prorata).`)) return;
+        b.disabled = true; b.textContent = "Changement en cours…";
+        try {
+          const r = await fetch(`${API}/pro/upgrade?tier=${t}`,
+            { method: "POST", headers: auth });
+          if (!r.ok) throw new Error((await r.json().catch(() => ({})))?.detail || r.status);
+          track("tier_switch", { tier: t });
+          await refreshQuota();
+          showAccount();                       // re-rendu avec le nouveau palier
+        } catch (e) {
+          b.disabled = false;
+          b.textContent = "Échec — réessayer";
+        }
+      };
+    });
     const btn = document.getElementById("newkey");
     if (btn) btn.onclick = async () => {
       btn.disabled = true; btn.textContent = "Génération…";
@@ -697,7 +783,7 @@ const LOADING_SOURCES = [
 let loadingTimer = null;
 function showLoadingPanel(first) {
   let i = 0;
-  showPanel(`<p class="hint loading">${first}<br><span id="loading-src" class="hint">${LOADING_SOURCES[0]}</span></p>`);
+  showPanel(`<p class="hint loading">${first}<br><span id="loading-src" class="hint">${LOADING_SOURCES[0]}</span></p>`, { keepLoadingFx: true });
   clearInterval(loadingTimer);
   loadingTimer = setInterval(() => {
     const el = document.getElementById("loading-src");
