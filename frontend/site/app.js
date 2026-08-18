@@ -237,6 +237,9 @@ map.on("load", () => {
     minzoom: 13,
     maxzoom: 14,
     attribution: "Bâtiments & DPE : BDNB (CSTB)",
+    // L'id BDNB devient l'id de feature : c'est lui qui permet le feature-state
+    // du surlignage au survol (et il est stable d'une tuile à l'autre).
+    promoteId: "batiment_groupe_id",
   });
   map.addLayer({
     id: "bdnb-dpe-3d",
@@ -245,11 +248,45 @@ map.on("load", () => {
     type: "fill-extrusion",
     minzoom: 13,
     paint: {
-      "fill-extrusion-color": DPE_COLORS,
+      // Survol : le bâtiment CLIGNOTE (deux verts alternés par feature-state)
+      // pour lever toute ambiguïté avant le clic — en vue inclinée, le volume
+      // sous le curseur n'est pas celui qu'on croit viser au sol (#237).
+      "fill-extrusion-color": ["case",
+        ["boolean", ["feature-state", "hover"], false],
+        ["case", ["boolean", ["feature-state", "pulse"], false], "#a7e3c1", "#2b7a4b"],
+        DPE_COLORS],
       "fill-extrusion-height": ["coalesce", ["get", "hauteur_mean"], 6],
+      // Opacité FIXE : fill-extrusion-opacity ne supporte pas les expressions
+      // par feature (« data expressions not supported ») — une expression ici
+      // invalide la propriété en silence. Le surlignage passe par la couleur.
       "fill-extrusion-opacity": 0.9,
     },
   });
+
+  // Un seul bâtiment survolé à la fois ; le pouls ne tourne que pendant un
+  // survol (aucun timer à vide le reste du temps).
+  let hoverId = null, pulseTimer = null, pulseOn = false;
+  const setHover = (id, state) => safeMap(() =>
+    map.setFeatureState({ source: "bdnb", sourceLayer: "sql_statement", id }, state));
+  function stopHover() {
+    if (pulseTimer) { clearInterval(pulseTimer); pulseTimer = null; }
+    if (hoverId !== null) { setHover(hoverId, { hover: false, pulse: false }); hoverId = null; }
+  }
+  map.on("mousemove", "bdnb-dpe-3d", (e) => {
+    const f = e.features && e.features[0];
+    const id = f && f.id;
+    if (id === undefined || id === hoverId) return;
+    stopHover();
+    hoverId = id;
+    pulseOn = false;
+    setHover(id, { hover: true, pulse: false });
+    pulseTimer = setInterval(() => {
+      if (hoverId === null) return;
+      pulseOn = !pulseOn;
+      setHover(hoverId, { hover: true, pulse: pulseOn });
+    }, 350);
+  });
+  map.on("mouseleave", "bdnb-dpe-3d", stopHover);
   document.getElementById("legend").hidden = false;
 
   // Initial selection: ?b= from the URL, else the showcase (no-hash visits).
@@ -267,7 +304,13 @@ map.on("load", () => {
     if (!id) return;
     track("building_click");
     if (marker) marker.remove();
-    openBuildingById(id, e.lngLat.lng, e.lngLat.lat);
+    // Coordonnées = CENTROÏDE du bâtiment cliqué, jamais e.lngLat : en vue
+    // inclinée, le point au sol sous le curseur peut être des dizaines de
+    // mètres DERRIÈRE le volume cliqué, et ce lon/lat sert à l'arbitrage
+    // d'adresse côté serveur (#152) — la fiche se titrerait avec la mauvaise
+    // adresse. Le bâtiment fait foi, pas le sol.
+    const c = ecoGeo.featuresCenter([f]) || [e.lngLat.lng, e.lngLat.lat];
+    openBuildingById(id, c[0], c[1]);
   });
   map.on("mouseenter", "bdnb-dpe-3d", () => { map.getCanvas().style.cursor = "pointer"; });
   map.on("mouseleave", "bdnb-dpe-3d", () => { map.getCanvas().style.cursor = ""; });
