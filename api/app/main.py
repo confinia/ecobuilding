@@ -1353,6 +1353,39 @@ async def usage(request: Request):
     return body
 
 
+@app.get("/v1/quota", tags=["meta"])
+async def quota_preflight(request: Request):
+    """Pré-vol du quota fiches — LECTURE SEULE, ne consomme rien.
+
+    Demande opérateur (2026-08-18) : le message « Limite atteinte » arrivait
+    après tout le cérémonial de génération ; le client doit pouvoir bloquer le
+    déclenchement AVANT. Mêmes seaux que _quota_gate, sans incrément."""
+    key = request.headers.get("x-api-key") or request.query_params.get("key")
+    sub = _bearer_sub(request)
+    tier = None
+    if key and key in _load_keys():
+        plan = _key_plans().get(key, "free")
+        bucket = hashlib.sha256(key.encode()).hexdigest()[:16]
+        if plan == "pro":
+            tier = _pro_tier(_key_owners().get(key)) or "s"
+    elif sub:
+        plan = "pro" if _pro_active(sub) else "free"
+        bucket = "kc:" + hashlib.sha256(sub.encode()).hexdigest()[:14]
+        if plan == "pro":
+            tier = _pro_tier(sub) or "s"
+    else:
+        plan = "anonymous"
+        ip = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip() or "?"
+        bucket = "ip:" + hashlib.sha256(ip.encode()).hexdigest()[:16]
+    used = (_usage_load().get(_month_key()) or {}).get(bucket, 0) // CREDIT_COST["report"]
+    included = (PRO_TIERS[tier]["fiches"] if tier
+                else FREE_ACCOUNT_REPORTS if plan == "free"
+                else ANON_MONTHLY_REPORTS)
+    return {"plan": plan, "tier": tier, "reports_used": used,
+            "reports_included": included,
+            "reports_left": None if included is None else max(0, included - used)}
+
+
 @app.get("/v1/config", tags=["meta"])
 async def config():
     """Public runtime facts the UI must not guess (#221): which payment
