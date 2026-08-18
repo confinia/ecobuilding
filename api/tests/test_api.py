@@ -580,6 +580,25 @@ def test_pro_tier_grid_v4():
     assert tiers["free_account_reports_month"] == 10
 
 
+def test_quota_preflight_reads_without_consuming(tmp_path, monkeypatch):
+    """/v1/quota (pré-vol) : mêmes seaux que la barrière, AUCUNE consommation —
+    deux lectures successives rendent le même reste."""
+    monkeypatch.setattr(main, "USAGE_PATH", str(tmp_path / "usage.json"))
+    import hashlib
+    ip_bucket = "ip:" + hashlib.sha256(b"1.2.3.4").hexdigest()[:16]
+    main._usage_add(ip_bucket, 2)                    # 2 fiches déjà prises
+    h = {"X-Forwarded-For": "1.2.3.4"}
+    q1 = client.get("/v1/quota", headers=h).json()
+    q2 = client.get("/v1/quota", headers=h).json()
+    assert q1 == q2                                   # lecture seule
+    assert q1["plan"] == "anonymous"
+    assert q1["reports_used"] == 2 and q1["reports_left"] == 1
+    # compte gratuit par clé
+    monkeypatch.setattr(main, "_load_keys", lambda: {"K1"})
+    kq = client.get("/v1/quota", headers={"X-API-Key": "K1"}).json()
+    assert kq["plan"] == "free" and kq["reports_included"] == 10
+
+
 def test_usage_counter_accumulates_per_month(tmp_path, monkeypatch):
     monkeypatch.setattr(main, "USAGE_PATH", str(tmp_path / "usage.json"))
     assert main._usage_add("key1", 1) == 1
