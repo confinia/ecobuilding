@@ -312,6 +312,45 @@ def _rental_ban(dpe_class: str | None) -> dict | None:
     }
 
 
+# --- Référentiel National des Bâtiments -----------------------------------
+# L'ID-RNB est l'identifiant PERMANENT (12 caractères) qui sert de clé pivot
+# entre cadastre, BAN, BDNB et ADEME — contrairement à l'id BDNB qui peut
+# changer d'un millésime à l'autre (#28). Pas de table de liens dans notre
+# base : résolution par l'API publique, au centroïde du bâtiment, cache long
+# (l'id est permanent par construction).
+RNB_API_URL = os.environ.get("RNB_API_URL", "https://rnb-api.beta.gouv.fr/api/alpha").rstrip("/")
+RNB_CACHE_TTL = float(os.environ.get("RNB_CACHE_TTL", str(30 * 86400)))
+
+
+async def _rnb_lookup(lon, lat):
+    """ID-RNB du bâtiment au point donné (bbox ~25 m, emprise dont le point de
+    référence est le plus proche). None si l'API RNB est down ou ne connaît
+    pas le bâtiment — la fiche ne doit jamais en dépendre."""
+    if lon is None or lat is None:
+        return None
+    try:
+        d = 0.00022
+        data = await _cached_get_json(
+            f"{RNB_API_URL}/buildings/",
+            {"bbox": f"{lon - d},{lat - d},{lon + d},{lat + d}"},
+            ttl=RNB_CACHE_TTL)
+        results = (data or {}).get("results") or []
+        best, best_d2 = None, None
+        for r in results:
+            pt = (r.get("point") or {}).get("coordinates")
+            if not pt or not r.get("rnb_id"):
+                continue
+            d2 = (pt[0] - lon) ** 2 + (pt[1] - lat) ** 2
+            if best_d2 is None or d2 < best_d2:
+                best, best_d2 = r, d2
+        if best:
+            return {"rnb_id": best["rnb_id"],
+                    "url": f"https://rnb.beta.gouv.fr/batiments/{best['rnb_id']}"}
+    except Exception as e:
+        log.warning("RNB lookup failed (%s,%s): %s", lon, lat, e)
+    return None
+
+
 def _normalize_building(r: dict) -> dict:
     """BDNB batiment_groupe_complet/adresse row -> stable public schema (v1)."""
     return {
@@ -551,11 +590,32 @@ async def lookup(
     ban_id: str | None = Query(None, description="BAN interop id, e.g. 80021_6370_00007"),
     lon: float | None = Query(None, description="Longitude (used for the risk report when ban_id is given)"),
     lat: float | None = Query(None, description="Latitude (idem)"),
+    rnb_id: str | None = Query(None, min_length=12, max_length=14,
+                               description="ID-RNB (Référentiel National des Bâtiments)"),
 ):
     """Address -> geocode (BAN) -> building record (BDNB) -> risk report (Géorisques)."""
     _meter_if_keyed(request, "lookup")
-    if not q and not ban_id:
-        raise HTTPException(422, "Provide q or ban_id")
+    if rnb_id:
+        # Entrée par la clé pivot de l'écosystème : l'ID-RNB se résout en un
+        # point (API RNB), puis le flux position habituel prend le relais.
+        try:
+            b = await _cached_get_json(f"{RNB_API_URL}/buildings/{rnb_id.replace('-', '').upper()}/",
+                                       {}, ttl=RNB_CACHE_TTL)
+            pt = (b or {}).get("point", {}).get("coordinates")
+        except Exception:
+            pt = None
+        if not pt:
+            raise HTTPException(404, "ID-RNB inconnu")
+        lon, lat = pt[0], pt[1]
+        # rejoindre le flux normal : point -> adresse BAN la plus proche
+        geo = await _cached_get_json(
+            BAN_REVERSE_URL, {"lon": lon, "lat": lat, "type": "housenumber"}, ttl=86400)
+        feats = geo.get("features", [])
+        if not feats:
+            raise HTTPException(404, "Aucune adresse BAN au point de l'ID-RNB")
+        q, ban_id = None, feats[0]["properties"]["id"]
+    if not q and not ban_id and lon is None:
+        raise HTTPException(422, "Provide q, ban_id or rnb_id")
 
     address = None
     if not ban_id:
@@ -852,14 +912,15 @@ async def building(
     row = rows[0]
     M_LOOKUPS.add(1, {"status": "by_id"})
     (prices, risks, groundwater, solar_pv, click_addr, water_network,
-     official_dpe, local_taxes, schools) = await asyncio.gather(
+     official_dpe, local_taxes, schools, rnb) = await asyncio.gather(
         _dvf_prices(bdnb_id), _area_risks(lon, lat),
         _groundwater(lon, lat), _solar_pv(lon, lat),
         _click_address(bdnb_id, lon, lat),
         _water_network(row.get("code_commune_insee")),
         _official_dpe(bdnb_id),
         _local_taxes(row.get("code_commune_insee")),
-        _nearby_schools(lon, lat))
+        _nearby_schools(lon, lat),
+        _rnb_lookup(lon, lat))
     sources = ["BDNB (CSTB) — Licence Ouverte v2.0", "Géorisques — Licence Ouverte"]
     if prices:
         sources.append("DVF (DGFiP) / Etalab — Licence Ouverte")
@@ -875,13 +936,17 @@ async def building(
         sources.append("DGFiP — Fiscalité directe locale — Licence Ouverte")
     if schools:
         sources.append("Annuaire de l'éducation (MENJ) — Licence Ouverte")
+    if rnb:
+        sources.append("Référentiel National des Bâtiments (RNB) — Licence Ouverte")
     result = {
         # Prefer the group-member address at the clicked point (#152); the
         # principal address stays on buildings[0].address for the UI's row.
         "query": {"bdnb_id": bdnb_id,
                   "address": click_addr or row.get("libelle_adr_principale_ban"),
                   "lon": lon, "lat": lat},
-        "buildings": [_normalize_building(row)],
+        "buildings": [dict(_normalize_building(row),
+                           **({"rnb_id": rnb["rnb_id"]} if rnb else {}))],
+        "rnb": rnb,
         "area_risks": risks,
         "groundwater": groundwater,
         "solar_pv": solar_pv,

@@ -439,6 +439,7 @@ def _report_html(data: dict, photos: list | None = None, map_img: str | None = N
 
 <h2>Bâtiment</h2>
 <table>
+  {_row("ID-RNB (référentiel national)", b.get("rnb_id"))}
   {_row("Année de construction", b.get("construction_year"))}
   {_row("Hauteur moyenne", b.get("height_m"), " m")}
   {_row("Logements", b.get("dwellings"))}
