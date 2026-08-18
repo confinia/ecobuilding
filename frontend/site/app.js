@@ -271,6 +271,7 @@ map.on("load", () => {
   function stopHover() {
     if (pulseTimer) { clearInterval(pulseTimer); pulseTimer = null; }
     if (hoverId !== null) { setHover(hoverId, { hover: false, pulse: false }); hoverId = null; }
+    removeHoverMarker();
   }
   map.on("mousemove", "bdnb-dpe-3d", (e) => {
     const f = e.features && e.features[0];
@@ -280,6 +281,10 @@ map.on("load", () => {
     hoverId = id;
     pulseOn = false;
     setHover(id, { hover: true, pulse: false });
+    // Épingle d'aperçu sur le TOIT du bâtiment survolé : centroïde + hauteur
+    // lus dans la tuile — même repère visuel que la sélection, avant le clic.
+    const c = ecoGeo.featuresCenter([f]);
+    if (c) placeHoverMarker(c[0], c[1], Number(f.properties.hauteur_mean) || 6);
     pulseTimer = setInterval(() => {
       if (hoverId === null) return;
       pulseOn = !pulseOn;
@@ -303,6 +308,7 @@ map.on("load", () => {
     const id = f && f.properties.batiment_groupe_id;
     if (!id) return;
     track("building_click");
+    removeHoverMarker();
     if (marker) marker.remove();
     // Coordonnées = CENTROÏDE du bâtiment cliqué, jamais e.lngLat : en vue
     // inclinée, le point au sol sous le curseur peut être des dizaines de
@@ -318,6 +324,24 @@ map.on("load", () => {
 
 let marker = null;
 const MARKER_COLOR = "#2b7a4b";
+// Marqueur d'APERÇU au survol (#237) : même épingle, même maths d'élévation,
+// mais translucide — il montre le toit du bâtiment que le clic sélectionnerait,
+// sans toucher au marqueur de sélection.
+let hoverMarker = null, hoverMarkerHeightM = 0;
+function placeHoverMarker(lon, lat, heightM) {
+  removeHoverMarker();
+  hoverMarkerHeightM = heightM || 0;
+  // opacité via l'OPTION du constructeur : MapLibre 6 réécrit style.opacity
+  // de l'élément à chaque frame (gestion d'occlusion) et écraserait un style
+  // posé à la main.
+  hoverMarker = new maplibregl.Marker({ color: MARKER_COLOR, opacity: "0.65" })
+    .setLngLat([lon, lat]).addTo(map);
+  hoverMarker.getElement().style.pointerEvents = "none";   // ne jamais voler le clic
+  updateMarkerElevation();
+}
+function removeHoverMarker() {
+  if (hoverMarker) { hoverMarker.remove(); hoverMarker = null; hoverMarkerHeightM = 0; }
+}
 
 // Identifying pin (issue #113): drop it at a point immediately, then re-anchor
 // onto the target building's footprint centroid once its tile is loaded, so the
@@ -335,11 +359,13 @@ function placeMarker(lon, lat, heightM) {
 // metres -> pixels at this latitude/zoom, foreshortened by the pitch. Kept in
 // sync on every camera move so the pin stays on the roof (#222).
 function updateMarkerElevation() {
-  if (!marker || !markerHeightM) return;
-  const lat = marker.getLngLat().lat;
-  const metresPerPixel = 156543.03392 * Math.cos(lat * Math.PI / 180) / Math.pow(2, map.getZoom());
-  const dy = (markerHeightM / metresPerPixel) * Math.cos(map.getPitch() * Math.PI / 180);
-  marker.setOffset([0, -dy]);
+  for (const [m, h] of [[marker, markerHeightM], [hoverMarker, hoverMarkerHeightM]]) {
+    if (!m || !h) continue;
+    const lat = m.getLngLat().lat;
+    const metresPerPixel = 156543.03392 * Math.cos(lat * Math.PI / 180) / Math.pow(2, map.getZoom());
+    const dy = (h / metresPerPixel) * Math.cos(map.getPitch() * Math.PI / 180);
+    m.setOffset([0, -dy]);
+  }
 }
 map.on("move", updateMarkerElevation);
 function anchorMarkerToBuilding(id) {
