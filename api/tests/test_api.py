@@ -132,6 +132,30 @@ def test_building_includes_prices(monkeypatch):
     assert any("DVF" in s for s in body["sources"])
 
 
+def test_building_aggregate_is_cached(monkeypatch):
+    """Cache de l'agrégat (demande opérateur) : recharger la même fiche ne
+    refait PAS l'orchestration ; et muter la réponse servie ne contamine pas
+    l'entrée (le route PDF réécrit query.address)."""
+    calls = {"n": 0}
+    async def fake_bdnb(url, params, ttl):
+        calls["n"] += 1
+        return [{"batiment_groupe_id": "bdnb-bg-C", "libelle_adr_principale_ban": "1 rue C"}]
+    async def fake_prices(bid): return None
+    async def fake_risks(lon, lat): return {}
+    monkeypatch.setattr(main, "_cached_get_json", fake_bdnb)
+    monkeypatch.setattr(main, "_dvf_prices", fake_prices)
+    monkeypatch.setattr(main, "_area_risks", fake_risks)
+    b1 = client.get("/v1/buildings/bdnb-bg-C").json()
+    n_after_first = calls["n"]
+    b1["query"]["address"] = "MUTATION"          # ce que fait la route PDF
+    b2 = client.get("/v1/buildings/bdnb-bg-C").json()
+    assert calls["n"] == n_after_first            # aucun appel amont de plus
+    assert b2["query"]["address"] != "MUTATION"   # copie défensive
+    # une position différente = une autre clé (l'arbitrage d'adresse en dépend)
+    client.get("/v1/buildings/bdnb-bg-C", params={"lon": 2.1, "lat": 48.7})
+    assert calls["n"] > n_after_first
+
+
 def test_building_prices_none_when_dvf_disabled(monkeypatch):
     async def fake_bdnb(url, params, ttl):
         return [{"batiment_groupe_id": "bdnb-bg-X"}]
@@ -268,6 +292,7 @@ def test_building_titles_with_click_address_when_group_member(monkeypatch):
     assert body["query"]["address"].startswith("2 Allée des Peupliers")
     assert body["buildings"][0]["address"] == "5 Allée des Marronniers"  # kept
 
+    main._CACHE.clear()   # même bâtiment, même position : purger l'agrégat
     monkeypatch.setattr(main, "_cached_get_json", fakes(member=False))
     body = client.get("/v1/buildings/bdnb-bg-X", params={"lon": 2.08, "lat": 48.70}).json()
     assert body["query"]["address"] == "5 Allée des Marronniers"  # fallback

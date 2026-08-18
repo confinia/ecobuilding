@@ -117,3 +117,14 @@ ul.keys { list-style: none; padding: 0; margin: 6px 0; }
 ul.keys li { padding: 4px 0; border-bottom: 1px dashed #eee; }
 .keynew { background: #eef7f0; border: 1px solid #2b7a4b; border-radius: 8px; padding: 10px; }
 .keynew code { word-break: break-all; display: block; margin: 6px 0; }
+
+/* Icône d'attente sur le bâtiment en cours de chargement (#237). */
+.building-loading { display: flex; align-items: center; justify-content: center; }
+.building-loading-spin {
+  width: 26px; height: 26px; border-radius: 50%;
+  border: 4px solid #2b7a4b; border-top-color: transparent;
+  background: rgba(255,255,255,.85);
+  animation: eco-spin .8s linear infinite;
+  box-shadow: 0 1px 4px rgba(0,0,0,.3);
+}
+@keyframes eco-spin { to { transform: rotate(360deg); } }
