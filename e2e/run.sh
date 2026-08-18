@@ -53,7 +53,9 @@ E2E_ADDRESS="${E2E_ADDRESS:-7 rue Pierre Corneille, Amiens}"
 # Carte de test selon le fournisseur : Creem publie 4111…, Stripe/Polar 4242….
 if [ -n "${CREEM_API_KEY:-}" ]; then DEFAULT_CARD=4111111111111111; else DEFAULT_CARD=4242424242424242; fi
 E2E_CARD_NUMBER="${E2E_CARD_NUMBER:-$DEFAULT_CARD}"
-E2E_CARD_EXPIRY="${E2E_CARD_EXPIRY:-12/34}"
+# Chiffres seuls : le champ Yuno insère le « / » lui-même — envoyer « 12/34 »
+# perd l'année (vécu : « Année invalide » avec 12 affiché).
+E2E_CARD_EXPIRY="${E2E_CARD_EXPIRY:-1234}"
 E2E_CARD_CVC="${E2E_CARD_CVC:-123}"
 E2E_CARD_NAME="${E2E_CARD_NAME:-CI Selenium}"
 PDF_WAIT_MS="${PDF_WAIT_MS:-25000}"
@@ -74,8 +76,12 @@ SEL_CARD_FRAME="${SEL_CARD_FRAME:-css=iframe[title=\"card_form\"]}"
 SEL_CARD_NUMBER="${SEL_CARD_NUMBER:-css=input[name=\"number\"]}"
 SEL_CARD_EXPIRY="${SEL_CARD_EXPIRY:-css=input[name=\"expirationDate\"]}"
 SEL_CARD_CVC="${SEL_CARD_CVC:-css=input[name=\"cvv\"]}"
-SEL_CO_HOLDER="${SEL_CO_HOLDER:-css=input[placeholder*=\"Cardholder\"]}"
+# name= : le champ titulaire n'a PAS de placeholder (le libellé visible est un
+# aria-label, traduit selon la locale) — name="cardHolderName" est stable.
+SEL_CO_HOLDER="${SEL_CO_HOLDER:-css=input[name=\"cardHolderName\"]}"
 SEL_PAY_BUTTON="${SEL_PAY_BUTTON:-xpath=//button[contains(.,\"Pay\") or contains(.,\"Payer\")]}"
+SEL_CO_COUNTRY_BTN="${SEL_CO_COUNTRY_BTN:-xpath=//button[@type=\"button\"][contains(.,\"pays de facturation\") or contains(.,\"billing country\") or contains(.,\"France\")]}"
+SEL_CO_COUNTRY_FR="${SEL_CO_COUNTRY_FR:-xpath=//*[@role=\"option\" or self::li][normalize-space()=\"France\"]}"
 
 SELENIUM_IMAGE="${SELENIUM_IMAGE:-docker.io/selenium/standalone-chromium:4.47.0}"
 NODE_IMAGE="${NODE_IMAGE:-docker.io/library/node:20-bookworm-slim}"
@@ -98,6 +104,7 @@ export APP_URL API_URL KC_REALM E2E_EMAIL E2E_EMAIL_NOORG E2E_PASSWORD E2E_ORG \
        E2E_FIRSTNAME E2E_LASTNAME E2E_ADDRESS PDF_WAIT_MS PRO_WAIT_MS \
        E2E_CARD_NUMBER E2E_CARD_EXPIRY E2E_CARD_CVC E2E_CARD_NAME \
        SEL_CO_NAME SEL_CO_SUBMIT SEL_CARD_FRAME SEL_CO_HOLDER SEL_PAY_BUTTON \
+       SEL_CO_COUNTRY_BTN SEL_CO_COUNTRY_FR \
        SEL_CARD_NUMBER SEL_CARD_EXPIRY SEL_CARD_CVC
 python3 - "$OUT" <<'PY'
 import json, os, re, sys
@@ -106,6 +113,7 @@ keys = ["APP_URL","API_URL","KC_REALM","E2E_EMAIL","E2E_EMAIL_NOORG","E2E_PASSWO
         "E2E_ORG","E2E_FIRSTNAME","E2E_LASTNAME","E2E_ADDRESS","PDF_WAIT_MS","PRO_WAIT_MS",
         "E2E_CARD_NUMBER","E2E_CARD_EXPIRY","E2E_CARD_CVC","E2E_CARD_NAME",
         "SEL_CO_NAME","SEL_CO_SUBMIT","SEL_CARD_FRAME","SEL_CO_HOLDER","SEL_PAY_BUTTON",
+        "SEL_CO_COUNTRY_BTN","SEL_CO_COUNTRY_FR",
         "SEL_CARD_NUMBER","SEL_CARD_EXPIRY","SEL_CARD_CVC"]
 missing = [k for k in keys if not os.environ.get(k)]
 if missing:
@@ -251,6 +259,33 @@ sys.exit(0 if d.get("numFailedTests") == 0 and d.get("numPassedTests", 0) > 0 el
 PYV
 }
 
+# Traversée du checkout Creem par le helper CDP (page tierce hostile à
+# WebDriver — voir e2e/checkout-creem.mjs). Le checkout est créé via l'API
+# avec le TOKEN DU COMPTE E2E : le kc_sub voyage dans les metadata et la
+# réconciliation par e-mail bascule ce compte précis.
+checkout_pay() {
+  local token co_url sid cdp rc=0
+  token=$(curl -fsS -m 30 -X POST -d "client_id=ecobuilding-e2e"     --data-urlencode "username=$E2E_EMAIL" --data-urlencode "password=$E2E_PASSWORD"     -d "grant_type=password"     "$APP_URL/auth/realms/$KC_REALM/protocol/openid-connect/token"     | python3 -c "import json,sys; print(json.load(sys.stdin)['access_token'])") || return 1
+  co_url=$(curl -fsS -m 30 -H "Authorization: Bearer $token"     "$APP_URL/api/v1/pro/checkout?tier=s"     | python3 -c "import json,sys; print(json.load(sys.stdin)['url'])") || return 1
+  echo "   checkout: $co_url"
+  # session WebDriver dédiée sur le grid -> canal CDP pour puppeteer-core
+  local resp
+  resp=$(curl -fsS -m 180 -X POST "$GRID_URL/session" -H "Content-Type: application/json"     -d '{"capabilities":{"alwaysMatch":{"browserName":"chrome","pageLoadStrategy":"eager","goog:chromeOptions":{"args":["--headless=new","--no-sandbox","--disable-dev-shm-usage","--lang=fr-FR","--window-size=1400,1600"]}}}}') || return 1
+  sid=$(printf '%s' "$resp" | python3 -c "import json,sys; print(json.load(sys.stdin)['value']['sessionId'])")
+  cdp=$(printf '%s' "$resp" | python3 -c "import json,sys; print(json.load(sys.stdin)['value']['capabilities']['se:cdp'])")
+  [ -n "$cdp" ] || { echo "   ERREUR: pas de canal CDP"; return 1; }
+  # puppeteer-core installé DANS /e2e : le loader ESM ignore NODE_PATH, seul
+  # un node_modules résolvable en remontant depuis le .mjs fonctionne.
+  $CR run --rm --network host \
+    -v "$PWD/e2e:/e2e:z" -v "$PWD/e2e/.npm-cache:/root/.npm:z" -w /e2e \
+    -e npm_config_cache=/root/.npm -e CDP_WS="$cdp" \
+    "$NODE_IMAGE" bash -c "cd /e2e && npm i --no-audit --no-fund puppeteer-core@24 >npm.log 2>&1 || { cat npm.log; exit 1; }; node checkout-creem.mjs '$co_url' '$E2E_CARD_NUMBER' '$E2E_CARD_EXPIRY' '$E2E_CARD_CVC' '$E2E_CARD_NAME'" \
+    | tee "$OUT/checkout-creem.log" || rc=1
+  curl -s -m 10 -X DELETE "$GRID_URL/session/$sid" >/dev/null 2>&1 || true
+  grep -q "SUCCESS:" "$OUT/checkout-creem.log" || rc=1
+  return $rc
+}
+
 rc_signup=0; rc_pay=0; pay_ran=0
 side "inscription" "01 inscription + 06 organisation obligatoire" || rc_signup=$?
 
@@ -272,7 +307,19 @@ if [ "$rc_signup" = 0 ] && [ "$kc_ready" = 1 ]; then
   fi
 fi
 
-[ "$rc_signup" = 0 ] && { pay_ran=1; side "paiement" "02-05 connexion → fiche → paiement → Pro" || rc_pay=$?; }
+if [ "$rc_signup" = 0 ]; then
+  pay_ran=1
+  side "paiement" "02-04 connexion → fiche → ouverture du checkout" || rc_pay=$?
+  if [ "$rc_pay" = 0 ]; then
+    echo "== traversée du checkout Creem (helper CDP, recette validée)"
+    checkout_pay || rc_pay=$?
+  fi
+  if [ "$rc_pay" = 0 ]; then
+    echo "== attente de la réconciliation ($((PRO_WAIT_MS/1000)) s)"
+    sleep "$((PRO_WAIT_MS/1000))"
+    side "pro" "05 le compte est passé Pro" || rc_pay=$?
+  fi
+fi
 
 # --- 5. rapport depuis la plateforme de paiement ------------------------------
 # Le compte de test est supprimé à la sortie : interroger Polar AVANT le ménage.

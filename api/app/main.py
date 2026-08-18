@@ -1509,8 +1509,10 @@ def _creem_subscription_active(ext_id: str) -> bool:
             cust_id = cust.get("id") or ((cust.get("items") or [{}])[0].get("id"))
             if not cust_id:
                 return False
-            r = c.get(f"{CREEM_API_BASE}/subscriptions/search",
-                      params={"customer_id": cust_id, "status": "active"})
+            # /subscriptions/search refuse tout filtre customer_id (400
+            # « property customer_id should not exist ») : la forme qui marche
+            # est la ressource imbriquée — vérifié contre test-api le 2026-08-18.
+            r = c.get(f"{CREEM_API_BASE}/customers/{cust_id}/subscriptions")
             r.raise_for_status()
             items = (r.json().get("items") if isinstance(r.json(), dict) else r.json()) or []
             for sub in items:
