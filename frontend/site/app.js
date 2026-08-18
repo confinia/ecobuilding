@@ -120,7 +120,33 @@ async function ecoPricing() {
           const r = await fetch(`/api/v1/pro/checkout?tier=${tier}`,
                                 { headers: { Authorization: "Bearer " + kc.token } });
           if (!r.ok) throw new Error(r.status);
-          window.location.href = (await r.json()).url;   // -> checkout hébergé (Creem)
+          const url = (await r.json()).url;
+          // Overlay embarqué : le client RESTE sur EcoBuilding (confiance, UX).
+          // onComplete est cosmétique — l'activation réelle passe par la
+          // réconciliation serveur (webhook/e-mail), jamais par le navigateur.
+          if (window.Creem?.openCheckout) {
+            window.Creem.openCheckout({
+              checkoutUrl: url, locale: "fr",
+              onComplete: () => {
+                try { window.Creem.close(); } catch {}
+                track("gopro_paid_embed");
+                showPanel(`<h2>Merci ! 🎉</h2>
+                  <p>Paiement reçu — votre abonnement s'active
+                  (moins d'une minute).</p>
+                  <p class="hint">Une question ?
+                  <a href="mailto:contact@confinia.io?subject=EcoBuilding%20-%20Pro">contact@confinia.io</a></p>`);
+                // La réconciliation tourne en ~60 s : rafraîchir le quota
+                // jusqu'à voir le plan basculer.
+                let tries = 0;
+                const poll = setInterval(() => {
+                  refreshQuota();
+                  if (++tries >= 5) clearInterval(poll);
+                }, 20000);
+              },
+            });
+            return;
+          }
+          window.location.href = url;      // repli : checkout hébergé Creem
         } catch { alert("Le passage à l'offre Pro est momentanément indisponible : contact@confinia.io"); }
       };
       const go = document.getElementById("gopro");
