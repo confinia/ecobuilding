@@ -210,7 +210,8 @@ def main():
     if problems:
         lines += ["## Contradictions détectées", ""] + [f"- {p}" for p in problems]
     else:
-        lines += ["## Contradictions détectées", "", "Aucune : l'app et Polar annoncent la même grille."]
+        lines += ["## Contradictions détectées", "",
+                 "Aucune : l'app et la plateforme de paiement annoncent la même grille."]
     with open(os.path.join(a.out, "report.md"), "w") as f:
         f.write("\n".join(lines) + "\n")
 

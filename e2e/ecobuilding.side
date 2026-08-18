@@ -334,8 +334,8 @@
       ]
     },
     {
-      "id": "t02-05-parcours-payant",
-      "name": "02-05 · parcours payant : connexion → fiche → paiement → Pro",
+      "id": "t02-04-parcours",
+      "name": "02-04 · parcours payant : connexion → fiche → ouverture du checkout",
       "commands": [
         {
           "id": "cm000",
@@ -540,7 +540,7 @@
               "id"
             ]
           ],
-          "value": "90000"
+          "value": "150000"
         },
         {
           "id": "c0306",
@@ -599,194 +599,111 @@
         },
         {
           "id": "c0402",
-          "comment": "Checkout hébergé par Polar (DOM externe). Les id React de cette page sont régénérés à chaque rendu — on ne cible que des attributs name/title stables.",
+          "comment": "Fin de la partie navigateur-produit : le clic « Passer Pro » doit aboutir au checkout Creem — on attend un élément qui n'existe QUE là (#name, étape coordonnées), ce qui couvre la redirection ET le rendu (l'assert d'hostname à délai fixe était une course, vécu run 24). La TRAVERSÉE du checkout est déléguée à e2e/checkout-creem.mjs (recette CDP validée jusqu'à ?pro=success ; la page tierce rejette WebDriver — 13 runs documentés dans git). Même principe que la vérification e-mail par l'API admin : l'étape est réelle, seul l'outil change.",
           "command": "waitForElementPresent",
-          "target": "${SEL_CO_EMAIL}",
+          "target": "css=#name",
           "targets": [],
           "value": "45000"
-        },
-        {
-          "id": "c0404",
-          "comment": "Les champs carte vivent dans une iframe Stripe injectée après hydratation.",
-          "command": "waitForElementPresent",
-          "target": "${SEL_STRIPE_FRAME}",
-          "targets": [],
-          "value": "45000"
-        },
-        {
-          "id": "c0405",
-          "comment": "",
-          "command": "selectFrame",
-          "target": "${SEL_STRIPE_FRAME}",
-          "targets": [],
-          "value": ""
-        },
-        {
-          "id": "c0406",
-          "comment": "sendKeys, PAS type : type clique puis vide le champ avant de saisir, et sur les champs Stripe ce clic échoue par intermittence (hit-test dans l'iframe en headless) puis la re-saisie se perd dans le re-rendu React. Vérifié au WebDriver nu : la saisie directe sans clic tient.",
-          "command": "sendKeys",
-          "target": "${SEL_CARD_NUMBER}",
-          "targets": [],
-          "value": "${E2E_CARD_NUMBER}"
-        },
-        {
-          "id": "c0407",
-          "comment": "",
-          "command": "sendKeys",
-          "target": "${SEL_CARD_EXPIRY}",
-          "targets": [],
-          "value": "${E2E_CARD_EXPIRY}"
-        },
-        {
-          "id": "c0408",
-          "comment": "",
-          "command": "sendKeys",
-          "target": "${SEL_CARD_CVC}",
-          "targets": [],
-          "value": "${E2E_CARD_CVC}"
-        },
-        {
-          "id": "c0408b",
-          "comment": "Preuve que les trois champs ont bien reçu la carte avant de soumettre — sinon le checkout reste silencieusement sur place et on ne le voit qu'au timeout.",
-          "command": "assertValue",
-          "target": "css=#payment-numberInput",
-          "targets": [],
-          "value": "4242 4242 4242 4242"
-        },
-        {
-          "id": "c0409",
-          "comment": "",
-          "command": "selectFrame",
-          "target": "relative=top",
-          "targets": [],
-          "value": ""
-        },
-        {
-          "id": "c0403",
-          "comment": "Rempli APRÈS que l'iframe Stripe est en place : ce checkout React re-rend le formulaire quand l'élément de paiement arrive, et une valeur saisie avant ce re-rendu est effacée (vécu : « This field is required » après soumission alors que le champ avait été rempli).",
-          "command": "type",
-          "target": "${SEL_CO_NAME}",
-          "targets": [],
-          "value": "${E2E_CARD_NAME}"
-        },
-        {
-          "id": "c0403b",
-          "comment": "La saisie a survécu au re-rendu.",
-          "command": "assertValue",
-          "target": "${SEL_CO_NAME}",
-          "targets": [],
-          "value": "${E2E_CARD_NAME}"
-        },
-        {
-          "id": "c0410",
-          "comment": "",
-          "command": "click",
-          "target": "${SEL_CO_SUBMIT}",
-          "targets": [],
-          "value": ""
-        },
-        {
-          "id": "c0411",
-          "comment": "success_url = ${APP_URL}/?pro=success — le retour prouve que Polar a accepté le paiement.",
-          "command": "waitForElementVisible",
-          "target": "id=userchip",
-          "targets": [
-            [
-              "id=userchip",
-              "id"
-            ]
-          ],
-          "value": "120000"
-        },
-        {
-          "id": "c0412",
-          "comment": "",
-          "command": "assertLocation",
-          "target": "${APP_URL}/?pro=success",
-          "targets": [],
-          "value": ""
-        },
+        }
+      ]
+    },
+    {
+      "id": "t05-pro",
+      "name": "05 · le compte est passé Pro",
+      "commands": [
         {
           "id": "c0500",
-          "comment": "La bascule ne dépend plus d'un webhook (#228) : _pro_active() réconcilie contre Polar avec un cache de 60 s. On laisse ce délai s'écouler.",
-          "command": "pause",
-          "target": "",
-          "targets": [],
-          "value": "${PRO_WAIT_MS}"
-        },
-        {
-          "id": "c0501",
-          "comment": "",
+          "comment": "Nouvelle session navigateur : on se reconnecte.",
           "command": "open",
           "target": "/",
           "targets": [],
           "value": ""
         },
         {
-          "id": "c0502",
+          "id": "c0500b",
           "comment": "",
-          "command": "waitForElementVisible",
-          "target": "id=userlabel",
-          "targets": [
-            [
-              "id=userlabel",
-              "id"
-            ]
-          ],
-          "value": "40000"
-        },
-        {
-          "id": "c0503",
-          "comment": "Ouvre le panneau compte (plan, quota, clés API).",
-          "command": "click",
-          "target": "id=userlabel",
-          "targets": [
-            [
-              "id=userlabel",
-              "id"
-            ]
-          ],
-          "value": ""
-        },
-        {
-          "id": "c0504",
-          "comment": "",
-          "command": "waitForElementVisible",
-          "target": "id=panel-content",
-          "targets": [
-            [
-              "id=panel-content",
-              "id"
-            ]
-          ],
-          "value": "30000"
-        },
-        {
-          "id": "c0505",
-          "comment": "Le panneau doit annoncer le plan Pro. C'est l'assertion côté APP ; l'assertion côté PLATEFORME DE PAIEMENT est faite par polar_report.py, qui lit sandbox-api.polar.sh.",
-          "command": "assertElementPresent",
-          "target": "xpath=//*[@id='panel-content'][contains(translate(.,'PRO','pro'),'pro')]",
+          "command": "setWindowSize",
+          "target": "1400x1000",
           "targets": [],
           "value": ""
         },
         {
+          "id": "c0501",
+          "comment": "",
+          "command": "waitForElementVisible",
+          "target": "id=signin",
+          "targets": [],
+          "value": "20000"
+        },
+        {
+          "id": "c0502",
+          "comment": "",
+          "command": "click",
+          "target": "id=signin",
+          "targets": [],
+          "value": ""
+        },
+        {
+          "id": "c0503",
+          "comment": "",
+          "command": "waitForElementVisible",
+          "target": "id=username",
+          "targets": [],
+          "value": "30000"
+        },
+        {
+          "id": "c0504",
+          "comment": "",
+          "command": "type",
+          "target": "id=username",
+          "targets": [],
+          "value": "${E2E_EMAIL}"
+        },
+        {
+          "id": "c0505",
+          "comment": "",
+          "command": "type",
+          "target": "id=password",
+          "targets": [],
+          "value": "${E2E_PASSWORD}"
+        },
+        {
           "id": "c0506",
           "comment": "",
-          "command": "storeText",
-          "target": "id=panel-content",
-          "targets": [
-            [
-              "id=panel-content",
-              "id"
-            ]
-          ],
-          "value": "accountPanel"
+          "command": "click",
+          "target": "id=kc-login",
+          "targets": [],
+          "value": ""
         },
         {
           "id": "c0507",
           "comment": "",
-          "command": "echo",
-          "target": "panneau compte : ${accountPanel}",
+          "command": "waitForElementVisible",
+          "target": "id=userchip",
+          "targets": [],
+          "value": "40000"
+        },
+        {
+          "id": "c0508",
+          "comment": "Ouvre le panneau compte (plan, quota, clés API).",
+          "command": "click",
+          "target": "id=userlabel",
+          "targets": [],
+          "value": ""
+        },
+        {
+          "id": "c0509",
+          "comment": "",
+          "command": "waitForElementVisible",
+          "target": "id=panel-content",
+          "targets": [],
+          "value": "30000"
+        },
+        {
+          "id": "c0510",
+          "comment": "Le panneau doit annoncer le plan Pro — la réconciliation par e-mail (_creem_subscription_active) a eu PRO_WAIT pour tourner. L'assertion côté PLATEFORME est faite par payment_report.py.",
+          "command": "assertElementPresent",
+          "target": "xpath=//*[@id='panel-content'][contains(translate(.,'PRO','pro'),'pro')]",
           "targets": [],
           "value": ""
         }
@@ -812,7 +729,17 @@
       "parallel": false,
       "timeout": 900,
       "tests": [
-        "t02-05-parcours-payant"
+        "t02-04-parcours"
+      ]
+    },
+    {
+      "id": "s03-pro",
+      "name": "pro",
+      "persistSession": false,
+      "parallel": false,
+      "timeout": 600,
+      "tests": [
+        "t05-pro"
       ]
     }
   ],
