@@ -599,9 +599,9 @@
         },
         {
           "id": "c0402",
-          "comment": "Fin de la partie navigateur-produit : le clic « Passer Pro » doit aboutir au checkout Creem — on attend un élément qui n'existe QUE là (#name, étape coordonnées), ce qui couvre la redirection ET le rendu (l'assert d'hostname à délai fixe était une course, vécu run 24). La TRAVERSÉE du checkout est déléguée à e2e/checkout-creem.mjs (recette CDP validée jusqu'à ?pro=success ; la page tierce rejette WebDriver — 13 runs documentés dans git). Même principe que la vérification e-mail par l'API admin : l'étape est réelle, seul l'outil change.",
+          "comment": "Fin de la partie navigateur-produit : le clic « Passer Pro » ouvre désormais le checkout Creem EMBARQUÉ (overlay iframe sur notre page — demande opérateur : ne pas quitter la plateforme). On attend l'iframe. Sa TRAVERSÉE reste déléguée à e2e/checkout-creem.mjs (session CDP dédiée sur l'URL de checkout) : la page rejette WebDriver, recette validée jusqu'à ?pro=success — même principe que la vérification e-mail par l'API admin.",
           "command": "waitForElementPresent",
-          "target": "css=#name",
+          "target": "css=iframe[src*=\"creem.io\"]",
           "targets": [],
           "value": "45000"
         }

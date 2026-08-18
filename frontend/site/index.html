@@ -20,6 +20,12 @@
   <meta name="twitter:image" content="https://ecobuilding.confinia.io/assets/og-image.png">
   <link rel="stylesheet" href="assets/maplibre/maplibre-gl.css">
   <link rel="stylesheet" href="style.css">
+  <!-- Checkout embarqué Creem (overlay sur NOTRE page — demande opérateur :
+       ne pas quitter la plateforme pour payer). C'est le script du prestataire
+       de paiement, l'équivalent de Stripe.js : il ne se vendorise pas (PCI,
+       mises à jour de sécurité). S'il ne charge pas, startCheckout retombe
+       proprement sur la redirection vers le checkout hébergé. -->
+  <script src="https://www.creem.io/embed.js" defer></script>
 </head>
 <body>
   <div id="map"></div>
