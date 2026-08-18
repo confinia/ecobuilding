@@ -337,28 +337,34 @@ input.addEventListener("input", () => {
 });
 document.addEventListener("click", (e) => { if (!e.target.closest("#searchbox")) list.hidden = true; });
 
+// La carte est un AGRÉMENT, pas un prérequis : sans WebGL2 (navigateur l'
+// entreprise bridé, VM, vieux poste — nos personas collectivités), MapLibre
+// lève GPUInitializationError et le moindre map.flyTo jette. La fiche doit
+// s'ouvrir quand même : tout contact avec la carte passe par ce garde-fou.
+function safeMap(fn) { try { fn(); } catch { /* carte morte : on continue */ } }
+
 async function select(s) {
   list.hidden = true;
   input.value = s.label;
   track("search", s.type || "unknown");
-  if (marker) marker.remove();
+  safeMap(() => { if (marker) marker.remove(); });
 
   // City or street: just fly there (zoom 13.5+ reveals the DPE colors).
   if (s.type !== "housenumber") {
     const zoom = s.type === "municipality" ? 13.5 : 16.5;
     panel.hidden = true;
-    map.flyTo({ center: [s.lon, s.lat], zoom, pitch: 45, duration: 2500 });
+    safeMap(() => map.flyTo({ center: [s.lon, s.lat], zoom, pitch: 45, duration: 2500 }));
     return;
   }
 
   // Full address: fly to the building and open its record.
-  map.flyTo({ center: [s.lon, s.lat], zoom: 17.5, pitch: 55, bearing: -18, duration: 2500 });
-  placeMarker(s.lon, s.lat);
+  safeMap(() => map.flyTo({ center: [s.lon, s.lat], zoom: 17.5, pitch: 55, bearing: -18, duration: 2500 }));
+  safeMap(() => placeMarker(s.lon, s.lat));
   showLoadingPanel('Chargement des données du bâtiment…');
   try {
     const r = await fetch(`${API}/lookup?ban_id=${encodeURIComponent(s.ban_id)}&lon=${s.lon}&lat=${s.lat}`);
     const data = await r.json();
-    anchorMarkerToBuilding(data.buildings?.[0]?.bdnb_id);   // pin onto the building footprint
+    safeMap(() => anchorMarkerToBuilding(data.buildings?.[0]?.bdnb_id));   // pin onto the building footprint
     renderPanel(s, data);
     track("lookup", data.buildings?.length ? "ok" : "no_building");
   } catch {
