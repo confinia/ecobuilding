@@ -358,9 +358,16 @@ function placeMarker(lon, lat, heightM) {
 // building height is converted to a pixel offset for the CURRENT camera:
 // metres -> pixels at this latitude/zoom, foreshortened by the pitch. Kept in
 // sync on every camera move so the pin stays on the roof (#222).
+const BUILDINGS_MINZOOM = 13;   // minzoom de la couche bdnb-dpe-3d
 function updateMarkerElevation() {
+  // Une épingle sans bâtiment ment : sous le minzoom de la couche, les
+  // volumes 3D disparaissent (par construction) — les épingles suivent, au
+  // lieu de flotter seules au-dessus du fond de carte.
+  const visible = map.getZoom() >= BUILDINGS_MINZOOM;
   for (const [m, h] of [[marker, markerHeightM], [hoverMarker, hoverMarkerHeightM]]) {
-    if (!m || !h) continue;
+    if (!m) continue;
+    m.getElement().style.display = visible ? "" : "none";
+    if (!h || !visible) continue;
     const lat = m.getLngLat().lat;
     const metresPerPixel = 156543.03392 * Math.cos(lat * Math.PI / 180) / Math.pow(2, map.getZoom());
     const dy = (h / metresPerPixel) * Math.cos(map.getPitch() * Math.PI / 180);
