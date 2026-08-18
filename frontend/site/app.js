@@ -284,7 +284,7 @@ map.on("load", () => {
     // Épingle d'aperçu sur le TOIT du bâtiment survolé : centroïde + hauteur
     // lus dans la tuile — même repère visuel que la sélection, avant le clic.
     const c = ecoGeo.featuresCenter([f]);
-    if (c) placeHoverMarker(c[0], c[1], Number(f.properties.hauteur_mean) || 6);
+    if (c) placeHoverMarker(c[0], c[1]);
     pulseTimer = setInterval(() => {
       if (hoverId === null) return;
       pulseOn = !pulseOn;
@@ -327,54 +327,48 @@ const MARKER_COLOR = "#2b7a4b";
 // Marqueur d'APERÇU au survol (#237) : même épingle, même maths d'élévation,
 // mais translucide — il montre le toit du bâtiment que le clic sélectionnerait,
 // sans toucher au marqueur de sélection.
-let hoverMarker = null, hoverMarkerHeightM = 0;
-function placeHoverMarker(lon, lat, heightM) {
+let hoverMarker = null;
+function placeHoverMarker(lon, lat) {
   removeHoverMarker();
-  hoverMarkerHeightM = heightM || 0;
   // opacité via l'OPTION du constructeur : MapLibre 6 réécrit style.opacity
   // de l'élément à chaque frame (gestion d'occlusion) et écraserait un style
   // posé à la main.
   hoverMarker = new maplibregl.Marker({ color: MARKER_COLOR, opacity: "0.65" })
     .setLngLat([lon, lat]).addTo(map);
   hoverMarker.getElement().style.pointerEvents = "none";   // ne jamais voler le clic
-  updateMarkerElevation();
+  updateMarkerVisibility();
 }
 function removeHoverMarker() {
-  if (hoverMarker) { hoverMarker.remove(); hoverMarker = null; hoverMarkerHeightM = 0; }
+  if (hoverMarker) { hoverMarker.remove(); hoverMarker = null; }
 }
 
 // Identifying pin (issue #113): drop it at a point immediately, then re-anchor
 // onto the target building's footprint centroid once its tile is loaded, so the
 // pin sits on top of the building instead of the off-centre BAN address point.
 // Same helper (ecoGeo.featuresCenter) and color as the PDF render for parity.
-let markerHeightM = 0;
-function placeMarker(lon, lat, heightM) {
+function placeMarker(lon, lat) {
   if (marker) marker.remove();
-  markerHeightM = heightM || 0;
   marker = new maplibregl.Marker({ color: MARKER_COLOR }).setLngLat([lon, lat]).addTo(map);
-  updateMarkerElevation();
+  updateMarkerVisibility();
 }
 // MapLibre markers are screen-anchored with no altitude API (6.4), so the
 // building height is converted to a pixel offset for the CURRENT camera:
 // metres -> pixels at this latitude/zoom, foreshortened by the pitch. Kept in
 // sync on every camera move so the pin stays on the roof (#222).
 const BUILDINGS_MINZOOM = 13;   // minzoom de la couche bdnb-dpe-3d
-function updateMarkerElevation() {
-  // Une épingle sans bâtiment ment : sous le minzoom de la couche, les
-  // volumes 3D disparaissent (par construction) — les épingles suivent, au
-  // lieu de flotter seules au-dessus du fond de carte.
+// Épingles à l'ALTITUDE 0, posées au centroïde du bâtiment. L'ancienne
+// élévation en pixels (#222) n'était juste qu'à cap nul : caméra tournée,
+// « plus haut à l'écran » n'est plus « au-dessus du bâtiment » et l'épingle
+// atterrissait à côté. En attendant un support natif des marqueurs élevés
+// dans maplibre-gl-js, on ne triche plus — on garde seulement la règle
+// « pas d'épingle sans bâtiment » (masquées sous le minzoom de la couche).
+function updateMarkerVisibility() {
   const visible = map.getZoom() >= BUILDINGS_MINZOOM;
-  for (const [m, h] of [[marker, markerHeightM], [hoverMarker, hoverMarkerHeightM]]) {
-    if (!m) continue;
-    m.getElement().style.display = visible ? "" : "none";
-    if (!h || !visible) continue;
-    const lat = m.getLngLat().lat;
-    const metresPerPixel = 156543.03392 * Math.cos(lat * Math.PI / 180) / Math.pow(2, map.getZoom());
-    const dy = (h / metresPerPixel) * Math.cos(map.getPitch() * Math.PI / 180);
-    m.setOffset([0, -dy]);
+  for (const m of [marker, hoverMarker]) {
+    if (m) m.getElement().style.display = visible ? "" : "none";
   }
 }
-map.on("move", updateMarkerElevation);
+map.on("move", updateMarkerVisibility);
 function anchorMarkerToBuilding(id) {
   if (!marker || !id) return;
   const tryAnchor = () => {
@@ -506,8 +500,6 @@ function kv(k, v) {
 function renderPanel(s, data) {
   const b = data.buildings?.[0];
   if (b?.bdnb_id) setUrlBuilding(b.bdnb_id);
-  // Now that the height is known, lift the pin onto the roof (#222).
-  if (b?.height_m && marker) { markerHeightM = b.height_m; updateMarkerElevation(); }
   if (!b) {
     showPanel(`<h2>${s.label}</h2><p class="hint">Aucune fiche BDNB trouvée pour cette adresse.
       Le bâtiment existe peut-être sous une adresse voisine.</p>`);

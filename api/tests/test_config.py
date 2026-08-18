@@ -313,6 +313,11 @@ def test_account_panel_and_payment_banner():
     assert "showAccount" in app and "Générer une clé API" in app
     assert "/keys" in app and "copykey" in app        # created once, copyable
     assert "paybanner" in app and 'payment_mode !== "sandbox"' in app
-    assert "updateMarkerElevation" in app and "getPitch()" in app
+    # Épingles à l'ALTITUDE 0 (demande opérateur 2026-08-18) : l'élévation en
+    # pixels (#222) mentait dès que la caméra tournait. Ce qui reste garanti :
+    # pas d'épingle sans bâtiment (masquées sous le minzoom de la couche), et
+    # aucun setOffset simulant une altitude.
+    assert "updateMarkerVisibility" in app and "BUILDINGS_MINZOOM" in app
+    assert "setOffset" not in app
     css = (ROOT / "frontend/site/style.css").read_text()
     assert "#paybanner" in css and "ul.keys" in css
