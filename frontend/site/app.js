@@ -135,6 +135,11 @@ async function ecoPricing() {
         track("signup_autostart");
         kc.register({ redirectUri: location.origin + "/?welcome=1" });
       }
+      // « Déjà un compte ? » depuis le panneau de limite : connexion directe.
+      if (!authenticated && new URLSearchParams(location.search).get("login") === "1") {
+        track("login_autostart");
+        kc.login({ redirectUri: location.origin });
+      }
     })
     .catch(() => { /* IdP hiccup: the direct-URL buttons stay usable */ });
 })();
@@ -692,12 +697,42 @@ function pdfStage(elapsedMs) {
   return label;
 }
 
+function showQuotaPanel(p, signedIn) {
+  const free = p?.free_tiers?.free_account_reports_month;
+  const anon = p?.free_tiers?.anonymous_reports_month;
+  const tierS = p?.tiers?.s;
+  showPanel(`<h2>Limite atteinte</h2>
+    <p>${signedIn
+      ? `Votre compte gratuit couvre ${free ?? "vos"} fiches par mois.`
+      : `Sans compte, ${anon ?? "quelques"} fiches par mois sont offertes.`}</p>
+    <p>${signedIn
+      ? `<a class="report-link" href="/offres.html">Passer Pro : dès ${tierS?.eur ?? 9} €/mois (${tierS?.fiches_month ?? 30} fiches)</a>`
+      : `<a class="report-link" href="/?signup=1">Créer un compte gratuit (${free ?? "plus de"} fiches/mois)</a>`}</p>
+    ${signedIn ? "" : `<p><a href="/?login=1">Déjà un compte ? Se connecter</a></p>`}
+    <p class="hint">Une question ? <a href="mailto:contact@confinia.io?subject=EcoBuilding%20-%20aide">contact@confinia.io</a></p>`);
+}
+
 async function downloadReport(btn) {
   const url = btn.dataset.url;
   const original = btn.textContent;
   // Open the tab synchronously (inside the user gesture) so popup blockers
   // allow it; it navigates to the PDF blob once ready.
   const tab = window.open("", "_blank");
+  // PRÉ-VOL (lecture seule, ~50 ms) : bloquer AVANT le cérémonial de
+  // génération — le message de limite arrivait après 25 s d'attente pour
+  // rien. La tab est DÉJÀ ouverte (contrainte anti-popup : window.open doit
+  // rester dans le geste, avant tout await) ; si le quota est épuisé, elle
+  // se referme aussitôt et le panneau s'affiche immédiatement.
+  try {
+    const headers = window.ecoToken ? { Authorization: "Bearer " + window.ecoToken() } : {};
+    const q = await (await fetch(`${API}/quota`, { headers })).json();
+    if (q.reports_left === 0) {
+      if (tab) tab.close();
+      showQuotaPanel(await ecoPricing(), !!window.ecoToken);
+      track("report_blocked_preflight");
+      return;
+    }
+  } catch { /* pré-vol indisponible : le serveur reste la barrière (429) */ }
   if (tab) tab.document.write(`<!doctype html><title>Fiche EcoBuilding</title>
 <body style="font-family:system-ui,sans-serif;display:flex;min-height:90vh;align-items:center;justify-content:center;background:#f6f8f6">
 <div style="text-align:center;max-width:26em">
@@ -732,14 +767,7 @@ async function downloadReport(btn) {
       const signedIn = !!window.ecoToken;
       const p = await ecoPricing();
       const anon = p.free_tiers?.anonymous_reports_month, free = p.free_tiers?.free_account_reports_month;
-      showPanel(`<h2>Limite atteinte</h2>
-        <p>${signedIn
-          ? `Votre compte gratuit couvre ${free ?? "vos"} fiches par mois.`
-          : `Sans compte, ${anon ?? "quelques"} fiches par mois sont offertes.`}</p>
-        <p>${signedIn
-          ? `<a class="report-link" href="/offres.html">Passer Pro : ${p.price_per_fiche_eur ?? "0,49"} € la fiche au-delà, plafonné à ${p.monthly_cap_eur ?? 99} €/mois</a>`
-          : `<a class="report-link" href="/?signup=1">Créer un compte gratuit (${free ?? "plus de"} fiches/mois)</a>`}</p>
-        <p class="hint">Une question ? <a href="mailto:contact@confinia.io?subject=EcoBuilding%20-%20aide">contact@confinia.io</a></p>`);
+      showQuotaPanel(p, signedIn);
       if (tab) tab.close();
       return;
     }
