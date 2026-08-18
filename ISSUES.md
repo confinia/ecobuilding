@@ -21,6 +21,7 @@ Last updated: 2026-08-16 (triage + promote).
 
 | Issue | Status | Next step |
 |---|---|---|
+| [#244](https://github.com/confinia/ecobuilding/issues/244) ID-RNB : clé pivot du référentiel national | **Sur [staging](https://staging.ecobuilding.confinia.io) 2026-08-18** (PR [#245](https://github.com/confinia/ecobuilding/pull/245)) : chaque bâtiment porte son ID-RNB (panneau avec lien vers rnb.beta.gouv.fr, fiche PDF, API), et `/v1/lookup?rnb_id=…` accepte l'ID-RNB en entrée — EcoBuilding est joignable depuis l'écosystème RNB. Dé-risque aussi [#28](https://github.com/confinia/ecobuilding/issues/28) (id stable avant le cutover BDNB) | Prochain promote ; débloque le post GéoCommuns (prose en attente d'approbation) |
 | Lot UX-paiement du 2026-08-18 (retours du premier abonné Pro) | **Sur [staging](https://staging.ecobuilding.confinia.io) 2026-08-18** (PRs [#241](https://github.com/confinia/ecobuilding/pull/241), [#242](https://github.com/confinia/ecobuilding/pull/242), [#243](https://github.com/confinia/ecobuilding/pull/243)) : pré-vol de quota (blocage <600 ms au lieu de 25 s de cérémonial, lien « Se connecter »), **checkout Creem embarqué** (payer sans quitter la plateforme, repli redirection), **cache d'agrégat bâtiment 9,1 s → 75 ms**, « Changer d'offre » pour les abonnés (upgrade Creem prorata, double checkout refusé en 409), erreurs bâtiment honnêtes (404 vs passager + Réessayer), survol stable + clignotement/spinner réservés au chargement. Paiement validé en conditions réelles par l'opérateur (premier abonné Pro S, activation ~40 s) | **Promu en production 2026-08-18** (paiement désactivé — rule 7 ; cache vérifié : 15,3 s → 73 ms) |
 | [#237](https://github.com/confinia/ecobuilding/issues/237) Sélection 3D : survol sans ambiguïté | **Sur [staging](https://staging.ecobuilding.confinia.io) 2026-08-18** (PRs [#236](https://github.com/confinia/ecobuilding/pull/236), [#238](https://github.com/confinia/ecobuilding/pull/238), [#239](https://github.com/confinia/ecobuilding/pull/239)) : le bâtiment survolé clignote, l'épingle d'aperçu se pose sur son toit, la sélection transmet le centroïde du bâtiment (plus le point au sol qui titrait la fiche avec l'adresse du voisin), et les épingles se masquent sous le minzoom de la couche (« pas d'épingle sans bâtiment ») | Promote au prochain cycle |
 | **Parcours e2e Creem VERT de bout en bout** | **Mergé main → staging 2026-08-18** (PR [#235](https://github.com/confinia/ecobuilding/pull/235)) : inscription Keycloak → vérif e-mail (API admin, simulée et documentée) → connexion → fiche → « Passer Pro » → checkout Creem traversé (helper CDP `e2e/checkout-creem.mjs` — la page tierce rejette WebDriver, 28 runs d'itérations dans git) → paiement 9 € encaissé (`order_id` réel) → réconciliation → **panneau compte Pro** → rapport plateforme sans contradiction. Fixes embarqués : `customer:{email}` au checkout (400 sinon), réconciliation `/customers/{id}/subscriptions` (search refuse customer_id), fiche accessible sans WebGL2 (`safeMap`) | Prêt pour **promotion prod** (la v4 y reste inerte : aucun fournisseur configuré) |
@@ -67,28 +68,6 @@ Last updated: 2026-08-16 (triage + promote).
 | [#28](https://github.com/confinia/ecobuilding/issues/28) Self-host BDNB | Partial: BDNB restored in PostGIS on the VM; PostgREST exposes only `dvf` today | Expose the BDNB schema + set `BDNB_URL`/`BDNB_BASE_URL` (see DATA.md §2, §4) |
 
 ## To file (prose awaiting approval, rule 11)
-
-- **Exposer l'ID-RNB à côté de l'identifiant BDNB** (produit + interopérabilité).
-  Le [Référentiel National des Bâtiments](https://rnb.beta.gouv.fr/) donne à
-  chaque bâtiment un identifiant unique et *permanent* de 12 caractères, et
-  c'est lui — pas l'id BDNB — qui sert de **clé pivot entre cadastre, BAN,
-  BDNB et ADEME**. Nous clefons aujourd'hui sur l'id BDNB : nos URLs et notre
-  API ne sont donc pas jointes au reste de l'écosystème, et un id BDNB peut
-  bouger d'une version à l'autre (voir [#28](https://github.com/confinia/ecobuilding/issues/28)).
-  À faire : renvoyer `rnb_id` dans `/v1/buildings/{id}`, l'accepter en entrée,
-  et l'afficher sur la fiche PDF. Bénéfice commercial : c'est l'identifiant
-  que les diagnostiqueurs et les collectivités citent, et c'est le prérequis
-  pour parler crédiblement sur le forum GéoCommuns (canal ci-dessous).
-
-- **Fuite de processus Chromium du service render** (fiabilité VM). Des
-  processus `chrome` de générations PRÉCÉDENTES du conteneur
-  `ecobuilding-render_render_1` survivent à sa recréation (constaté
-  2026-08-17 : des chrome vieux de 15 jours alors que le conteneur date de
-  23 h ; ~20 orphelins > 1 jour, ~1,5 Go de RSS au total). Piste : Puppeteer
-  relancé sans que l'ancien navigateur soit attendu (`browser.close()` absent
-  d'un chemin d'erreur), et les processus ré-adoptés hors du cgroup du
-  conteneur. À faire : trouver le chemin qui fuit dans `render_stack/server.js`,
-  et un garde-fou (pkill des chrome orphelins au démarrage du conteneur).
 
 - **Canal : [Forum GéoCommuns](https://forum.geocommuns.fr)** (Discourse de
   l'écosystème géocommuns : Panoramax 421 sujets, RTK-Centipede 178, RNB 24,
