@@ -614,6 +614,7 @@ function renderPanel(s, data) {
     ${kv("Surface habitable", data.official_dpe?.surface_habitable_m2 ? data.official_dpe.surface_habitable_m2 + " m²" : null)}
     ${kv("Coût annuel d'énergie", data.official_dpe?.annual_cost_eur ? Math.round(data.official_dpe.annual_cost_eur).toLocaleString("fr-FR") + " €/an (DPE)" : null)}
     <h3>Bâtiment</h3>
+    ${data.rnb ? kv("ID-RNB", `<a href="${data.rnb.url}" target="_blank" rel="noopener" title="Fiche du bâtiment dans le Référentiel National des Bâtiments">${data.rnb.rnb_id}</a>`) : ""}
     ${kv("Année de construction", b.construction_year)}
     ${kv("Hauteur moyenne", b.height_m ? b.height_m + " m" : null)}
     ${kv("Logements", b.dwellings)}

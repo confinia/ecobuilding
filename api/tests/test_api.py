@@ -132,6 +132,34 @@ def test_building_includes_prices(monkeypatch):
     assert any("DVF" in s for s in body["sources"])
 
 
+def test_building_includes_rnb_id(monkeypatch):
+    """ID-RNB : la clé pivot (cadastre/BAN/BDNB/ADEME) est jointe au bâtiment
+    et à la liste des sources ; son absence ne casse rien."""
+    async def fake_bdnb(url, params, ttl):
+        if "rnb" in url:
+            return {"results": [
+                {"rnb_id": "LOIN12345678", "point": {"coordinates": [2.2, 48.9]}},
+                {"rnb_id": "ABCD1234EFGH", "point": {"coordinates": [2.0816, 48.7021]}}]}
+        return [{"batiment_groupe_id": "bdnb-bg-R", "libelle_adr_principale_ban": "1 rue R"}]
+    async def none1(*a, **k): return None
+    async def norisk(lon, lat): return {}
+    monkeypatch.setattr(main, "_cached_get_json", fake_bdnb)
+    monkeypatch.setattr(main, "_dvf_prices", none1)
+    monkeypatch.setattr(main, "_area_risks", norisk)
+    body = client.get("/v1/buildings/bdnb-bg-R", params={"lon": 2.0815, "lat": 48.7020}).json()
+    assert body["rnb"]["rnb_id"] == "ABCD1234EFGH"       # le PLUS PROCHE, pas le premier
+    assert body["buildings"][0]["rnb_id"] == "ABCD1234EFGH"
+    assert any("RNB" in x for x in body["sources"])
+    main._CACHE.clear()
+    async def rnb_down(url, params, ttl):
+        if "rnb" in url:
+            raise RuntimeError("down")
+        return [{"batiment_groupe_id": "bdnb-bg-R", "libelle_adr_principale_ban": "1 rue R"}]
+    monkeypatch.setattr(main, "_cached_get_json", rnb_down)
+    body = client.get("/v1/buildings/bdnb-bg-R", params={"lon": 2.0815, "lat": 48.7020}).json()
+    assert body["rnb"] is None and "rnb_id" not in body["buildings"][0]
+
+
 def test_building_aggregate_is_cached(monkeypatch):
     """Cache de l'agrégat (demande opérateur) : recharger la même fiche ne
     refait PAS l'orchestration ; et muter la réponse servie ne contamine pas
