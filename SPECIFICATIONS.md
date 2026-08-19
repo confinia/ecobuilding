@@ -3,7 +3,7 @@
 Main expectations of the EcoBuilding service. Companion docs:
 [DEV.md](DEV.md) (architecture/ops) · [BUSINESS.md](BUSINESS.md) (strategy) ·
 [RULES.md](RULES.md) (working rules) · [TEST_SUBSCRIPTION.md](TEST_SUBSCRIPTION.md) /
-[TEST_POLAR.md](TEST_POLAR.md) (validation) · [LAUNCH.md](LAUNCH.md) (communication).
+[TEST_CREEM.md](TEST_CREEM.md) (validation) · [LAUNCH.md](LAUNCH.md) (communication).
 
 ## 1. Vision
 

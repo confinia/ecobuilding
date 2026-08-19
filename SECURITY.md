@@ -77,7 +77,7 @@ a working assessment, not a certification.
 6. **Supply chain (dependency / base image)** → pinned versions reduce drift;
    Dependabot/pip-audit recommended once CI is active.
 7. **Payment layer** — not yet wired; when Polar lands, webhook **signature
-   verification is mandatory** (already specified in TEST_POLAR.md) so a forged
+   verification is mandatory** (specified in TEST_CREEM.md; TEST_POLAR.md is archived) so a forged
    webhook cannot provision a paid tier.
 
 **Reachable sensitive data, worst case (laptop or VM compromise):** user

@@ -6,7 +6,7 @@ lives in the code. Change a price HERE first, then in the constants listed in
 bug, and the test suite fails on the mismatch.
 
 Rationale and market reasoning stay in [BUSINESS.md](BUSINESS.md); the no-risk
-payment test procedure is in [TEST_POLAR.md](TEST_POLAR.md).
+payment test procedure is in [TEST_CREEM.md](TEST_CREEM.md) ([TEST_POLAR.md](TEST_POLAR.md) is the archived Polar-era one).
 
 ---
 

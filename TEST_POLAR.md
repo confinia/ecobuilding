@@ -1,4 +1,12 @@
-# TEST_POLAR — valider l'inscription et le paiement sans risque
+# TEST_POLAR — ARCHIVE (fournisseur abandonné le 2026-08-17)
+
+> **Ce document est une archive.** Le fournisseur de paiement est **Creem**
+> depuis la règle 21 (souveraineté : MoR européen) — la procédure vivante est
+> dans [TEST_CREEM.md](TEST_CREEM.md). Ce qui suit décrit le montage Polar
+> sandbox de la v3 (metering), conservé pour l'historique des décisions
+> (PRICING.md §3) et parce que les leçons (réconciliation sans webhook #228,
+> image sandbox = image prod) ont fondé l'intégration Creem.
+
 
 **Aucun euro réel ne peut être encaissé** : la production n'a AUCUNE
 configuration Polar (0 variable `POLAR_*`), donc `/v1/pro/checkout` y répond
