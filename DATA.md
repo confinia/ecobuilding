@@ -61,6 +61,42 @@ All upstream reads go through `_cached_get_json` (`api/app/main.py`):
 - Additional guard: `ANON_DAILY_CAP` (default 20/day/IP) on the PDF fiche,
   with a friendly French 429 page.
 
+### 3.1 Building **tiles** go through our own cache (`/v1/tiles`)
+
+The 3D map used to point straight at `api.bdnb.io/.../tuiles/...`. That endpoint
+is anonymous and capped **per IP**: 120 req/min and **10 000 req/month**. Two
+measured consequences, both user-visible:
+
+- MapLibre, above a source's `maxzoom`, instantiates one tile per *overscaled*
+  tile id — so the **same** tile is fetched **10–17×** per view at z18 with
+  pitch (6× at pitch 0). A few reloads → HTTP 429 → the 3D layer silently
+  emptied. That is the "buildings appear then disappear" / "3D not displayed"
+  symptom.
+- The PDF renderer (`render_stack/render.html`) hit the same tiles from the
+  **VM's** IP: ~15 requests per fiche, i.e. a ceiling near **650 fiches/month**
+  before 3D vanished from reports.
+
+`GET /v1/tiles/batiment_groupe/{z}/{x}/{y}.pbf` now serves them:
+
+- **disk cache** (`/tiles` volume, `TILE_TTL` 30 d) shared blue/green, so a
+  promote does not start cold;
+- **single-flight** per tile: the ~15 concurrent requests of one view collapse
+  into **one** upstream call (`asyncio.Lock`);
+- long `Cache-Control` — BDNB sends none, so browsers re-fetched every visit;
+- `TILE_UPSTREAM_RPM` (40) caps upstream tile traffic so map browsing can never
+  starve the *data* calls, which share the same IP quota;
+- upstream 429/outage → **stale tile** if we have one, else 503 + `Retry-After`
+  and the web map shows a "Bâtiments 3D momentanément indisponibles" notice
+  (the failure used to be entirely mute).
+
+BDNB publishes **z14 only** (z13 and z15+ answer 404), so both maps declare
+`minzoom: 14` — the old `minzoom: 13` only produced 404s.
+
+Metric: `ecobuilding_tiles` (`hit` / `hit_coalesced` / `miss` / `stale` /
+`error`). Sovereign follow-up: serve MVT from the local BDNB PostGIS
+([#28](https://github.com/confinia/ecobuilding/issues/28)) and drop the
+third-party quota entirely.
+
 ---
 
 ## 4. Loading the BDNB mirror (self-hosting, [#28](https://github.com/confinia/ecobuilding/issues/28))

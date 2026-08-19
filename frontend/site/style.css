@@ -128,3 +128,16 @@ ul.keys li { padding: 4px 0; border-bottom: 1px dashed #eee; }
   box-shadow: 0 1px 4px rgba(0,0,0,.3);
 }
 @keyframes eco-spin { to { transform: rotate(360deg); } }
+
+/* Bandeau « bâtiments 3D indisponibles » : l'échec des tuiles était muet, la
+   carte s'affichait nue et se lisait comme une panne du site entier. */
+#tile-notice {
+  position: absolute; left: 50%; transform: translateX(-50%); bottom: 34px;
+  z-index: 11; background: #fff; border: 1px solid #e3b23c; border-left: 4px solid #e3b23c;
+  border-radius: 8px; padding: 8px 12px; font-size: 13px; color: #333;
+  box-shadow: 0 2px 8px rgba(0,0,0,.18);
+}
+#tile-notice button {
+  margin-left: 8px; border: 1px solid #2b7a4b; background: #fff; color: #2b7a4b;
+  border-radius: 6px; padding: 3px 10px; font-size: 12px; cursor: pointer;
+}

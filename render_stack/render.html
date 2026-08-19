@@ -33,9 +33,14 @@ map.on('load', () => {
   for (const l of map.getStyle().layers) {
     if (/building/i.test(l.id)) map.removeLayer(l.id);   // only BDNB extrudes
   }
+  // Tuiles servies par NOTRE cache (comme la carte web) : chaque fiche PDF
+  // tirait ~15 tuiles sur api.bdnb.io depuis l'IP de la VM, plafonnée à 10 000
+  // requêtes/mois — soit ~650 fiches/mois avant que la 3D disparaisse des PDF.
+  // L'API passe ?tiles=<son URL publique> : en blue-green, le conteneur API
+  // n'a pas de nom stable sur le réseau interne, on repasse donc par l'edge.
   map.addSource('bdnb', { type: 'vector',
-    tiles: ['https://api.bdnb.io/v1/bdnb/tuiles/batiment_groupe/{z}/{x}/{y}.pbf'],
-    minzoom: 13, maxzoom: 14 });
+    tiles: [q.get('tiles') || 'https://ecobuilding.confinia.io/api/v1/tiles/batiment_groupe/{z}/{x}/{y}.pbf'],
+    minzoom: 14, maxzoom: 14 });   // BDNB ne publie que le z14
   const height = ['coalesce', ['get', 'hauteur_mean'], 6];
   // All buildings dimmed; the target rendered full-opacity so it stands out.
   map.addLayer({ id: 'bdnb-all', source: 'bdnb', 'source-layer': 'sql_statement',
