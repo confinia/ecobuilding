@@ -70,13 +70,4 @@ Last updated: 2026-08-16 (triage + promote).
 
 ## To file (prose awaiting approval, rule 11)
 
-- **Canal : [Forum GéoCommuns](https://forum.geocommuns.fr)** (Discourse de
-  l'écosystème géocommuns : Panoramax 421 sujets, RTK-Centipede 178, RNB 24,
-  BAN, base routière). Audience = producteurs et réutilisateurs des données
-  exactes que nous consommons, dont des nœuds très centraux de l'open data géo
-  français. **Ce n'est pas un canal publicitaire** : y poster une annonce
-  produit se retournerait contre nous. Format à tenir : un *retour
-  d'expérience de réutilisateur* dans les catégories Panoramax et RNB — ce que
-  nous consommons, ce qui a manqué, ce que nous renvoyons — avec le lien vers
-  EcoBuilding en signature et non en objet. Prose à rédiger et à faire valider
-  avant publication (voir [COMMUNICATION.md](COMMUNICATION.md)).
+- **Canal GéoCommuns : PUBLIÉ 2026-08-19** — [retour d'expérience ID-RNB, catégorie RNB](https://forum.geocommuns.fr/t/retour-dexperience-lid-rnb-comme-cle-pivot-dans-un-service-de-fiches-batiment-bdnb-dpe-risques/3387) (détails et étiquette dans [COMMUNICATION.md](COMMUNICATION.md)). **Surveiller les réponses sous 24-48 h** — la question posée (jointure BDNB↔RNB par ext_ids) peut rapporter une amélioration produit gratuite.

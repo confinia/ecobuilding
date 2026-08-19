@@ -97,3 +97,16 @@ posting log — timestamp every post there); this file is the *how*.
   **2026-08-19**; thresholds in BUSINESS.md §8 are fixed).
 - Replies to comments: within hours if possible — early reply speed is the
   only reach lever we control.
+
+## Forum GéoCommuns (forum.geocommuns.fr)
+
+- **Identité** : compte « Confinia » (contact@confinia.io).
+- **Étiquette** : communauté de biens communs — uniquement des retours
+  d'expérience de réutilisateur, jamais d'annonce produit ; le lien EcoBuilding
+  en signature, pas en objet ; répondre sous 24-48 h.
+- **Publié** : 2026-08-19, catégorie RNB — « Retour d'expérience : l'ID-RNB
+  comme clé pivot… » (question réelle posée : jointure BDNB↔RNB par ext_ids).
+  https://forum.geocommuns.fr/t/retour-dexperience-lid-rnb-comme-cle-pivot-dans-un-service-de-fiches-batiment-bdnb-dpe-risques/3387
+- **À ne pas faire** : reposter dans la catégorie Panoramax (la mention dans le
+  post RNB suffit) ; un second sujet n'y viendra qu'avec un vrai contenu
+  Panoramax (#200).
