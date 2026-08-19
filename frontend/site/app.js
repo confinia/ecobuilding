@@ -614,6 +614,12 @@ function renderPanel(s, data) {
     ${kv("Surface habitable", data.official_dpe?.surface_habitable_m2 ? data.official_dpe.surface_habitable_m2 + " m²" : null)}
     ${kv("Coût annuel d'énergie", data.official_dpe?.annual_cost_eur ? Math.round(data.official_dpe.annual_cost_eur).toLocaleString("fr-FR") + " €/an (DPE)" : null)}
     <h3>Bâtiment</h3>
+    ${data.market_dia ? `
+    <h3>Dynamique du marché (DIA)</h3>
+    ${kv("Zone", `${data.market_dia.zone} (${data.market_dia.scope})`)}
+    ${kv("Mises en vente (12 mois)", `${data.market_dia.listings_12m}${data.market_dia.listings_3m ? ` — dont ${data.market_dia.listings_3m} au dernier trimestre` : ""}`)}
+    ${kv("Prix médian demandé", data.market_dia.median_asking_eur ? `${data.market_dia.median_asking_eur.toLocaleString("fr-FR")} €${data.market_dia.median_asking_eur_m2 ? ` (${data.market_dia.median_asking_eur_m2.toLocaleString("fr-FR")} €/m²)` : ""}` : null)}
+    <p class="hint">${data.market_dia.note} Données ${data.market_dia.updated}.</p>` : ""}
     ${data.rnb ? kv("ID-RNB", `<a href="${data.rnb.url}" target="_blank" rel="noopener" title="Fiche du bâtiment dans le Référentiel National des Bâtiments">${data.rnb.rnb_id}</a>`) : ""}
     ${kv("Année de construction", b.construction_year)}
     ${kv("Hauteur moyenne", b.height_m ? b.height_m + " m" : null)}

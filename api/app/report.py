@@ -58,6 +58,32 @@ def _eur(n) -> str:
     return f"{round(n):,}".replace(",", " ") if n not in (None, "") else "—"
 
 
+def _dia_html(m):
+    """Bloc « Dynamique du marché (DIA) » — uniquement sur le territoire de
+    Montpellier Méditerranée Métropole. Le libellé dit explicitement qu'il
+    s'agit de montants DEMANDÉS (mise en vente), pas de prix finaux."""
+    if not m:
+        return ""
+    vol = f"{m['listings_12m']}"
+    if m.get("listings_3m"):
+        vol += f" — dont {m['listings_3m']} au dernier trimestre"
+    price = ""
+    if m.get("median_asking_eur"):
+        price = f"{m['median_asking_eur']:,} €".replace(",", " ")
+        if m.get("median_asking_eur_m2"):
+            price += f" ({m['median_asking_eur_m2']:,} €/m²)".replace(",", " ")
+    return f"""
+<h2>Dynamique du marché (DIA)</h2>
+<table>
+  {_row("Zone", f"{m['zone']} ({m['scope']})")}
+  {_row("Mises en vente sur 12 mois", vol)}
+  {_row("Prix médian demandé", price or None)}
+</table>
+<p class="note">{m['note']} Données {m['updated']} —
+Montpellier Méditerranée Métropole (Open Data).</p>
+"""
+
+
 def _prices_html(p: dict | None) -> str:
     """DVF home-price section (recent parcelle sales + commune median €/m²).
     Honest about the DVF coverage gap (Alsace-Moselle, Mayotte)."""
@@ -446,6 +472,7 @@ def _report_html(data: dict, photos: list | None = None, map_img: str | None = N
   {_row("Matériaux des murs", b.get("wall_material"))}
   {_row("Matériaux du toit", b.get("roof_material"))}
 </table>
+{_dia_html(data.get("market_dia"))}
 
 <h2>Risques</h2>
 <table>
