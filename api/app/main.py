@@ -266,6 +266,62 @@ async def _cached_get_json(url: str, params: dict, ttl: float):
     return data
 
 
+# --- Cache disque des tuiles bâtiments (voir /v1/tiles) ----------------------
+TILES_DIR = os.environ.get("TILES_DIR", "/tiles")
+TILES_UPSTREAM = os.environ.get(
+    "BDNB_TILES_URL",
+    "https://api.bdnb.io/v1/bdnb/tuiles/batiment_groupe/{z}/{x}/{y}.pbf")
+# Le millésime BDNB est annuel : 30 jours de cache est conservateur.
+TILE_TTL = float(os.environ.get("TILE_TTL", str(30 * 86400)))
+# Garde-fou : les appels amont de tuiles partagent l'IP (donc le quota) avec les
+# appels de DONNÉES. On leur réserve un débit borné pour qu'un balayage de carte
+# ne puisse jamais assécher les fiches.
+TILE_UPSTREAM_RPM = int(os.environ.get("TILE_UPSTREAM_RPM", "40"))
+_TILE_LOCKS: dict = {}
+_tile_hits: list = []
+M_TILES = _meter.create_counter("ecobuilding_tiles", description="Building tile cache", unit="1")
+
+
+def _tile_budget() -> bool:
+    """Fenêtre glissante d'une minute sur les appels amont de tuiles."""
+    now = time.monotonic()
+    _tile_hits[:] = [t for t in _tile_hits if now - t < 60]
+    if len(_tile_hits) >= TILE_UPSTREAM_RPM:
+        return False
+    _tile_hits.append(now)
+    return True
+
+
+def _tile_read(path: str, ttl):
+    """Contenu en cache, ou None. ttl=None : accepte une tuile périmée."""
+    try:
+        if ttl is not None and time.time() - os.path.getmtime(path) > ttl:
+            return None
+        with open(path, "rb") as f:
+            return f.read()
+    except OSError:
+        return None
+
+
+def _tile_write(path: str, blob: bytes) -> None:
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = f"{path}.tmp"
+        with open(tmp, "wb") as f:
+            f.write(blob)
+        os.replace(tmp, path)                       # jamais de tuile tronquée
+    except OSError as e:
+        log.warning("cache tuile non écrit (%s): %s", path, e)
+
+
+def _tile_response(blob: bytes):
+    from fastapi.responses import Response
+    return Response(
+        content=blob, media_type="application/vnd.mapbox-vector-tile",
+        headers={"Cache-Control": f"public, max-age={int(TILE_TTL)}",
+                 "Access-Control-Allow-Origin": "*"})
+
+
 async def _dvf_prices(bdnb_id: str):
     """DVF price block for a building (recent parcelle sales + commune median
     €/m²), via the local PostgREST RPC. None when DVF is not wired or on error,
@@ -288,7 +344,11 @@ async def _building_map_png(lon, lat, bdnb_id, bearing: float = -30.0):
     try:
         r = await _client.get(RENDER_URL, params={
             "lon": lon, "lat": lat, "zoom": 18, "pitch": 60,
-            "bearing": bearing, "bdnb_id": bdnb_id}, timeout=45.0)
+            "bearing": bearing, "bdnb_id": bdnb_id,
+            # Le renderer doit tirer les tuiles de NOTRE cache : sinon chaque
+            # fiche consommait ~15 requêtes du quota BDNB de la VM (10 000/mois).
+            "tiles": f"{PUBLIC_BASE_URL}/api/v1/tiles/batiment_groupe/"
+                     "{z}/{x}/{y}.pbf"}, timeout=45.0)
         r.raise_for_status()
         import base64
         return "data:image/png;base64," + base64.b64encode(r.content).decode()
@@ -467,6 +527,66 @@ def _normalize_building(r: dict) -> dict:
 @app.get("/v1/healthz", tags=["meta"])
 async def healthz():
     return {"status": "ok", "service": "ecobuilding-api", "api_version": "v1"}
+
+
+@app.get("/v1/tiles/batiment_groupe/{z}/{x}/{y}.pbf", tags=["buildings"])
+async def building_tile(z: int, x: int, y: int):
+    """Tuiles vectorielles des bâtiments, servies depuis NOTRE cache disque.
+
+    Pourquoi ce proxy (et pas l'URL BDNB directement dans la carte) :
+    api.bdnb.io est anonyme et plafonné à 120 req/min et 10 000 req/MOIS **par
+    IP**. Or MapLibre, au-dessus du maxzoom d'une source (14 ici), instancie une
+    tuile par identifiant sur-zoomé : à z18 avec du pitch, la MÊME tuile part
+    10 à 17 fois en parallèle. Résultat mesuré : ~15 requêtes par affichage,
+    donc un 429 au bout de quelques rechargements — la carte 3D se vidait alors
+    en silence, et chaque fiche PDF (le renderer tape les mêmes tuiles depuis
+    l'IP de la VM) consommait autant du quota mensuel.
+
+    Ici : les N requêtes concurrentes d'un même affichage sont mutualisées en UN
+    seul appel amont (verrou par tuile), le résultat est gardé sur disque, et le
+    navigateur reçoit un Cache-Control long — que BDNB n'envoie pas. En régime
+    établi, une tuile n'est demandée à BDNB qu'une fois par TILE_TTL.
+    """
+    if not (0 <= z <= 22 and 0 <= x < 2 ** z and 0 <= y < 2 ** z):
+        raise HTTPException(status_code=404, detail="Tuile hors domaine")
+
+    path = os.path.join(TILES_DIR, str(z), str(x), f"{y}.pbf")
+    fresh = _tile_read(path, TILE_TTL)
+    if fresh is not None:
+        M_TILES.add(1, {"result": "hit"})
+        return _tile_response(fresh)
+
+    # Un seul appel amont par tuile, même si 17 requêtes arrivent ensemble.
+    lock = _TILE_LOCKS.setdefault((z, x, y), asyncio.Lock())
+    async with lock:
+        again = _tile_read(path, TILE_TTL)          # remplie pendant l'attente ?
+        if again is not None:
+            M_TILES.add(1, {"result": "hit_coalesced"})
+            return _tile_response(again)
+        try:
+            if not _tile_budget():
+                raise RuntimeError("budget amont épuisé")
+            M_TILES.add(1, {"result": "miss"})
+            r = await _client.get(TILES_UPSTREAM.format(z=z, x=x, y=y))
+            if r.status_code == 404:                # hors couverture BDNB
+                _tile_write(path, b"")
+                return _tile_response(b"")
+            r.raise_for_status()
+            _tile_write(path, r.content)
+            return _tile_response(r.content)
+        except Exception as e:
+            # Amont KO (429, panne, timeout) : mieux vaut une tuile périmée
+            # qu'une carte vide. Sinon 503 — le front le dit à l'utilisateur.
+            stale = _tile_read(path, ttl=None)
+            if stale is not None:
+                M_TILES.add(1, {"result": "stale"})
+                return _tile_response(stale)
+            M_TILES.add(1, {"result": "error"})
+            log.warning("tuile %s/%s/%s indisponible: %s", z, x, y, e)
+            raise HTTPException(status_code=503, detail="Tuiles bâtiments indisponibles",
+                                headers={"Retry-After": "60", "Cache-Control": "no-store"})
+        finally:
+            _TILE_LOCKS.pop((z, x, y), None)
 
 
 @app.get("/v1/suggest", tags=["geocoding"])

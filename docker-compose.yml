@@ -47,6 +47,10 @@ services:
       # Lead capture (offer page) — persisted outside git/rsync, shared by
       # both stacks so no lead is lost across promotes.
       - ./data/leads:/leads
+      # Cache disque des tuiles bâtiments (/v1/tiles) : partagé blue/green pour
+      # qu'un promote ne reparte pas d'un cache froid — le quota BDNB amont est
+      # de 10 000 requêtes/mois pour toute la VM.
+      - ./data/tiles:/tiles
     networks:
       default:
       internal: {}
