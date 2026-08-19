@@ -81,3 +81,22 @@ une personne. Aucune donnée de santé individuelle n'entre dans le produit
   communale (fiscalité, eau, APL) est étiquetée comme telle.
 - **Dégradation gracieuse** : toute source indisponible renvoie `None` et
   disparaît de la fiche — jamais de valeur inventée.
+
+## Montpellier Méditerranée Métropole — data.montpellier3m.fr (#246, inventorié 2026-08-19)
+
+Portail **DKAN** (Drupal), catalogue standard `GET /data.json` (**944 jeux**,
+~2 Mo, lent : compter 2 min). Pas d'API de requête par jeu : fichiers statiques
+sous `/sites/default/files/ressources/`. Licence Open Data locale.
+
+| Jeu | Ressource | Contenu vérifié | Usage EcoBuilding |
+|---|---|---|---|
+| **DIA** (Déclarations d'Intention d'Aliéner) | `MMM_MMM_DIA.xlsx` (~300 Ko, maj mensuelle, modifié 2026-08-19) | **4 841 lignes** : type de bien, superficie, surface utile, **montant de mise en vente**, sous-quartier, date reçue en mairie, date d'acte — des actes de **juillet 2026** là où DVF s'arrête un semestre avant | Bloc « Dynamique du marché » par sous-quartier — indicateur AVANCÉ complémentaire de DVF. ⚠ montant de MISE EN VENTE ≠ prix de vente final : libellé honnête obligatoire |
+| **Sous-quartiers de Montpellier** | `VilleMTP_MTP_SousQuartiers.json` (+ KML/CSV) | géométries des sous-quartiers | jointure bâtiment (lon/lat) → sous-quartier en point-in-polygon local (pas besoin de PostGIS) |
+| **Bâtiments 3D** | `MMM_MMM_Bat3D.zip` (CityGML, millésime 2024-05) | maquette officielle ville+métropole | rendu 3D haute fidélité (démonstrateur collectivités) — plus tard |
+| **PLUi-Climat** | liens vers le Géoportail de l'urbanisme (pas de données brutes ici) | zonages par commune | passer par l'API nationale GPU, pas par ce portail |
+
+Chemin d'implémentation retenu (DIA d'abord) : `deploy/dia-refresh.sh`
+mensuel → `data/dia/montpellier.json` (agrégats par sous-quartier : volume
+12 mois / 3 mois, prix médian demandé, répartition par type) → bloc
+conditionnel `market_dia` dans `/v1/buildings` quand le bâtiment tombe dans
+l'emprise, panneau + fiche PDF, source créditée.
