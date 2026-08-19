@@ -537,10 +537,12 @@ async function select(s) {
   window.ecoStartLoadingFx?.(null, s.lon, s.lat);
   showLoadingPanel('Chargement des données du bâtiment…');
   try {
-    const r = await fetch(`${API}/lookup?ban_id=${encodeURIComponent(s.ban_id)}&lon=${s.lon}&lat=${s.lat}`);
-    const data = await r.json();
+    // Flux NDJSON : le bâtiment s'affiche dès que BDNB a répondu, les autres
+    // sources s'ajoutent à leur arrivée (au lieu d'attendre la plus lente).
+    const r = await fetch(`${API}/lookup/stream?ban_id=${encodeURIComponent(s.ban_id)}&lon=${s.lon}&lat=${s.lat}`);
+    if (!r.ok) throw new Error(r.status);
+    const data = await consumeBuildingStream(r, s);
     safeMap(() => anchorMarkerToBuilding(data.buildings?.[0]?.bdnb_id));   // pin onto the building footprint
-    renderPanel(s, data);
     track("lookup", data.buildings?.length ? "ok" : "no_building");
   } catch {
     showPanel('<p class="hint">Erreur de chargement. Réessayez.</p>');
@@ -558,16 +560,27 @@ function showPanel(html, opts) {
   if (!opts?.keepLoadingFx) window.ecoStopLoadingFx?.(); content.innerHTML = html; panel.hidden = false; }
 
 // Panoramax street-level photos near the building (issue #22).
+// Le panneau étant re-rendu à CHAQUE bloc du flux, cette vue ne doit être
+// cherchée qu'une fois par position — sinon neuf appels Panoramax par clic.
+let streetviewAt = null, streetviewCache = "";
 async function loadStreetview(lon, lat) {
   const el = document.getElementById("streetview");
   if (!el || lon == null || lat == null) return;
+  const at = `${lon},${lat}`;
+  if (streetviewAt === at) {                  // déjà chargée : on la replace
+    if (streetviewCache) el.innerHTML = streetviewCache;
+    return;
+  }
+  streetviewAt = at;
+  streetviewCache = "";
   try {
     const r = await fetch(`${API}/streetview?lon=${lon}&lat=${lat}`);
     const { photos } = await r.json();
     if (!photos?.length) return;
-    el.innerHTML = `<h3>Vue au sol (Panoramax)</h3><div class="pano-strip">` +
+    streetviewCache = `<h3>Vue au sol (Panoramax)</h3><div class="pano-strip">` +
       photos.map((p) => `<a href="${p.viewer}" target="_blank" rel="noopener"><img src="${p.thumb}" loading="lazy" alt="Photo Panoramax"></a>`).join("") +
       `</div><p class="hint">Images Panoramax — CC-BY-SA</p>`;
+    el.innerHTML = streetviewCache;
   } catch { /* imagery is best-effort */ }
 }
 
@@ -577,7 +590,7 @@ async function openBuildingById(id, lon, lat) {
   window.ecoStartLoadingFx?.(id, lon, lat);
   showLoadingPanel('Chargement des données du bâtiment…');
   try {
-    const r = await fetch(`${API}/buildings/${encodeURIComponent(id)}?lon=${lon}&lat=${lat}`);
+    const r = await fetch(`${API}/buildings/${encodeURIComponent(id)}/stream?lon=${lon}&lat=${lat}`);
     // 404 = vraie absence de fiche ; tout le reste (réseau, 5xx, redéploiement
     // en cours) est PASSAGER et mérite un « Réessayer » — l'ancien message
     // unique faisait croire à un trou de données définitif (vécu : un clic
@@ -587,14 +600,67 @@ async function openBuildingById(id, lon, lat) {
       return;
     }
     if (!r.ok) throw new Error(r.status);
-    const data = await r.json();
-    renderPanel({ label: data.query.address || "Bâtiment" }, data);
+    await consumeBuildingStream(r);
   } catch {
     showPanel(`<p class="hint">Données momentanément indisponibles.</p>
       <p><button id="retry-building" class="report-link">Réessayer</button></p>`);
     const b = document.getElementById("retry-building");
     if (b) b.onclick = () => openBuildingById(id, lon, lat);
   }
+}
+
+// Affichage AU FIL DE L'EAU (demande opérateur). Neuf sources ouvertes sont
+// interrogées par bâtiment : attendre la plus lente laissait l'utilisateur
+// devant un panneau vide plusieurs secondes. L'API émet du NDJSON — le
+// bâtiment d'abord, puis un bloc par source — et on re-rend le panneau à
+// chaque ligne. Le gabarit gère déjà les blocs absents (`data.x ? … : ""`),
+// donc un re-rendu complet suffit : pas de rustine par section.
+const STREAM_PENDING = {
+  area_risks: "Risques (Géorisques)", groundwater: "Nappe phréatique (Hub'Eau)",
+  solar_pv: "Solaire (PVGIS)", water_network: "Eau potable (SISPEA)",
+  official_dpe: "DPE officiel (ADEME)", local_taxes: "Fiscalité locale (DGFiP)",
+  schools: "Écoles (annuaire)", prices: "Prix de vente (DVF)", rnb: "ID-RNB",
+};
+async function consumeBuildingStream(response, searched) {
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  const data = { pending: Object.keys(STREAM_PENDING) };
+  let buf = "", first = true;
+
+  const paint = () => {
+    const panel = document.getElementById("panel-content");
+    const top = panel ? panel.scrollTop : 0;   // ne pas remonter à chaque bloc
+    renderPanel(searched || { label: data.query?.address || "Bâtiment" }, data,
+                { keepLoadingFx: data.pending.length > 0 });
+    const after = document.getElementById("panel-content");
+    if (after) after.scrollTop = top;
+  };
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    const lines = buf.split("\n");
+    buf = lines.pop();                          // ligne partielle : on la garde
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      let ev;
+      try { ev = JSON.parse(line); } catch { continue; }
+      if (ev.type === "error") throw new Error(ev.status || "stream");
+      if (ev.type === "core") { Object.assign(data, ev); }
+      else if (ev.type === "block") {
+        data[ev.name] = ev.value;
+        data.pending = data.pending.filter((n) => n !== ev.name);
+      } else if (ev.type === "done") {
+        Object.assign(data, ev);
+        data.pending = [];
+      }
+      paint();
+    }
+  }
+  data.pending = [];
+  paint();
+  return data;
 }
 
 // Human-readable French labels for Géorisques raw keys.
@@ -617,7 +683,7 @@ function kv(k, v) {
     `<div class="kv"><span class="k">${k}</span><span>${v}</span></div>`;
 }
 
-function renderPanel(s, data) {
+function renderPanel(s, data, opts) {
   const b = data.buildings?.[0];
   if (b?.bdnb_id) setUrlBuilding(b.bdnb_id);
   if (!b) {
@@ -642,6 +708,11 @@ function renderPanel(s, data) {
   // span several streets and its principal address then reads as the wrong
   // building (#146). The principal address stays visible as its own row.
   const searched = data.query?.address || s.label || b.address;
+  // Affichage progressif : dire ce qui manque encore, sans cacher le reste.
+  const pending = data.pending || [];
+  const pendingHtml = pending.length
+    ? `<p class="hint loading">Encore en cours : ${pending.map((n) => STREAM_PENDING[n] || n).join(", ")}…</p>`
+    : "";
   const reportParams = [];
   if (data.query?.lon != null) reportParams.push(`lon=${data.query.lon}`, `lat=${data.query.lat}`);
   if (searched && searched !== b.address) reportParams.push(`address=${encodeURIComponent(searched)}`);
@@ -702,8 +773,9 @@ function renderPanel(s, data) {
     <p class="hint">Transactions réelles DGFiP (DVF) : parcelle du bâtiment et médianes communales.</p>` : ""}
     <p><button id="report-btn" class="report-link" data-url="${API}/report/${encodeURIComponent(b.bdnb_id)}.pdf${reportParams.length ? "?" + reportParams.join("&") : ""}">📄 Fiche PDF normalisée</button></p>
     <div id="streetview"></div>
+    ${pendingHtml}
     <p class="hint">ID BDNB : ${b.bdnb_id}</p>
-  `);
+  `, opts);
   const pdfBtn = document.getElementById("report-btn");
   if (pdfBtn) pdfBtn.onclick = () => downloadReport(pdfBtn);
   loadStreetview(data.query?.lon, data.query?.lat);

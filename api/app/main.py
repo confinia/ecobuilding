@@ -732,13 +732,40 @@ async def _do_lookup(q, ban_id, address, lon, lat):
 
     commune = rows[0].get("code_commune_insee") if rows else None
     first_id = rows[0].get("batiment_groupe_id") if rows else None
+
+    # UN SEUL agrégat par bâtiment (demande opérateur : « charger une fois, pas
+    # deux »). La recherche par adresse refaisait ici tout l'éventail de sources
+    # pour son propre compte ; la fiche PDF, qui passe par building(), ne
+    # retrouvait donc rien en cache et rejouait l'orchestration complète
+    # (mesuré : 5,7 s de panneau, puis 15,2 s refaits pour le PDF). On délègue
+    # au calcul canonique, qui est mis en cache — et l'adresse hérite au passage
+    # des prix DVF et de l'ID-RNB, jusqu'ici réservés au clic sur la carte.
+    if first_id is not None:
+        try:
+            agg = await building(first_id, lon, lat)
+        except HTTPException:
+            agg = None                 # id introuvable : contexte seul, plus bas
+        if agg is not None:
+            agg["query"] = {"q": q, "ban_id": ban_id, "address": address,
+                            "lon": lon, "lat": lat}
+            # L'adresse peut couvrir plusieurs « bâtiments groupe » : on garde la
+            # liste complète de la recherche, en conservant l'enrichissement
+            # (ID-RNB) que building() a posé sur le premier.
+            if len(rows) > 1:
+                agg["buildings"] = [agg["buildings"][0]] + \
+                    [_normalize_building(r) for r in rows[1:]]
+            M_LOOKUPS.add(1, {"status": "ok"})
+            return agg
+
+    # Aucun bâtiment BDNB à cette adresse : on sert quand même le contexte
+    # (risques, nappe, solaire…), qui ne dépend que du point.
     (risks, groundwater, solar_pv, water_network, official_dpe,
      local_taxes, schools) = await asyncio.gather(
         _area_risks(lon, lat), _groundwater(lon, lat), _solar_pv(lon, lat),
-        _water_network(commune), _official_dpe(first_id) if first_id else _noop(),
+        _water_network(commune), _noop(),
         _local_taxes(commune), _nearby_schools(lon, lat))
 
-    M_LOOKUPS.add(1, {"status": "ok" if rows else "no_building"})
+    M_LOOKUPS.add(1, {"status": "no_building"})
     sources = [
         "BDNB (CSTB) — Licence Ouverte v2.0",
         "BAN — Licence Ouverte",
@@ -806,9 +833,15 @@ async def lookup(
         if not feats:
             raise HTTPException(404, "Aucune adresse BAN au point de l'ID-RNB")
         q, ban_id = None, feats[0]["properties"]["id"]
+    q, ban_id, address, lon, lat = await _resolve_address(q, ban_id, lon, lat)
+    return await _do_lookup(q, ban_id, address, lon, lat)
+
+
+async def _resolve_address(q, ban_id, lon, lat):
+    """Adresse libre -> (q, ban_id, libellé, lon, lat). Partagé par /v1/lookup
+    et sa variante en flux."""
     if not q and not ban_id and lon is None:
         raise HTTPException(422, "Provide q, ban_id or rnb_id")
-
     address = None
     if not ban_id:
         geo = await _cached_get_json(BAN_URL, {"q": q, "limit": 1, "type": "housenumber"}, ttl=86400)
@@ -816,11 +849,55 @@ async def lookup(
         if not feats:
             M_LOOKUPS.add(1, {"status": "address_not_found"})
             raise HTTPException(404, "Address not found (BAN)")
-        p = feats[0]["properties"]
-        ban_id, address = p["id"], p["label"]
+        pr = feats[0]["properties"]
+        ban_id, address = pr["id"], pr["label"]
         lon, lat = feats[0]["geometry"]["coordinates"][:2]
+    return q, ban_id, address, lon, lat
 
-    return await _do_lookup(q, ban_id, address, lon, lat)
+
+@app.get("/v1/lookup/stream", tags=["buildings"])
+async def lookup_stream(
+    request: Request,
+    q: str | None = Query(None, description="Free-text address"),
+    ban_id: str | None = Query(None),
+    lon: float | None = Query(None),
+    lat: float | None = Query(None),
+):
+    """Recherche par adresse, servie **au fil de l'eau** (NDJSON).
+
+    Même flux d'événements que `/v1/buildings/{id}/stream` : le bâtiment part
+    dès que BDNB a répondu, les neuf sources suivent à leur rythme. L'agrégat
+    final est mis en cache comme d'habitude, donc la fiche PDF qui suit ne
+    rejoue rien."""
+    from fastapi.responses import StreamingResponse
+
+    _meter_if_keyed(request, "lookup")
+    q, ban_id, address, lon, lat = await _resolve_address(q, ban_id, lon, lat)
+    rows = await _cached_get_json(
+        BDNB_URL, {"cle_interop_adr": f"eq.{ban_id}", "limit": "5"}, ttl=86400)
+    rows = rows if isinstance(rows, list) else []
+    if not rows:
+        # Pas de bâtiment : on renvoie l'agrégat de contexte en une seule ligne.
+        data = await _do_lookup(q, ban_id, address, lon, lat)
+
+        async def one():
+            yield json.dumps({"type": "core", "query": data["query"],
+                              "buildings": data["buildings"]}) + "\n"
+            yield json.dumps(dict(data, type="done")) + "\n"
+        return StreamingResponse(one(), media_type="application/x-ndjson",
+                                 headers={"Cache-Control": "no-store"})
+
+    extra = [_normalize_building(r) for r in rows[1:]]
+    events = _building_events(rows[0]["batiment_groupe_id"], lon, lat,
+                              # `address` seulement s'il existe : sinon il
+                              # écraserait le titre arbitré au point cliqué.
+                              query_extra={k: v for k, v in
+                                           (("q", q), ("ban_id", ban_id), ("address", address))
+                                           if v is not None},
+                              extra_rows=extra)
+    return StreamingResponse(events, media_type="application/x-ndjson",
+                             headers={"Cache-Control": "no-store",
+                                      "X-Accel-Buffering": "no"})
 
 
 @app.get("/v1/reverse", tags=["buildings"])
@@ -1103,16 +1180,38 @@ async def building(
         raise HTTPException(404, "Unknown building id")
     row = rows[0]
     M_LOOKUPS.add(1, {"status": "by_id"})
-    (prices, risks, groundwater, solar_pv, click_addr, water_network,
-     official_dpe, local_taxes, schools, rnb) = await asyncio.gather(
-        _dvf_prices(bdnb_id), _area_risks(lon, lat),
-        _groundwater(lon, lat), _solar_pv(lon, lat),
-        _click_address(bdnb_id, lon, lat),
-        _water_network(row.get("code_commune_insee")),
-        _official_dpe(bdnb_id),
-        _local_taxes(row.get("code_commune_insee")),
-        _nearby_schools(lon, lat),
-        _rnb_lookup(lon, lat))
+    vals = dict(zip(_BLOCK_NAMES, await asyncio.gather(
+        *_building_block_coros(bdnb_id, lon, lat, row))))
+    result = _assemble_building(bdnb_id, lon, lat, row, vals)
+    _CACHE[cache_key] = (time.monotonic(), _copy.deepcopy(result))
+    _CACHE.move_to_end(cache_key)
+    while len(_CACHE) > _CACHE_MAX:
+        _CACHE.popitem(last=False)
+    return result
+
+
+# Les neuf sources d'un bâtiment, NOMMÉES : l'agrégat classique les attend
+# toutes, le flux (/v1/buildings/{id}/stream) les émet au fil de l'eau.
+_BLOCK_NAMES = ("prices", "area_risks", "groundwater", "solar_pv", "click_addr",
+                "water_network", "official_dpe", "local_taxes", "schools", "rnb")
+
+
+def _building_block_coros(bdnb_id, lon, lat, row):
+    commune = row.get("code_commune_insee")
+    return (_dvf_prices(bdnb_id), _area_risks(lon, lat),
+            _groundwater(lon, lat), _solar_pv(lon, lat),
+            _click_address(bdnb_id, lon, lat),
+            _water_network(commune), _official_dpe(bdnb_id),
+            _local_taxes(commune), _nearby_schools(lon, lat),
+            _rnb_lookup(lon, lat))
+
+
+def _assemble_building(bdnb_id, lon, lat, row, v):
+    """Agrégat final à partir des blocs (tous présents, éventuellement None)."""
+    prices, risks, groundwater = v["prices"], v["area_risks"], v["groundwater"]
+    solar_pv, click_addr = v["solar_pv"], v["click_addr"]
+    water_network, official_dpe = v["water_network"], v["official_dpe"]
+    local_taxes, schools, rnb = v["local_taxes"], v["schools"], v["rnb"]
     sources = ["BDNB (CSTB) — Licence Ouverte v2.0", "Géorisques — Licence Ouverte"]
     if prices:
         sources.append("DVF (DGFiP) / Etalab — Licence Ouverte")
@@ -1153,11 +1252,110 @@ async def building(
         "prices": prices,
         "sources": sources,
     }
+    return result
+
+
+async def _named_block(name, coro):
+    """(nom, valeur) pour pouvoir émettre un bloc dès qu'il arrive."""
+    try:
+        return name, await coro
+    except Exception as e:                 # une source KO n'arrête pas le flux
+        log.warning("bloc %s indisponible: %s", name, e)
+        return name, None
+
+
+@app.get("/v1/buildings/{bdnb_id}/stream", tags=["buildings"])
+async def building_stream(
+    bdnb_id: str,
+    lon: float | None = Query(None),
+    lat: float | None = Query(None),
+    request: Request = None,
+):
+    """Même agrégat que `/v1/buildings/{id}`, mais **au fil de l'eau** (NDJSON).
+
+    Neuf sources ouvertes sont interrogées par bâtiment : attendre la plus lente
+    pour afficher quoi que ce soit faisait patienter devant un panneau vide.
+    Ici le bâtiment part dès que BDNB a répondu, puis chaque bloc est émis à son
+    arrivée. Une ligne JSON par événement :
+      {"type":"core", "query":…, "buildings":[…]}
+      {"type":"block","name":"area_risks","value":…}          (×9)
+      {"type":"done", "sources":[…], "market_dia":…, "query":…}
+    L'agrégat complet est mis en cache à la fin, sous la MÊME clé que
+    `/v1/buildings` : la fiche PDF qui suit ne rejoue donc rien.
+    """
+    from fastapi.responses import StreamingResponse
+
+    if request is not None:
+        _meter_if_keyed(request, "buildings")
+    return StreamingResponse(_building_events(bdnb_id, lon, lat),
+                             media_type="application/x-ndjson",
+                             headers={"Cache-Control": "no-store",
+                                      "X-Accel-Buffering": "no"})
+
+
+async def _building_events(bdnb_id, lon, lat, query_extra=None, extra_rows=()):
+    """Flux NDJSON d'un bâtiment. `query_extra` / `extra_rows` servent au
+    chemin « recherche par adresse » (q/ban_id, et les autres bâtiments
+    groupe de la même adresse)."""
+    def _q(base):
+        return dict(base, **(query_extra or {}))
+
+    cache_key = (f"building:{bdnb_id}:"
+                 f"{round(lon, 4) if lon is not None else '-'}:"
+                 f"{round(lat, 4) if lat is not None else '-'}")
+    hit = _CACHE.get(cache_key)
+    if hit and time.monotonic() - hit[0] < BUILDING_CACHE_TTL:
+        _CACHE.move_to_end(cache_key)
+        M_CACHE.add(1, {"result": "hit_building"})
+        done = _copy.deepcopy(hit[1])
+        yield json.dumps({"type": "core", "query": _q(done["query"]),
+                          "buildings": done["buildings"] + list(extra_rows)}) + "\n"
+        for name in ("area_risks", "groundwater", "solar_pv", "water_network",
+                     "official_dpe", "local_taxes", "schools", "prices", "rnb"):
+            yield json.dumps({"type": "block", "name": name,
+                              "value": done.get(name)}) + "\n"
+        yield json.dumps({"type": "done", "sources": done["sources"],
+                          "market_dia": done.get("market_dia"),
+                          "buildings": done["buildings"] + list(extra_rows),
+                          "query": _q(done["query"])}) + "\n"
+        return
+
+    rows = await _cached_get_json(
+        BDNB_BASE_URL, {"batiment_groupe_id": f"eq.{bdnb_id}", "limit": "1"}, ttl=86400)
+    if not isinstance(rows, list) or not rows:
+        yield json.dumps({"type": "error", "status": 404,
+                          "detail": "Unknown building id"}) + "\n"
+        return
+    row = rows[0]
+    M_LOOKUPS.add(1, {"status": "by_id_stream"})
+    # Le bâtiment lui-même part TOUT DE SUITE : c'est ce que l'utilisateur
+    # est venu voir (adresse, DPE, année, hauteur).
+    yield json.dumps({"type": "core",
+                      "query": _q({"bdnb_id": bdnb_id,
+                                   "address": row.get("libelle_adr_principale_ban"),
+                                   "lon": lon, "lat": lat}),
+                      "buildings": [_normalize_building(row)] + list(extra_rows)}) + "\n"
+
+    vals = {}
+    coros = _building_block_coros(bdnb_id, lon, lat, row)
+    for fut in asyncio.as_completed(
+            [_named_block(n, c) for n, c in zip(_BLOCK_NAMES, coros)]):
+        name, value = await fut
+        vals[name] = value
+        if name != "click_addr":       # interne : sert à titrer, pas un bloc
+            yield json.dumps({"type": "block", "name": name, "value": value}) + "\n"
+
+    result = _assemble_building(bdnb_id, lon, lat, row, vals)
     _CACHE[cache_key] = (time.monotonic(), _copy.deepcopy(result))
     _CACHE.move_to_end(cache_key)
     while len(_CACHE) > _CACHE_MAX:
         _CACHE.popitem(last=False)
-    return result
+    # `done` porte ce qui ne se calcule qu'à la fin : le titre arbitré
+    # (#152), les sources effectivement utilisées, le bloc DIA.
+    yield json.dumps({"type": "done", "query": _q(result["query"]),
+                      "buildings": result["buildings"] + list(extra_rows),
+                      "market_dia": result.get("market_dia"),
+                      "sources": result["sources"]}) + "\n"
 
 
 # --- Identity (Keycloak, shared /auth) ---------------------------------------
