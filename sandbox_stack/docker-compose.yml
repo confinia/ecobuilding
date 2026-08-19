@@ -68,6 +68,7 @@ services:
     volumes:
       - ../data/geoip:/geoip:ro
       - ./data/leads:/leads
+      - ./data/tiles:/tiles          # cache des tuiles bâtiments (/v1/tiles)
     networks:
       default:
       internal: {}

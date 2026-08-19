@@ -264,8 +264,16 @@ map.on("load", () => {
 
   map.addSource("bdnb", {
     type: "vector",
-    tiles: ["https://api.bdnb.io/v1/bdnb/tuiles/batiment_groupe/{z}/{x}/{y}.pbf"],
-    minzoom: 13,
+    // Nos tuiles, pas celles de BDNB en direct : api.bdnb.io est anonyme et
+    // limité à 120 req/min et 10 000 req/mois PAR IP. Or MapLibre, au-dessus du
+    // maxzoom, redemande la même tuile une fois par identifiant sur-zoomé (~15
+    // fois à z18 avec du pitch) : au bout de quelques rechargements l'IP du
+    // visiteur prenait un 429 et la 3D disparaissait sans un mot. Le proxy API
+    // mutualise ces requêtes et les met en cache (voir /v1/tiles).
+    tiles: ["/api/v1/tiles/batiment_groupe/{z}/{x}/{y}.pbf"],
+    // BDNB ne publie QUE le z14 (z13 et z15+ répondent 404) : demander z13
+    // ne ramenait rien tout en consommant le quota.
+    minzoom: 14,
     maxzoom: 14,
     attribution: "Bâtiments & DPE : BDNB (CSTB)",
     // L'id BDNB devient l'id de feature : c'est lui qui permet le feature-state
@@ -277,7 +285,7 @@ map.on("load", () => {
     source: "bdnb",
     "source-layer": "sql_statement",
     type: "fill-extrusion",
-    minzoom: 13,
+    minzoom: 14,
     paint: {
       // Survol : couleur STABLE (demande opérateur — pas de clignotement au
       // survol) pour lever l'ambiguïté avant le clic. Le clignotement est
@@ -293,6 +301,17 @@ map.on("load", () => {
       // invalide la propriété en silence. Le surlignage passe par la couleur.
       "fill-extrusion-opacity": 0.9,
     },
+  });
+
+  // Une carte sans volumes 3D doit le DIRE. Jusqu'ici l'échec des tuiles était
+  // parfaitement muet : la carte s'affichait nue et l'utilisateur en déduisait
+  // une panne du site. On ne signale que la source « bdnb » (les avertissements
+  // de style/sprite du fond de carte ne concernent pas l'utilisateur).
+  map.on("error", (e) => {
+    if (e && e.sourceId === "bdnb") showTileNotice();
+  });
+  map.on("sourcedata", (e) => {
+    if (e && e.sourceId === "bdnb" && e.isSourceLoaded) hideTileNotice();
   });
 
   // Un seul bâtiment survolé à la fois — surlignage STABLE (demande
@@ -416,7 +435,7 @@ function placeMarker(lon, lat) {
 // building height is converted to a pixel offset for the CURRENT camera:
 // metres -> pixels at this latitude/zoom, foreshortened by the pitch. Kept in
 // sync on every camera move so the pin stays on the roof (#222).
-const BUILDINGS_MINZOOM = 13;   // minzoom de la couche bdnb-dpe-3d
+const BUILDINGS_MINZOOM = 14;   // minzoom de la couche bdnb-dpe-3d (BDNB : z14 seul)
 // Épingles à l'ALTITUDE 0, posées au centroïde du bâtiment. L'ancienne
 // élévation en pixels (#222) n'était juste qu'à cap nul : caméra tournée,
 // « plus haut à l'écran » n'est plus « au-dessus du bâtiment » et l'épingle
@@ -473,6 +492,30 @@ document.addEventListener("click", (e) => { if (!e.target.closest("#searchbox"))
 // lève GPUInitializationError et le moindre map.flyTo jette. La fiche doit
 // s'ouvrir quand même : tout contact avec la carte passe par ce garde-fou.
 function safeMap(fn) { try { fn(); } catch { /* carte morte : on continue */ } }
+
+// Bandeau discret « bâtiments 3D indisponibles » (échec des tuiles). Discret
+// mais explicite : le reste du site fonctionne, seule la couche 3D manque.
+let tileNoticeEl = null;
+function showTileNotice() {
+  if (tileNoticeEl) return;
+  tileNoticeEl = document.createElement("div");
+  tileNoticeEl.id = "tile-notice";
+  tileNoticeEl.innerHTML = "Bâtiments 3D momentanément indisponibles. " +
+    "<button type=\"button\" id=\"tile-retry\">Réessayer</button>";
+  document.body.appendChild(tileNoticeEl);
+  tileNoticeEl.querySelector("#tile-retry").addEventListener("click", () => {
+    hideTileNotice();
+    // Redemander les tuiles sans recharger la page : on relit la source.
+    safeMap(() => {
+      const s = map.getSource("bdnb");
+      if (s && s.setTiles) s.setTiles(["/api/v1/tiles/batiment_groupe/{z}/{x}/{y}.pbf"]);
+      else map.triggerRepaint();
+    });
+  });
+}
+function hideTileNotice() {
+  if (tileNoticeEl) { tileNoticeEl.remove(); tileNoticeEl = null; }
+}
 
 async function select(s) {
   list.hidden = true;
