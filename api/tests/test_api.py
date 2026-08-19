@@ -132,6 +132,36 @@ def test_building_includes_prices(monkeypatch):
     assert any("DVF" in s for s in body["sources"])
 
 
+def test_dia_market_block(tmp_path, monkeypatch):
+    """DIA (#246) : sous-quartier par point-in-polygon, commune par INSEE en
+    repli, None hors métropole ou sans fichier — et le libellé dit bien
+    « mise en vente », pas prix final."""
+    import json
+    f = tmp_path / "dia.json"
+    f.write_text(json.dumps({"updated": "2026-08-19", "source": "test", "zones": [
+        {"name": "Centre", "commune": "Montpellier", "n_12m": 40, "n_3m": 9,
+         "median_asking_eur": 250000, "median_asking_eur_m2": 4200,
+         "types": {"Appartement": 30},
+         "polygon": {"type": "Polygon",
+                     "coordinates": [[[3.86, 43.60], [3.88, 43.60],
+                                      [3.88, 43.62], [3.86, 43.62], [3.86, 43.60]]]}},
+        {"name": "Lattes", "commune_insee": "34129", "n_12m": 12, "n_3m": 2,
+         "median_asking_eur": 300000, "median_asking_eur_m2": None,
+         "types": {"Maison": 10}},
+    ]}))
+    monkeypatch.setattr(main, "DIA_PATH", str(f))
+    monkeypatch.setattr(main, "_dia_state", {"mtime": None, "data": None})
+    m = main._dia_market(3.87, 43.61, None)          # dans le polygone
+    assert m["zone"] == "Centre" and m["scope"] == "sous-quartier"
+    assert "mise en vente" in m["note"]
+    m = main._dia_market(4.5, 44.0, "34129")          # hors polygone -> commune
+    assert m["zone"] == "Lattes" and m["scope"] == "commune"
+    assert main._dia_market(2.0, 48.0, "75056") is None   # hors métropole
+    monkeypatch.setattr(main, "DIA_PATH", str(tmp_path / "absent.json"))
+    monkeypatch.setattr(main, "_dia_state", {"mtime": None, "data": None})
+    assert main._dia_market(3.87, 43.61, "34172") is None  # fichier absent
+
+
 def test_building_includes_rnb_id(monkeypatch):
     """ID-RNB : la clé pivot (cadastre/BAN/BDNB/ADEME) est jointe au bâtiment
     et à la liste des sources ; son absence ne casse rien."""

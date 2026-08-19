@@ -1,8 +1,26 @@
 {
   "mcpServers": {
-    "polar-sandbox": {
+    "creem-docs": {
       "type": "http",
-      "url": "https://mcp.polar.sh/mcp/polar-sandbox"
+      "url": "https://docs.creem.io/mcp"
+    },
+    "creem": {
+      "command": "/Users/clement_igonet/.nvm/versions/node/v26.7.0/bin/npx",
+      "args": [
+        "-y",
+        "--package",
+        "creem",
+        "--",
+        "mcp",
+        "start",
+        "--api-key",
+        "creem_test_7aIMLMef1KLdbods6AeakS",
+        "--server",
+        "test"
+      ],
+      "env": {
+        "PATH": "/Users/clement_igonet/.nvm/versions/node/v26.7.0/bin:/usr/bin:/bin"
+      }
     }
   }
 }

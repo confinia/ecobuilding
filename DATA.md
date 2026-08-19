@@ -146,3 +146,18 @@ is lost across promotes.
   before deploying.
 - The BDNB DB runs with durability off (`fsync=off`) — expected for a mirror,
   fatal for anything precious: never store non-rebuildable data in it.
+
+## DIA — Montpellier Méditerranée Métropole (#246)
+
+- **Chargement** : `python -m app.dia_refresh` dans le conteneur API
+  (wrapper VM : `deploy/dia-refresh.sh`, qui traite tous les stacks) —
+  télécharge le xlsx DIA + le GeoJSON des sous-quartiers + la liste INSEE de
+  l'EPCI, agrège par sous-quartier (Montpellier-ville, polygones embarqués)
+  ou par commune, écrit `/leads/dia.json` (atomique).
+- **Mise à jour** : source publiée MENSUELLEMENT → relancer le wrapper chaque
+  mois (à câbler en cron quand l'infra cron existera ; d'ici là, manuel).
+- **Service** : `_dia_market(lon, lat, insee)` — point-in-polygon local puis
+  repli commune ; bloc `market_dia` dans `/v1/lookup` et `/v1/buildings`,
+  panneau + fiche PDF. Fichier absent = bloc absent, rien ne casse.
+- **Honnêteté** : montants de MISE EN VENTE déclarés, pas prix finaux — le
+  libellé le dit partout (champ `median_asking_*`, note affichée).

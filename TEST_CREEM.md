@@ -28,6 +28,13 @@ prouvé de bout en bout.
    par e-mail** (`/customers?email=…` → abonnements actifs) active le compte
    en moins de 60 s — même philosophie que #228.
 
+## Branding
+
+Fait en **Test Mode** le 2026-08-19 (Settings → Branding) : logo + bannière,
+thème Light, accent `#2b7a4b`, hover `#1f5c38`, texte `#ffffff` — vérifié sur
+checkout réel (bouton vert, logo à côté du store). **À refaire une fois sur le
+store LIVE** au moment de la mise en service du paiement réel.
+
 ## Payer avec une carte de test
 
 1. https://sandbox.ecobuilding.confinia.io → créer un compte (organisation

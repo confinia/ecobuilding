@@ -312,6 +312,74 @@ def _rental_ban(dpe_class: str | None) -> dict | None:
     }
 
 
+# --- Dynamique du marché : DIA Montpellier Méditerranée Métropole (#246) ---
+# Indicateur AVANCÉ (déclarations notariales AU MOMENT de la vente) là où DVF
+# publie avec ~un semestre de retard. Fichier produit mensuellement par
+# `python -m app.dia_refresh` (deploy/dia-refresh.sh) ; absent = bloc absent,
+# rien ne casse. ⚠ montants de MISE EN VENTE, pas prix finaux.
+DIA_PATH = os.environ.get("DIA_PATH", "/leads/dia.json")
+_dia_state = {"mtime": None, "data": None}
+
+
+def _dia_data():
+    try:
+        m = os.path.getmtime(DIA_PATH)
+    except OSError:
+        return None
+    if _dia_state["mtime"] != m:
+        with open(DIA_PATH) as f:
+            _dia_state["data"] = json.load(f)
+        _dia_state["mtime"] = m
+    return _dia_state["data"]
+
+
+def _point_in_ring(lon, lat, ring):
+    inside = False
+    j = len(ring) - 1
+    for i in range(len(ring)):
+        xi, yi = ring[i][0], ring[i][1]
+        xj, yj = ring[j][0], ring[j][1]
+        if (yi > lat) != (yj > lat) and                 lon < (xj - xi) * (lat - yi) / (yj - yi) + xi:
+            inside = not inside
+        j = i
+    return inside
+
+
+def _point_in_geom(lon, lat, geom):
+    polys = geom["coordinates"] if geom["type"] == "MultiPolygon" else [geom["coordinates"]]
+    for poly in polys:
+        if _point_in_ring(lon, lat, poly[0]) and                 not any(_point_in_ring(lon, lat, hole) for hole in poly[1:]):
+            return True
+    return False
+
+
+def _dia_market(lon, lat, commune_insee):
+    """Bloc marché DIA pour un bâtiment : sous-quartier (point-in-polygon,
+    Montpellier-ville) sinon commune (INSEE). None hors métropole."""
+    d = _dia_data()
+    if not d:
+        return None
+    zone = None
+    if lon is not None and lat is not None:
+        for z in d["zones"]:
+            if "polygon" in z and _point_in_geom(lon, lat, z["polygon"]):
+                zone = z
+                break
+    if zone is None and commune_insee:
+        zone = next((z for z in d["zones"]
+                     if z.get("commune_insee") == str(commune_insee)), None)
+    if not zone:
+        return None
+    return {"zone": zone["name"],
+            "scope": "sous-quartier" if "polygon" in zone else "commune",
+            "listings_12m": zone["n_12m"], "listings_3m": zone["n_3m"],
+            "median_asking_eur": zone["median_asking_eur"],
+            "median_asking_eur_m2": zone["median_asking_eur_m2"],
+            "types": zone["types"], "updated": d["updated"],
+            "note": "Montants de mise en vente déclarés (DIA), pas les prix "
+                    "de vente définitifs."}
+
+
 # --- Référentiel National des Bâtiments -----------------------------------
 # L'ID-RNB est l'identifiant PERMANENT (12 caractères) qui sert de clé pivot
 # entre cadastre, BAN, BDNB et ADEME — contrairement à l'id BDNB qui peut
@@ -568,9 +636,13 @@ async def _do_lookup(q, ban_id, address, lon, lat):
         sources.append("DGFiP — Fiscalité directe locale — Licence Ouverte")
     if schools:
         sources.append("Annuaire de l'éducation (MENJ) — Licence Ouverte")
+    market_dia = _dia_market(lon, lat, commune)
+    if market_dia:
+        sources.append("DIA — Montpellier Méditerranée Métropole — Open Data")
     result = {
         "query": {"q": q, "ban_id": ban_id, "address": address, "lon": lon, "lat": lat},
         "buildings": [_normalize_building(r) for r in rows],
+        "market_dia": market_dia,
         "area_risks": risks,
         "groundwater": groundwater,
         "solar_pv": solar_pv,
@@ -936,8 +1008,11 @@ async def building(
         sources.append("DGFiP — Fiscalité directe locale — Licence Ouverte")
     if schools:
         sources.append("Annuaire de l'éducation (MENJ) — Licence Ouverte")
+    market_dia = _dia_market(lon, lat, row.get("code_commune_insee"))
     if rnb:
         sources.append("Référentiel National des Bâtiments (RNB) — Licence Ouverte")
+    if market_dia:
+        sources.append("DIA — Montpellier Méditerranée Métropole — Open Data")
     result = {
         # Prefer the group-member address at the clicked point (#152); the
         # principal address stays on buildings[0].address for the UI's row.
@@ -947,6 +1022,7 @@ async def building(
         "buildings": [dict(_normalize_building(row),
                            **({"rnb_id": rnb["rnb_id"]} if rnb else {}))],
         "rnb": rnb,
+        "market_dia": market_dia,
         "area_risks": risks,
         "groundwater": groundwater,
         "solar_pv": solar_pv,
