@@ -892,3 +892,50 @@ def test_pro_reconciliation_failure_never_grants_access(tmp_path, monkeypatch):
         def get(self, *a, **k): raise RuntimeError("polar down")
     monkeypatch.setattr(main.httpx, "Client", Boom)
     assert main._pro_active("user-x") is False       # fails closed, no crash
+
+
+def test_lookup_and_report_share_one_aggregate(monkeypatch):
+    """Demande opérateur : « charger une fois, pas deux ».
+
+    La recherche par adresse (/v1/lookup) faisait son propre éventail de
+    sources, puis la fiche PDF — qui passe par building() — ne trouvait rien en
+    cache et rejouait l'orchestration complète (mesuré en sandbox : 5,7 s de
+    panneau, puis 15,2 s refaits). Les deux doivent désormais partager le même
+    agrégat mis en cache : le second appel ne touche plus l'amont.
+    """
+    calls = []
+
+    async def fake_get(url, params, ttl=0):
+        calls.append(url)
+        if "reverse" in url or "adresse.data.gouv" in url:
+            return {"features": [{"properties": {"id": "34172_1234_00008",
+                                                 "label": "8 rue de la Loge 34000 Montpellier"},
+                                  "geometry": {"coordinates": [3.8767, 43.6108]}}]}
+        return [{"batiment_groupe_id": "bdnb-bg-ONCE",
+                 "libelle_adr_principale_ban": "8 rue de la Loge 34000 Montpellier",
+                 "code_commune_insee": "34172"}]
+
+    monkeypatch.setattr(main, "_cached_get_json", fake_get)
+    for name in ("_area_risks", "_groundwater", "_solar_pv", "_water_network",
+                 "_official_dpe", "_local_taxes", "_nearby_schools",
+                 "_dvf_prices", "_rnb_lookup", "_click_address"):
+        async def none(*a, _n=name, **k):
+            calls.append(_n)
+            return None
+        monkeypatch.setattr(main, name, none)
+
+    r1 = client.get("/v1/lookup?q=8+rue+de+la+Loge+Montpellier")
+    assert r1.status_code == 200
+    body = r1.json()
+    # La recherche par adresse hérite du calcul canonique : elle expose
+    # désormais les blocs qui lui manquaient (prix DVF, RNB).
+    assert "prices" in body and "rnb" in body
+    assert body["query"]["q"] == "8 rue de la Loge Montpellier"
+    assert body["buildings"][0]["bdnb_id"] == "bdnb-bg-ONCE"
+
+    after_lookup = len(calls)
+    lon, lat = body["query"]["lon"], body["query"]["lat"]
+    r2 = client.get(f"/v1/buildings/bdnb-bg-ONCE?lon={lon}&lat={lat}")
+    assert r2.status_code == 200
+    assert len(calls) == after_lookup, \
+        "la fiche PDF a rejoué l'orchestration au lieu de lire le cache"
