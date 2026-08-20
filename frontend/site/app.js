@@ -39,6 +39,9 @@ async function ecoPricing() {
   // so they are shown FIRST and never depend on anything loading. Previously
   // a failed CDN import or a failed init silently returned and the auth UI
   // stayed hidden — the product looked like it had no accounts at all (#215).
+  // Base Keycloak absolue (voir env.js) : en relatif, la connexion est
+  // impossible sur staging, dont le domaine diffère du KC_HOSTNAME partagé.
+  const authBase = (window.ECO_AUTH_URL || "/auth").replace(/\/$/, "");
   const realm = window.ECO_REALM || "confinia";
   const clientId = window.ECO_CLIENT || "ecobuilding-web";
   const show = (id, on) => { const el = document.getElementById(id); if (el) el.hidden = !on; };
@@ -53,7 +56,7 @@ async function ecoPricing() {
       .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
     const verifier = b64u(crypto.getRandomValues(new Uint8Array(40)));
     const challenge = b64u(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier)));
-    return `/auth/realms/${encodeURIComponent(realm)}/protocol/openid-connect/${action}` +
+    return `${authBase}/realms/${encodeURIComponent(realm)}/protocol/openid-connect/${action}` +
       `?client_id=${encodeURIComponent(clientId)}&response_type=code&scope=openid` +
       `&code_challenge=${challenge}&code_challenge_method=S256` +
       `&redirect_uri=${encodeURIComponent(location.origin + "/?welcome=1")}`;
@@ -74,7 +77,7 @@ async function ecoPricing() {
   } catch (e) {
     return;   // buttons already work through the direct URLs above
   }
-  const kc = new Keycloak({ url: "/auth", realm, clientId });
+  const kc = new Keycloak({ url: authBase, realm, clientId });
   kc.init({ onLoad: "check-sso", pkceMethod: "S256",
             silentCheckSsoRedirectUri: location.origin + "/silent-sso.html" })
     .then((authenticated) => {
