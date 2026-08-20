@@ -48,6 +48,7 @@ jobs:
         run: |
           sleep 2
           curl -fsS -m 20 https://sandbox.ecobuilding.confinia.io/api/v1/healthz
+          python3 e2e/smoke.py https://sandbox.ecobuilding.confinia.io
           echo "sandbox: https://sandbox.ecobuilding.confinia.io"
 
       # Rule 20: the pipeline mails its own failures to a mailbox the session

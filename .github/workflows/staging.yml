@@ -33,10 +33,14 @@ jobs:
       - name: Test suite (promotion gate, rule 9)
         run: cd ~/projects/ecobuilding && ./deploy/test.sh
 
+      # Un healthz seul laissait passer des pannes bien réelles : carte 3D vidée
+      # en silence, panneau qui attendait la source la plus lente, fiche PDF
+      # recollectant tout, bloc prix jamais affiché, connexion impossible.
+      # smoke.py rejoue chacune de ces pannes, en LECTURE SEULE.
       - name: Public smoke (staging)
         run: |
           sleep 2
-          curl -fsS -m 20 https://staging.ecobuilding.confinia.io/api/v1/healthz
+          python3 e2e/smoke.py https://staging.ecobuilding.confinia.io
           echo "Candidate live: https://staging.ecobuilding.confinia.io — validate, then run the 'promote' workflow."
 
       # Rule 20: the pipeline mails its own failures to a mailbox the session
