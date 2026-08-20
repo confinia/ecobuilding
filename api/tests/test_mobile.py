@@ -1,0 +1,132 @@
+"""Échelle d'accès mobile (MOBILE.md §5.2), validée par l'opérateur le 2026-08-20 :
+
+    3 fiches offertes par INSTALLATION, puis 0,99 € la fiche à l'unité
+    (consommable), ou 4,99 €/mois pour 30 fiches, ou 12,99 €/mois pour 150.
+
+Deux propriétés y sont moins évidentes qu'il n'y paraît, et ces tests les
+verrouillent :
+
+  - les fiches offertes se comptent **par installation et à vie**, pas par IP ni
+    par mois. Par IP, des milliers d'abonnés d'un même opérateur mobile se
+    partageraient les 3 fiches ; par mois, ce serait un robinet et non un essai.
+  - le consommable **crédite un compteur** et ne confère aucun statut : une
+    fiche achetée à l'unité survit à la fin d'un abonnement.
+"""
+import json
+
+import pytest
+from fastapi.testclient import TestClient
+
+import app.main as main
+
+client = TestClient(main.app)
+DEV = {"X-Install-Id": "install-0123456789abcdef"}
+OTHER = {"X-Install-Id": "install-fedcba9876543210"}
+
+
+@pytest.fixture(autouse=True)
+def _isolated_store(tmp_path, monkeypatch):
+    monkeypatch.setattr(main, "USAGE_PATH", str(tmp_path / "usage.json"))
+    monkeypatch.setattr(main, "CREDITS_PATH", str(tmp_path / "credits.json"))
+    yield
+
+
+def _gate(headers, endpoint="report"):
+    """Appelle la porte de quota comme le ferait la route fiche."""
+    from starlette.datastructures import Headers
+    from starlette.requests import Request
+
+    scope = {"type": "http", "method": "GET", "path": "/v1/report/x.pdf",
+             "headers": Headers(headers).raw, "query_string": b""}
+    return main._quota_gate(Request(scope), endpoint)
+
+
+def test_three_free_reports_then_the_wall():
+    assert [_gate(DEV) for _ in range(3)] == ["mobile_free"] * 3
+    with pytest.raises(main.HTTPException) as e:
+        _gate(DEV)
+    assert e.value.status_code == 429
+    # Le mur doit dire le prix, pas seulement refuser (auto-dépannage, #212).
+    assert "0.99" in e.value.detail or "0,99" in e.value.detail
+    assert "4.99" in e.value.detail or "4,99" in e.value.detail
+
+
+def test_free_quota_is_per_installation_not_shared():
+    """Sur réseau mobile, l'IP est partagée par des milliers d'abonnés : le
+    compteur doit suivre l'installation, sinon les fiches offertes d'un
+    utilisateur sont consommées par des inconnus."""
+    for _ in range(3):
+        _gate(DEV)
+    assert _gate(OTHER) == "mobile_free", "une autre installation doit repartir à zéro"
+
+
+def test_free_quota_is_lifetime_not_monthly(monkeypatch):
+    """Les 3 fiches sont un ESSAI : le mois suivant ne les recharge pas."""
+    for _ in range(3):
+        _gate(DEV)
+    monkeypatch.setattr(main, "_month_key", lambda: "2099-12")
+    with pytest.raises(main.HTTPException):
+        _gate(DEV)
+
+
+def test_unit_purchase_is_consumed_one_by_one():
+    for _ in range(3):
+        _gate(DEV)
+    bucket = main._device_bucket(type("R", (), {"headers": {"x-install-id": DEV["X-Install-Id"]}})())
+    main._credits_add(bucket, units=2)
+    assert _gate(DEV) == "mobile_unit"
+    assert _gate(DEV) == "mobile_unit"
+    with pytest.raises(main.HTTPException):
+        _gate(DEV)                     # les 2 crédits sont épuisés
+
+
+def test_subscription_quota_is_monthly_and_upsells(monkeypatch):
+    bucket = main._device_bucket(type("R", (), {"headers": {"x-install-id": DEV["X-Install-Id"]}})())
+    main._credits_add(bucket, tier="m30")
+    assert _gate(DEV) == "mobile_sub"
+    # Quota du palier atteint -> proposition du palier supérieur, pas un refus sec.
+    monkeypatch.setattr(main, "_usage_load",
+                        lambda: {main._month_key(): {bucket: 30 * main.CREDIT_COST["report"]}})
+    with pytest.raises(main.HTTPException) as e:
+        _gate(DEV)
+    assert e.value.status_code == 429
+    assert MOBILE_LABEL_150 in e.value.detail
+
+
+MOBILE_LABEL_150 = "Terrain 150"
+
+
+def test_units_survive_the_end_of_a_subscription():
+    """Le consommable ne confère aucun statut : il ne doit pas disparaître avec
+    l'abonnement qui l'a précédé."""
+    bucket = main._device_bucket(type("R", (), {"headers": {"x-install-id": DEV["X-Install-Id"]}})())
+    main._credits_add(bucket, units=1, tier="m30")
+    main._credits_add(bucket, tier=None)          # fin d'abonnement
+    ent = main._credits_get(bucket)
+    assert ent["units"] == 1
+
+
+def test_web_offers_do_not_show_mobile_prices():
+    """Deux clientèles, deux promesses : les prix des magasins n'ont rien à
+    faire dans les paliers web, et inversement."""
+    cfg = client.get("/v1/config").json()
+    assert set(cfg["pro_tiers"]) == {"s", "m", "l"}
+    assert set(cfg["mobile"]["tiers"]) == {"m30", "m150"}
+    assert cfg["mobile"]["unit_eur"] == 0.99
+    assert cfg["mobile"]["free_reports"] == 3
+    assert cfg["mobile"]["tiers"]["m30"]["eur"] == 4.99
+    assert cfg["mobile"]["tiers"]["m150"]["fiches_month"] == 150
+
+
+def test_grid_matches_the_written_plan():
+    """La grille du code et celle de MOBILE.md doivent rester la même."""
+    import pathlib
+    doc = (pathlib.Path(__file__).resolve().parents[2] / "MOBILE.md").read_text()
+    assert "3 fiches offertes" in doc
+    assert "0,99 €" in doc and "4,99 €/mois" in doc and "12,99 €/mois" in doc
+    assert "30 fiches" in doc and "150 fiches" in doc
+
+
+def test_a_browser_call_is_unaffected():
+    """Sans en-tête d'installation, rien ne change pour le web."""
+    assert _gate({}, endpoint="lookup") == "anon"

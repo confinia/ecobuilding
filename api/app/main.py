@@ -1418,7 +1418,7 @@ M_REPORTS = _meter.create_counter("ecobuilding_reports", description="PDF fiches
 import hashlib
 import secrets as _secrets
 from collections import defaultdict
-from datetime import date
+from datetime import date, datetime, timezone
 
 KEYS_PATH = os.environ.get("KEYS_PATH", "/leads/keys.jsonl")
 ANON_DAILY_CAP = int(os.environ.get("ANON_DAILY_CAP", "20"))
@@ -1502,6 +1502,30 @@ PRO_TIERS: dict = json.loads(os.environ.get("PRO_TIERS_JSON", "") or """{
   "m": {"eur": 29, "fiches": 100,  "label": "Pro M"},
   "l": {"eur": 99, "fiches": null, "label": "Pro L"}
 }""")
+# --- Mobile (MOBILE.md) -------------------------------------------------------
+# Paliers SÉPARÉS de PRO_TIERS, volontairement : la promesse mobile n'est pas
+# celle du web (le mobile donne des fiches ; le web garde la clé API et
+# l'export), et les prix des magasins ne doivent pas apparaître sur /offres.html.
+MOBILE_TIERS: dict = json.loads(os.environ.get("MOBILE_TIERS_JSON", "") or """{
+  "m30":  {"eur": 4.99,  "fiches": 30,  "label": "Terrain 30"},
+  "m150": {"eur": 12.99, "fiches": 150, "label": "Terrain 150"}
+}""")
+# Fiche à l'unité : un CONSOMMABLE, pas un abonnement. Le particulier prospecte
+# par à-coups ; lui vendre un engagement mensuel, c'est de la friction à l'achat
+# puis des oublis de résiliation.
+MOBILE_UNIT_EUR = float(os.environ.get("MOBILE_UNIT_EUR", "0.99"))
+# Fiches offertes par INSTALLATION (à vie, pas par mois) : c'est l'essai.
+MOBILE_FREE_REPORTS = int(os.environ.get("MOBILE_FREE_REPORTS", "3"))
+# Le quota anonyme du web se compte par IP — inutilisable sur réseau mobile, où
+# des milliers d'abonnés partagent une adresse : les fiches offertes d'un
+# utilisateur seraient consommées par des inconnus. On compte donc par
+# identifiant d'installation, fourni par l'app dans cet en-tête. Ce n'est PAS
+# de l'authentification (réinstaller remet le compteur à zéro) : l'enjeu vaut
+# 0,99 €, et un contrôle plus dur coûterait plus en adhésion qu'il ne
+# rapporterait.
+DEVICE_HEADER = "x-install-id"
+CREDITS_PATH = os.environ.get("CREDITS_PATH", "/leads/credits.json")
+
 # Self-service means: never leave a user stuck without a way out (#212).
 SUPPORT_EMAIL = os.environ.get("SUPPORT_EMAIL", "contact@confinia.io")
 # One unit = one fiche. Everything else is free, so the customer's invoice
@@ -1521,6 +1545,15 @@ def _usage_load() -> dict:
             return _json.load(f)
     except (OSError, ValueError):
         return {}
+
+
+def _usage_total(key_id: str) -> int:
+    """Crédits consommés depuis TOUJOURS par ce seau, tous mois confondus.
+
+    Les fiches offertes du mobile sont un essai unique, pas un robinet mensuel :
+    elles se comptent donc sur la durée de vie de l'installation."""
+    return sum(int(m.get(key_id, 0)) for m in _usage_load().values()
+               if isinstance(m, dict))
 
 
 def _usage_add(key_id: str, credits: int) -> int:
@@ -1624,12 +1657,106 @@ def _reports_this_month(bucket_id: str) -> int:
     return used // CREDIT_COST["report"] if bucket_id.startswith("ip:") else used
 
 
+def _device_bucket(request: Request) -> str | None:
+    """Seau d'usage d'une INSTALLATION de l'app mobile, ou None hors mobile."""
+    dev = (request.headers.get(DEVICE_HEADER) or "").strip()
+    if not dev or len(dev) < 8 or len(dev) > 128:
+        return None
+    return "dev:" + hashlib.sha256(dev.encode()).hexdigest()[:16]
+
+
+def _credits_load() -> dict:
+    try:
+        with open(CREDITS_PATH) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def _credits_get(bucket: str) -> dict:
+    """{"units": n, "tier": "m30"|None, "until": iso|None} pour un seau."""
+    return _credits_load().get(bucket) or {}
+
+
+def _credits_add(bucket: str, units: int = 0, **extra) -> dict:
+    """Crédite des fiches à l'unité et/ou pose un palier d'abonnement.
+
+    Les deux coexistent : un consommable acheté ne disparaît pas quand un
+    abonnement se termine, et il ne confère aucun statut.
+    """
+    data = _credits_load()
+    entry = data.get(bucket) or {"units": 0}
+    entry["units"] = int(entry.get("units", 0)) + units
+    entry.update({k: v for k, v in extra.items() if v is not None})
+    entry["updated"] = datetime.now(timezone.utc).isoformat()
+    data[bucket] = entry
+    try:
+        os.makedirs(os.path.dirname(CREDITS_PATH), exist_ok=True)
+        tmp = CREDITS_PATH + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(data, f)
+        os.replace(tmp, CREDITS_PATH)
+    except OSError as e:
+        log.warning("crédits non écrits (%s): %s", bucket, e)
+    return entry
+
+
+def _mobile_gate(request: Request, endpoint: str) -> str | None:
+    """Échelle mobile (MOBILE.md §5.2) : 3 fiches offertes par installation,
+    puis fiches à l'unité et/ou abonnement. Renvoie None si l'appel ne vient
+    pas de l'app (pas d'en-tête d'installation)."""
+    bucket = _device_bucket(request)
+    if bucket is None:
+        return None
+    if endpoint != "report":
+        return "mobile"
+    ent = _credits_get(bucket)
+    tier = ent.get("tier")
+    used_total = _usage_total(bucket) // CREDIT_COST["report"]
+
+    # 1. abonnement en cours : quota mensuel du palier
+    if tier and tier in MOBILE_TIERS:
+        quota = MOBILE_TIERS[tier]["fiches"]
+        used_month = (_usage_load().get(_month_key()) or {}).get(bucket, 0) \
+            // CREDIT_COST["report"]
+        if quota is None or used_month < quota:
+            _usage_add(bucket, CREDIT_COST["report"])
+            return "mobile_sub"
+        nxt = "m150" if tier == "m30" else None
+        raise HTTPException(429, f"{MOBILE_TIERS[tier]['label']} : {quota} fiches "
+                            "ce mois-ci, quota atteint. "
+                            + (f"Passez à {MOBILE_TIERS[nxt]['label']} "
+                               f"({MOBILE_TIERS[nxt]['eur']:.2f} €/mois)."
+                               if nxt else f"Écrivez-nous : {SUPPORT_EMAIL}"))
+
+    # 2. fiches offertes (à vie, par installation)
+    if used_total < MOBILE_FREE_REPORTS:
+        _usage_add(bucket, CREDIT_COST["report"])
+        return "mobile_free"
+
+    # 3. fiches achetées à l'unité
+    if int(ent.get("units", 0)) > 0:
+        _credits_add(bucket, units=-1)
+        _usage_add(bucket, CREDIT_COST["report"])
+        return "mobile_unit"
+
+    raise HTTPException(429, f"Vos {MOBILE_FREE_REPORTS} fiches offertes sont "
+                        f"utilisées. Fiche à l'unité : {MOBILE_UNIT_EUR:.2f} € — "
+                        f"ou {MOBILE_TIERS['m30']['eur']:.2f} €/mois pour "
+                        f"{MOBILE_TIERS['m30']['fiches']} fiches.")
+
+
 def _quota_gate(request: Request, endpoint: str):
     """Tiered access (#206), subscription-first ladder:
       anonymous      -> ANON_MONTHLY_REPORTS fiches/month per IP
       free account   -> FREE_ACCOUNT_REPORTS fiches/month (API key)
       pro subscriber -> metered, hard-capped, never blocked
     Returns the caller kind for metrics."""
+    # L'app mobile s'identifie par son installation, sans compte ni clé : sa
+    # propre échelle passe donc AVANT (voir _mobile_gate).
+    mobile = _mobile_gate(request, endpoint)
+    if mobile:
+        return mobile
     key = request.headers.get("x-api-key") or request.query_params.get("key")
     if key and key in _load_keys():
         plan = _key_plans().get(key, "free")
@@ -1886,6 +2013,12 @@ async def config():
                               "label": v["label"]} for k, v in PRO_TIERS.items()},
             "free_tiers": {"anonymous_reports_month": ANON_MONTHLY_REPORTS,
                            "free_account_reports_month": FREE_ACCOUNT_REPORTS},
+            # Offre MOBILE, distincte des paliers web (MOBILE.md §5.2) : l'app
+            # lit ses prix ici plutôt que de les écrire en dur, comme le web.
+            "mobile": {"tiers": {k: {"eur": v["eur"], "fiches_month": v["fiches"],
+                                     "label": v["label"]} for k, v in MOBILE_TIERS.items()},
+                       "unit_eur": MOBILE_UNIT_EUR,
+                       "free_reports": MOBILE_FREE_REPORTS},
             "support_email": SUPPORT_EMAIL}
 
 
