@@ -131,3 +131,23 @@ def test_subscriber_hitting_quota_is_offered_an_upgrade_not_a_signup():
     # Le panneau de quota distingue l'abonné du compte gratuit.
     assert "Quota de votre offre atteint" in app_js
     assert "NEXT_TIER" in app_js
+
+
+def test_auth_base_is_absolute_not_relative():
+    """Keycloak est partagé par blue/green avec un KC_HOSTNAME figé sur le
+    domaine de production. Appeler « /auth » en relatif depuis staging posait le
+    cookie de session sur le domaine staging puis postait le formulaire vers
+    prod : « Cookie introuvable », connexion impossible sur staging (jamais vu
+    par l'e2e, qui tourne sur le sandbox et son Keycloak dédié)."""
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parents[2]
+    app_js = (root / "frontend/site/app.js").read_text()
+    env_js = (root / "frontend/site/env.js").read_text()
+    sbx_js = (root / "sandbox_stack/env.sandbox.js").read_text()
+
+    assert 'url: "/auth"' not in app_js, "l'adaptateur doit utiliser la base absolue"
+    assert "authBase" in app_js
+    assert '`/auth/realms/' not in app_js, "le repli direct doit aussi être absolu"
+    # Chaque environnement déclare l'hôte de SON Keycloak.
+    assert 'window.ECO_AUTH_URL = "https://ecobuilding.confinia.io/auth"' in env_js
+    assert 'window.ECO_AUTH_URL = "https://sandbox.ecobuilding.confinia.io/auth"' in sbx_js
