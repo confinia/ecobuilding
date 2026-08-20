@@ -119,6 +119,27 @@ async function ecoPricing() {
         try {
           const r = await fetch(`/api/v1/pro/checkout?tier=${tier}`,
                                 { headers: { Authorization: "Bearer " + kc.token } });
+          // 409 = l'utilisateur est DÉJÀ abonné. Un second checkout créerait un
+          // second abonnement qui s'additionne, donc l'API refuse — mais choisir
+          // un palier supérieur depuis la page Offres, c'est un CHANGEMENT
+          // d'offre. Vécu : quota Pro S épuisé, clic sur Pro M, et le front
+          // répondait « momentanément indisponible » — impasse complète.
+          if (r.status === 409) {
+            const up = await fetch(`/api/v1/pro/upgrade?tier=${tier}`,
+              { method: "POST", headers: { Authorization: "Bearer " + kc.token } });
+            if (up.ok) {
+              track("tier_switch", { tier, from: "offers" });
+              await refreshQuota();
+              showPanel(`<h2>Offre modifiée</h2>
+                <p>Vous êtes maintenant sur l'offre <strong>${tier.toUpperCase()}</strong>.
+                Le prorata est géré automatiquement.</p>
+                <p class="hint">Détail dans « Mon compte ».</p>`);
+              return;
+            }
+            const why = (await up.json().catch(() => ({})))?.detail;
+            alert(why || "Changement d'offre impossible : contact@confinia.io");
+            return;
+          }
           if (!r.ok) throw new Error(r.status);
           const url = (await r.json()).url;
           // Overlay embarqué : le client RESTE sur EcoBuilding (confiance, UX).
@@ -931,10 +952,31 @@ function pdfStage(elapsedMs) {
   return label;
 }
 
-function showQuotaPanel(p, signedIn) {
+const NEXT_TIER = { s: "m", m: "l" };
+function showQuotaPanel(p, signedIn, q) {
   const free = p?.free_tiers?.free_account_reports_month;
   const anon = p?.free_tiers?.anonymous_reports_month;
   const tierS = p?.tiers?.s;
+  // Un ABONNÉ qui atteint le quota de son palier n'est pas un compte gratuit :
+  // lui dire « votre compte gratuit » et lui proposer « passer Pro » alors
+  // qu'il paie déjà était faux, et le laissait sans issue (vécu sur sandbox).
+  if (q?.plan === "pro") {
+    const up = NEXT_TIER[q.tier];
+    const upT = up && p?.tiers?.[up];
+    showPanel(`<h2>Quota de votre offre atteint</h2>
+      <p>Votre offre <strong>${q.tier_label || q.tier?.toUpperCase() || "Pro"}</strong>
+      couvre ${q.reports_included ?? "vos"} fiches par mois, toutes utilisées.</p>
+      ${upT ? `<p><button class="report-link" id="quota-upgrade" data-tier="${up}">
+        Passer à ${upT.label} : ${upT.eur} €/mois
+        (${upT.fiches_month ?? "illimité, usage raisonnable"}${upT.fiches_month ? " fiches" : ""})
+        </button></p>
+      <p class="hint">Changement immédiat, prorata géré automatiquement.</p>`
+      : `<p class="hint">Votre offre est déjà la plus large.
+         Écrivez-nous : <a href="mailto:contact@confinia.io?subject=EcoBuilding%20-%20volume">contact@confinia.io</a></p>`}`);
+    const b = document.getElementById("quota-upgrade");
+    if (b) b.onclick = () => { location.href = "/?gopro=" + b.dataset.tier; };
+    return;
+  }
   showPanel(`<h2>Limite atteinte</h2>
     <p>${signedIn
       ? `Votre compte gratuit couvre ${free ?? "vos"} fiches par mois.`
@@ -962,7 +1004,7 @@ async function downloadReport(btn) {
     const q = await (await fetch(`${API}/quota`, { headers })).json();
     if (q.reports_left === 0) {
       if (tab) tab.close();
-      showQuotaPanel(await ecoPricing(), !!window.ecoToken);
+      showQuotaPanel(await ecoPricing(), !!window.ecoToken, q);
       track("report_blocked_preflight");
       return;
     }
@@ -1001,7 +1043,7 @@ async function downloadReport(btn) {
       const signedIn = !!window.ecoToken;
       const p = await ecoPricing();
       const anon = p.free_tiers?.anonymous_reports_month, free = p.free_tiers?.free_account_reports_month;
-      showQuotaPanel(p, signedIn);
+      showQuotaPanel(p, signedIn, window.ecoQuota);
       if (tab) tab.close();
       return;
     }

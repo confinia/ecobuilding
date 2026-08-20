@@ -115,3 +115,19 @@ def test_streetview_is_fetched_once_per_position():
     import pathlib
     app_js = (pathlib.Path(__file__).resolve().parents[2] / "frontend/site/app.js").read_text()
     assert "streetviewAt" in app_js and "streetviewCache" in app_js
+
+
+def test_subscriber_hitting_quota_is_offered_an_upgrade_not_a_signup():
+    """Vécu sur sandbox : quota Pro S épuisé -> le panneau annonçait « votre
+    compte gratuit » à un abonné et proposait « Passer Pro » ; le clic sur un
+    palier supérieur appelait /pro/checkout, que l'API refuse en 409 (un second
+    abonnement s'additionnerait), et le front affichait « momentanément
+    indisponible ». Impasse complète pour un client qui paie."""
+    import pathlib
+    app_js = (pathlib.Path(__file__).resolve().parents[2] / "frontend/site/app.js").read_text()
+    # 409 sur le checkout -> changement d'offre, pas message d'erreur.
+    assert "r.status === 409" in app_js
+    assert "/api/v1/pro/upgrade?tier=" in app_js
+    # Le panneau de quota distingue l'abonné du compte gratuit.
+    assert "Quota de votre offre atteint" in app_js
+    assert "NEXT_TIER" in app_js
