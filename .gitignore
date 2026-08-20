@@ -24,3 +24,6 @@ www.creem.io.har
 e2e/node_modules/
 e2e/package.json
 e2e/package-lock.json
+
+# Projet Xcode généré par xcodegen (voir mobile/ios/README.md)
+mobile/ios/EcoBuilding.xcodeproj/
