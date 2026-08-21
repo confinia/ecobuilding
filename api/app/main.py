@@ -1515,7 +1515,10 @@ MOBILE_TIERS: dict = json.loads(os.environ.get("MOBILE_TIERS_JSON", "") or """{
 # puis des oublis de résiliation.
 MOBILE_UNIT_EUR = float(os.environ.get("MOBILE_UNIT_EUR", "0.99"))
 # Fiches offertes par INSTALLATION (à vie, pas par mois) : c'est l'essai.
-MOBILE_FREE_REPORTS = int(os.environ.get("MOBILE_FREE_REPORTS", "3"))
+# Porté de 3 à 10 le 2026-08-21 : à 3, le mur tombait avant que l'usage ait pris
+# — on ne teste pas un outil de terrain trois fois. L'objectif de cette étape
+# est l'adhésion, pas le revenu (13 abonnés couvrent les frais de l'année).
+MOBILE_FREE_REPORTS = int(os.environ.get("MOBILE_FREE_REPORTS", "10"))
 # Le quota anonyme du web se compte par IP — inutilisable sur réseau mobile, où
 # des milliers d'abonnés partagent une adresse : les fiches offertes d'un
 # utilisateur seraient consommées par des inconnus. On compte donc par

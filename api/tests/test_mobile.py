@@ -1,6 +1,6 @@
 """Échelle d'accès mobile (MOBILE.md §5.2), validée par l'opérateur le 2026-08-20 :
 
-    3 fiches offertes par INSTALLATION, puis 0,99 € la fiche à l'unité
+    10 fiches offertes par INSTALLATION, puis 0,99 € la fiche à l'unité
     (consommable), ou 4,99 €/mois pour 30 fiches, ou 12,99 €/mois pour 150.
 
 Deux propriétés y sont moins évidentes qu'il n'y paraît, et ces tests les
@@ -8,7 +8,7 @@ verrouillent :
 
   - les fiches offertes se comptent **par installation et à vie**, pas par IP ni
     par mois. Par IP, des milliers d'abonnés d'un même opérateur mobile se
-    partageraient les 3 fiches ; par mois, ce serait un robinet et non un essai.
+    partageraient les fiches offertes ; par mois, ce serait un robinet et non un essai.
   - le consommable **crédite un compteur** et ne confère aucun statut : une
     fiche achetée à l'unité survit à la fin d'un abonnement.
 """
@@ -41,8 +41,10 @@ def _gate(headers, endpoint="report"):
     return main._quota_gate(Request(scope), endpoint)
 
 
-def test_three_free_reports_then_the_wall():
-    assert [_gate(DEV) for _ in range(3)] == ["mobile_free"] * 3
+def test_free_reports_then_the_wall():
+    free = main.MOBILE_FREE_REPORTS
+    assert free >= 10, "sous 10 essais, l'usage n'a pas le temps de s'installer"
+    assert [_gate(DEV) for _ in range(free)] == ["mobile_free"] * free
     with pytest.raises(main.HTTPException) as e:
         _gate(DEV)
     assert e.value.status_code == 429
@@ -55,14 +57,14 @@ def test_free_quota_is_per_installation_not_shared():
     """Sur réseau mobile, l'IP est partagée par des milliers d'abonnés : le
     compteur doit suivre l'installation, sinon les fiches offertes d'un
     utilisateur sont consommées par des inconnus."""
-    for _ in range(3):
+    for _ in range(main.MOBILE_FREE_REPORTS):
         _gate(DEV)
     assert _gate(OTHER) == "mobile_free", "une autre installation doit repartir à zéro"
 
 
 def test_free_quota_is_lifetime_not_monthly(monkeypatch):
-    """Les 3 fiches sont un ESSAI : le mois suivant ne les recharge pas."""
-    for _ in range(3):
+    """Les fiches offertes sont un ESSAI : le mois suivant ne les recharge pas."""
+    for _ in range(main.MOBILE_FREE_REPORTS):
         _gate(DEV)
     monkeypatch.setattr(main, "_month_key", lambda: "2099-12")
     with pytest.raises(main.HTTPException):
@@ -70,7 +72,7 @@ def test_free_quota_is_lifetime_not_monthly(monkeypatch):
 
 
 def test_unit_purchase_is_consumed_one_by_one():
-    for _ in range(3):
+    for _ in range(main.MOBILE_FREE_REPORTS):
         _gate(DEV)
     bucket = main._device_bucket(type("R", (), {"headers": {"x-install-id": DEV["X-Install-Id"]}})())
     main._credits_add(bucket, units=2)
@@ -113,7 +115,7 @@ def test_web_offers_do_not_show_mobile_prices():
     assert set(cfg["pro_tiers"]) == {"s", "m", "l"}
     assert set(cfg["mobile"]["tiers"]) == {"m30", "m150"}
     assert cfg["mobile"]["unit_eur"] == 0.99
-    assert cfg["mobile"]["free_reports"] == 3
+    assert cfg["mobile"]["free_reports"] == main.MOBILE_FREE_REPORTS
     assert cfg["mobile"]["tiers"]["m30"]["eur"] == 4.99
     assert cfg["mobile"]["tiers"]["m150"]["fiches_month"] == 150
 
@@ -122,7 +124,7 @@ def test_grid_matches_the_written_plan():
     """La grille du code et celle de MOBILE.md doivent rester la même."""
     import pathlib
     doc = (pathlib.Path(__file__).resolve().parents[2] / "MOBILE.md").read_text()
-    assert "3 fiches offertes" in doc
+    assert "10 fiches offertes" in doc
     assert "0,99 €" in doc and "4,99 €/mois" in doc and "12,99 €/mois" in doc
     assert "30 fiches" in doc and "150 fiches" in doc
 
