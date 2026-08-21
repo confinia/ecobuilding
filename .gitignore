@@ -27,3 +27,5 @@ e2e/package-lock.json
 
 # Projet Xcode généré par xcodegen (voir mobile/ios/README.md)
 mobile/ios/EcoBuilding.xcodeproj/
+
+mobile/ios/EcoBuilding/AuthKey_XUF9548PLV.p8
