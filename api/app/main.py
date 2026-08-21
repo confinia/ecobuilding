@@ -1527,6 +1527,13 @@ MOBILE_FREE_REPORTS = int(os.environ.get("MOBILE_FREE_REPORTS", "10"))
 # 0,99 €, et un contrôle plus dur coûterait plus en adhésion qu'il ne
 # rapporterait.
 DEVICE_HEADER = "x-install-id"
+# Bêta-testeurs NOMMÉMENT identifiés, exemptés de quota le temps de recueillir
+# leurs retours. Une liste d'identifiants d'installation, pas un interrupteur
+# global : ouvrir le quota à tout le monde reviendrait à offrir le produit, et
+# un réglage temporaire de ce genre s'oublie. Format : identifiants séparés par
+# des virgules (l'app affiche le sien quand on touche le numéro de version).
+MOBILE_BETA_IDS = {x.strip() for x in
+                   os.environ.get("MOBILE_BETA_IDS", "").split(",") if x.strip()}
 CREDITS_PATH = os.environ.get("CREDITS_PATH", "/leads/credits.json")
 
 # Self-service means: never leave a user stuck without a way out (#212).
@@ -1713,6 +1720,12 @@ def _mobile_gate(request: Request, endpoint: str) -> str | None:
         return None
     if endpoint != "report":
         return "mobile"
+    # Bêta-testeur identifié : aucun quota, aucun mur. Son retour vaut plus que
+    # la vente, et un blocage en pleine démonstration devant un client serait
+    # rédhibitoire.
+    if (request.headers.get(DEVICE_HEADER) or "").strip() in MOBILE_BETA_IDS:
+        _usage_add(bucket, CREDIT_COST["report"])
+        return "mobile_beta"
     ent = _credits_get(bucket)
     tier = ent.get("tier")
     used_total = _usage_total(bucket) // CREDIT_COST["report"]

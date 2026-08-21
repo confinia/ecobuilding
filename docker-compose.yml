@@ -34,13 +34,10 @@ services:
       # Shared services via the ecobuilding-internal network (#173): loopback
       # 13xxx publishes are unreachable from bridged containers, so east-west
       # traffic uses DNS aliases (keycloak / render / bdnb-rest).
-      # BÊTA MOBILE (2026-08-21) — À RETIRER AVANT LA MISE EN VENTE.
-      # Les testeurs de l'app iPhone sont des partenaires du métier, pas des
-      # clients : leur retour vaut plus que la vente, et un mur de quota en
-      # pleine démonstration devant un client serait un blocage inacceptable.
-      # Le quota produit (10) reste la valeur du code, on ne fait que le
-      # neutraliser le temps de la bêta.
-      MOBILE_FREE_REPORTS: "100000"
+      # Bêta-testeurs identifiés, exemptés de quota (voir MOBILE_BETA_IDS dans
+      # api/app/main.py). Leurs identifiants d'installation, séparés par des
+      # virgules — et EUX SEULS : le quota produit s'applique à tous les autres.
+      MOBILE_BETA_IDS: "${MOBILE_BETA_IDS:-}"
       RENDER_URL: http://render:8040/shot
       DVF_RPC_URL: http://bdnb-rest:3005/rpc/prices_for_building
       # Reach Keycloak internally over the shared network (see auth_stack).
