@@ -143,6 +143,41 @@ def c_auth_consistency():
     return f"{realm} @ {auth}"
 
 
+def c_mobile_contract():
+    """Contrat d'API dont dépend l'app iPhone INSTALLÉE.
+
+    Une app publiée ne se met pas à jour en même temps que le serveur : ses
+    utilisateurs gardent leur version des semaines. Le 2026-08-21, un promote a
+    basculé la production sur une image antérieure au travail mobile — l'app
+    s'est retrouvée traitée comme un visiteur web anonyme, plafonnée à 3 fiches
+    par mois, et plus rien ne fonctionnait. Rien ne l'avait vu. Ce contrôle
+    échoue désormais avant qu'un utilisateur ne le découvre."""
+    cfg = get_json(f"{API}/config", 20)
+    m = cfg.get("mobile")
+    assert m, "l'offre mobile a disparu de /v1/config : l'app ne sait plus quoi proposer"
+    assert isinstance(m.get("free_reports"), int), "fiches offertes absentes"
+    assert m.get("unit_eur"), "prix à l'unité absent"
+    assert set(m.get("tiers") or {}), "aucun palier mobile"
+
+    # L'autocomplétion lit la clé « suggestions » : la renommer casserait la
+    # recherche de toutes les versions déjà installées.
+    sug = get_json(f"{API}/suggest?q=" + urllib.parse.quote("7 rue Foch Montpellier"), 30)
+    assert isinstance(sug.get("suggestions"), list) and sug["suggestions"], \
+        "/v1/suggest ne renvoie plus de « suggestions »"
+    first = sug["suggestions"][0]
+    for k in ("label", "lon", "lat"):
+        assert k in first, f"champ « {k} » absent des suggestions"
+
+    # Le quota mobile doit être compté par installation, pas par IP.
+    req = urllib.request.Request(f"{API}/quota", headers=dict(UA, **{"X-Install-Id": "smoke-" + "0" * 12}))
+    try:
+        urllib.request.urlopen(req, timeout=20)
+    except urllib.error.HTTPError as e:
+        assert e.code != 500, "la porte de quota mobile est cassée"
+    return (f"{m['free_reports']} offertes · {m['unit_eur']} € l'unité · "
+            f"paliers {', '.join(sorted(m['tiers']))}")
+
+
 def c_payment_rule():
     """Règle 7 : la production ne porte aucune configuration de paiement."""
     cfg = get_json(f"{API}/config", 20)
@@ -159,6 +194,7 @@ CHECKS = [
     ("affichage au fil de l'eau + chargement unique", c_stream_and_single_load),
     ("bloc prix DVF", c_prices),
     ("cohérence d'authentification", c_auth_consistency),
+    ("contrat d'API de l'app mobile", c_mobile_contract),
     ("règle de paiement", c_payment_rule),
 ]
 
