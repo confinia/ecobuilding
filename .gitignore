@@ -29,3 +29,21 @@ e2e/package-lock.json
 mobile/ios/EcoBuilding.xcodeproj/
 
 mobile/ios/EcoBuilding/*.p8
+# Le mobile vit dans son PROPRE dépôt privé (confinia/ecobuilding-mobile),
+# cloné ici sous ./mobile. Le produit web est destiné à l'open source ; la
+# partie commerciale ne doit pas s'y trouver, ni dans son historique.
+mobile/
+
+# Stratégie, prix et monétisation : dépôt privé confinia/ecobuilding-business,
+# cloné ici sous ./business. Rien de tout cela dans un dépôt qui va s'ouvrir.
+business/
+BUSINESS.md
+PRICING.md
+MOBILE.md
+IPHONE.md
+TEST_CREEM.md
+TEST_POLAR.md
+
+# Captures réseau de mise au point : volumineuses, et porteuses de jetons de
+# session. Jamais versionnées.
+*.har
