@@ -151,3 +151,21 @@ def test_auth_base_is_absolute_not_relative():
     # Chaque environnement déclare l'hôte de SON Keycloak.
     assert 'window.ECO_AUTH_URL = "https://ecobuilding.confinia.io/auth"' in env_js
     assert 'window.ECO_AUTH_URL = "https://sandbox.ecobuilding.confinia.io/auth"' in sbx_js
+
+
+def test_privacy_policy_is_published_and_accurate():
+    """Apple exige une URL de politique de confidentialité dès TestFlight, et
+    ce texte engage : il doit décrire ce que le code fait RÉELLEMENT."""
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parents[2]
+    page = (root / "frontend/site/confidentialite.html").read_text()
+    api = (root / "api/app/main.py").read_text()
+    app_swift = (root / "mobile/ios/EcoBuilding/Sources/API.swift").read_text()
+
+    # La page est bien reliée depuis la carte, sinon personne ne la trouve.
+    assert "/confidentialite.html" in (root / "frontend/site/index.html").read_text()
+    # Promesses vérifiables dans le code :
+    assert "ne quitte pas votre téléphone" in page
+    assert "X-Install-Id" in app_swift        # seul identifiant transmis
+    assert "events" not in app_swift.split("MARK: - Offre")[0].replace("StreamEvent", "")
+    assert "never stored nor logged" in api            # cf. bloc GeoIP
