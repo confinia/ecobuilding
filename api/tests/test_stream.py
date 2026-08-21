@@ -160,12 +160,12 @@ def test_privacy_policy_is_published_and_accurate():
     root = pathlib.Path(__file__).resolve().parents[2]
     page = (root / "frontend/site/confidentialite.html").read_text()
     api = (root / "api/app/main.py").read_text()
-    app_swift = (root / "mobile/ios/EcoBuilding/Sources/API.swift").read_text()
 
     # La page est bien reliée depuis la carte, sinon personne ne la trouve.
     assert "/confidentialite.html" in (root / "frontend/site/index.html").read_text()
-    # Promesses vérifiables dans le code :
+    # Promesses vérifiables ICI, côté serveur. Le code des apps vit dans un
+    # dépôt privé : ce test doit passer sur un clone public, et de toute façon
+    # ce qui engage la politique, c'est ce que le serveur reçoit et conserve.
     assert "ne quitte pas votre téléphone" in page
-    assert "X-Install-Id" in app_swift        # seul identifiant transmis
-    assert "events" not in app_swift.split("MARK: - Offre")[0].replace("StreamEvent", "")
-    assert "never stored nor logged" in api            # cf. bloc GeoIP
+    assert main.DEVICE_HEADER == "x-install-id"   # seul identifiant transmis
+    assert "never stored nor logged" in api       # cf. bloc GeoIP
