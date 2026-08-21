@@ -34,9 +34,16 @@ services:
       # Shared services via the ecobuilding-internal network (#173): loopback
       # 13xxx publishes are unreachable from bridged containers, so east-west
       # traffic uses DNS aliases (keycloak / render / bdnb-rest).
-      # Bêta-testeurs identifiés, exemptés de quota (voir MOBILE_BETA_IDS dans
-      # api/app/main.py). Leurs identifiants d'installation, séparés par des
-      # virgules — et EUX SEULS : le quota produit s'applique à tous les autres.
+      # PHASE « OFFERT » (décidée le 2026-08-21) — voir IPHONE.md §3.
+      # L'app mobile est publiée gratuitement et sans mur, le temps de mesurer
+      # les usages réels : les paliers 30/150 fiches sont aujourd'hui des
+      # hypothèses, pas des mesures. Ce plafond n'est PAS un quota produit,
+      # c'est un garde-fou : très au-dessus de tout usage humain, il empêche
+      # qu'un script épuise le rendu PDF et le quota BDNB (10 000 requêtes par
+      # mois pour toute la plateforme) au détriment de tous.
+      # À REMPLACER par le quota produit le jour où le mur payant existe.
+      MOBILE_FREE_REPORTS: "300"
+      # Bêta-testeurs identifiés, exemptés même de ce garde-fou.
       MOBILE_BETA_IDS: "${MOBILE_BETA_IDS:-}"
       RENDER_URL: http://render:8040/shot
       DVF_RPC_URL: http://bdnb-rest:3005/rpc/prices_for_building
