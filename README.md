@@ -24,3 +24,19 @@ solar potential — all from open data (BDNB/CSTB, BAN, Géorisques).
 
 Quickstart: `docker compose up --build` → frontend on :8011, API docs on
 :8010/v1/docs. Deploy: `./deploy/deploy.sh`.
+
+## Licence
+
+[GNU AGPL-3.0](LICENSE) — toute personne qui exécute une version modifiée de ce
+logiciel accessible par le réseau doit en publier les sources. Cohérent avec un
+produit entièrement bâti sur des données publiques ouvertes.
+
+## Dépôts liés
+
+- [confinia/ecobuilding-mobile](https://github.com/confinia/ecobuilding-mobile) —
+  applications iOS et Android, AGPL également. Séparé pour des raisons de cycle
+  de vie : compilations signées, magasins, versions installées qui survivent des
+  mois à leur serveur.
+
+La stratégie commerciale et la tarification vivent dans un dépôt privé : ce qui
+est ouvert, c'est le logiciel, pas le plan d'affaires.
