@@ -12,15 +12,15 @@ solar potential — all from open data (BDNB/CSTB, BAN, Géorisques).
 
 | Doc | Purpose |
 |---|---|
-| [DEV.md](DEV.md) | Architecture, deploy, observability, conventions |
-| [DATA.md](DATA.md) | Datasets: how each is loaded, where it lives, how it is updated |
 | [SOURCES.md](SOURCES.md) | Open-data inventory: live, planned, candidate (incl. health, EU/US) |
-| [COMMUNICATION.md](COMMUNICATION.md) | Posting playbook: channel URLs, identities, titles, etiquette |
-| [PRICING.md](PRICING.md) | Pricing grid, rules, decision history, where each number lives |
-| [TEST_CREEM.md](TEST_CREEM.md) | Payment validation runbook (Creem Test Mode — rule 21) |
-| [e2e/README.md](e2e/README.md) | Real-browser signup + payment journey (Selenium IDE + CDP helper), verified against Creem |
-| [BUSINESS.md](BUSINESS.md) | Market analysis, strategy, decision log |
-| [TODO.md](TODO.md) | Actions (business + product) |
+| [TEST_SUBSCRIPTION.md](TEST_SUBSCRIPTION.md) | Sign-up / sign-in journey (Keycloak) |
+| [e2e/README.md](e2e/README.md) | Real-browser signup journey (Selenium IDE + CDP helper) |
+| [api/app/main.py](api/app/main.py) | The API itself — every route is documented inline |
+
+Operational documentation (architecture, deployment, security posture, roadmap,
+pricing) lives in a private repository: **the code is open, the business is
+not**. Everything needed to run this software is here; everything describing how
+the business is run is not.
 
 Quickstart: `docker compose up --build` → frontend on :8011, API docs on
 :8010/v1/docs. Deploy: `./deploy/deploy.sh`.
