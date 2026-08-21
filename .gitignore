@@ -20,7 +20,6 @@ e2e/.npm-cache/
 .mcp.json
 
 # HAR de session dashboard (contient un jeton de session actif) — jamais suivi.
-www.creem.io.har
 e2e/node_modules/
 e2e/package.json
 e2e/package-lock.json
@@ -43,7 +42,20 @@ MOBILE.md
 IPHONE.md
 TEST_CREEM.md
 TEST_POLAR.md
+STACK_template.md
+STACK_ecobuilding.md
+SPECIFICATIONS.md
+SECURITY.md
+RULES.md
+MOVE.md
+MONITORING.md
+LAUNCH.md
+ISSUES.md
+DEV.md
+DATA.md
+COMMUNICATION.md
+TODO.md
 
 # Captures réseau de mise au point : volumineuses, et porteuses de jetons de
 # session. Jamais versionnées.
-*.har
+**/*.har
