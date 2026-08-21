@@ -245,10 +245,10 @@ def test_tier_pricing_is_consistent_everywhere():
     assert 'ANON_MONTHLY_REPORTS", "3"' in main_py
     assert 'FREE_ACCOUNT_REPORTS", "10"' in main_py
     assert '"report": 1' in main_py                    # one unit = one fiche
-    # PRICING.md is the source of truth and must quote the live numbers.
-    pricing_doc = (ROOT / "PRICING.md").read_text()
-    for n in ("v4", "9 €", "29 €", "99 €", "Creem"):
-        assert n in pricing_doc, n
+    # PRICING.md vit désormais dans le dépôt PRIVÉ de monétisation : ce test
+    # doit passer sur un clone public, donc il vérifie la cohérence entre les
+    # surfaces publiques (page offres, constantes serveur, script de création
+    # des produits) et non plus contre un document absent.
     setup = (ROOT / "deploy/creem-setup.sh").read_text()
     for n in ("900", "2900", "9900"):                  # cents des trois paliers
         assert n in setup, n

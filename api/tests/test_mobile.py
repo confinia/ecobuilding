@@ -120,13 +120,22 @@ def test_web_offers_do_not_show_mobile_prices():
     assert cfg["mobile"]["tiers"]["m150"]["fiches_month"] == 150
 
 
-def test_grid_matches_the_written_plan():
-    """La grille du code et celle de MOBILE.md doivent rester la même."""
-    import pathlib
-    doc = (pathlib.Path(__file__).resolve().parents[2] / "MOBILE.md").read_text()
-    assert "10 fiches offertes" in doc
-    assert "0,99 €" in doc and "4,99 €/mois" in doc and "12,99 €/mois" in doc
-    assert "30 fiches" in doc and "150 fiches" in doc
+def test_grid_is_internally_coherent():
+    """La grille exposée aux apps doit rester cohérente avec les constantes.
+
+    Elle était comparée à MOBILE.md, désormais dans le dépôt privé de
+    monétisation : ce test doit passer sur un clone public, donc il compare les
+    surfaces publiques entre elles."""
+    cfg = client.get("/v1/config").json()["mobile"]
+    assert cfg["free_reports"] == main.MOBILE_FREE_REPORTS
+    assert cfg["unit_eur"] == main.MOBILE_UNIT_EUR
+    for key, tier in main.MOBILE_TIERS.items():
+        assert cfg["tiers"][key]["eur"] == tier["eur"]
+        assert cfg["tiers"][key]["fiches_month"] == tier["fiches"]
+        assert tier["fiches"] is None or tier["fiches"] > 0
+    # Un palier plus cher doit donner PLUS de fiches, sinon la grille ment.
+    paid = sorted(main.MOBILE_TIERS.values(), key=lambda t: t["eur"])
+    assert all(a["fiches"] < b["fiches"] for a, b in zip(paid, paid[1:]))
 
 
 def test_a_browser_call_is_unaffected():
