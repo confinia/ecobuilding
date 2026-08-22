@@ -2592,15 +2592,81 @@ async def _nearby_photos(lon: float, lat: float, radius: float = 0.0006) -> list
     return photos
 
 
+COMMONS_URL = "https://commons.wikimedia.org/w/api.php"
+
+
+async def _commons_photos(lon: float, lat: float, radius_m: int = 120) -> list:
+    """Photos géolocalisées de Wikimedia Commons autour du point.
+
+    Panoramax couvre bien les villes et mal le reste : sur beaucoup d'adresses,
+    la fiche n'affiche aucune image, alors qu'un acheteur veut d'abord VOIR
+    l'environnement du bien (#200). Commons complète — sans clé, sans compte —
+    et couvre en particulier les bâtiments remarquables, églises, mairies,
+    monuments, dont un quartier tire une bonne part de son caractère.
+
+    Chaque image porte sa licence et son auteur : l'attribution est une
+    OBLIGATION des licences CC-BY-SA, pas une politesse.
+    """
+    try:
+        data = await _cached_get_json(COMMONS_URL, {
+            "action": "query", "generator": "geosearch",
+            "ggscoord": f"{lat}|{lon}", "ggsradius": str(radius_m),
+            "ggslimit": "6", "ggsnamespace": "6",
+            "prop": "imageinfo", "iiprop": "url|extmetadata",
+            "iiurlwidth": "640", "format": "json",
+        }, ttl=86400)
+    except Exception as e:
+        log.warning("Commons indisponible (%s, %s): %s", lon, lat, e)
+        return []
+
+    photos = []
+    for page in ((data.get("query") or {}).get("pages") or {}).values():
+        info = (page.get("imageinfo") or [{}])[0]
+        meta = info.get("extmetadata") or {}
+        thumb = info.get("thumburl") or info.get("url")
+        if not thumb:
+            continue
+        photos.append({
+            "id": str(page.get("pageid")),
+            "thumb": thumb,
+            "sd": info.get("url"),
+            "viewer": info.get("descriptionurl"),
+            "is_360": False,
+            "title": (page.get("title") or "").removeprefix("File:"),
+            "date": (meta.get("DateTimeOriginal") or {}).get("value"),
+            "licence": (meta.get("LicenseShortName") or {}).get("value"),
+            # Le champ Artist contient du HTML : on ne garde que le texte.
+            "author": _strip_html((meta.get("Artist") or {}).get("value", "")),
+            "source": "Wikimedia Commons",
+        })
+    return photos
+
+
+def _strip_html(html: str) -> str:
+    import re
+    return re.sub(r"<[^>]+>", "", html or "").strip()[:120]
+
+
 @app.get("/v1/streetview", tags=["buildings"])
 async def streetview(
     lon: float = Query(description="Longitude"),
     lat: float = Query(description="Latitude"),
     radius: float = Query(0.0006, description="Half-size of the search bbox in degrees"),
 ):
-    """Nearest Panoramax street-level photos around a point (open imagery,
-    CC-BY-SA). Bridges toward the photosphere vision — issue #22."""
-    return {"photos": await _nearby_photos(lon, lat, radius), "source": "Panoramax — CC-BY-SA 4.0"}
+    """Photos ouvertes autour d'un point : Panoramax d'abord (vue au sol
+    française, la plus fraîche), puis Wikimedia Commons en complément.
+
+    L'ordre compte : la vue au sol montre ce qu'on verrait en arrivant devant
+    le bien ; Commons apporte le contexte — l'église, la mairie, le monument
+    voisin — là où Panoramax n'a rien (#200)."""
+    street, commons = await asyncio.gather(
+        _nearby_photos(lon, lat, radius),
+        _commons_photos(lon, lat))
+    for p in street:
+        p.setdefault("source", "Panoramax")
+        p.setdefault("licence", "CC-BY-SA 4.0")
+    return {"photos": street + commons,
+            "sources": ["Panoramax — CC-BY-SA 4.0", "Wikimedia Commons"]}
 
 
 @app.get("/v1/export", tags=["data"])

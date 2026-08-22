@@ -228,8 +228,10 @@ def _traceability_annex(data: dict, photos: list | None) -> str:
     if photos:
         ids = ", ".join(str(p["id"])[:8] for p in photos[:3])
         dref = next((str(p["date"])[:10] for p in photos if p.get("date")), "voir la visionneuse")
+        srcs = sorted({p.get("source", "Panoramax") for p in photos[:4]})
         cards.append(("Photos (contexte)", _prov(
-            "Panoramax", "CC-BY-SA 4.0", f"photo id(s) : {ids}", dref,
+            " et ".join(srcs), "CC-BY-SA / licences libres, voir chaque image",
+            f"photo id(s) : {ids}", dref,
             photos[0].get("viewer") or "https://panoramax.xyz")))
 
     sections = "".join(f"<h2>{t}</h2>{c}" for t, c in cards if c)
@@ -526,9 +528,16 @@ def _context_page(data: dict, photos: list | None, map_img: str | None = None) -
             inner = f'<div class="crop"><img src="{src}"/></div>'
         else:
             inner = f'<img class="flat" src="{src}"/>'
-        return f'<div class="pic">{inner}<div class="cap">Panoramax — CC-BY-SA</div></div>'
+        # Auteur et licence sous CHAQUE image : l'attribution est une obligation
+        # des licences libres, pas une politesse — et elle dit au lecteur d'où
+        # vient ce qu'il regarde.
+        credit = " · ".join(x for x in (p.get("source", "Panoramax"),
+                                        p.get("author"), p.get("licence", "CC-BY-SA")) if x)
+        title = p.get("title")
+        caption = f"{title} — {credit}" if title else credit
+        return f'<div class="pic">{inner}<div class="cap">{caption}</div></div>'
 
-    pics = "".join(_pic(p) for p in photos[:2] if p.get("sd") or p.get("thumb"))
+    pics = "".join(_pic(p) for p in photos[:4] if p.get("sd") or p.get("thumb"))
     if not pics and lon is None:
         return ""
     osm = (f'<a href="https://www.openstreetmap.org/#map=19/{lat}/{lon}">'
@@ -540,8 +549,9 @@ def _context_page(data: dict, photos: list | None, map_img: str | None = None) -
   <div class="doctitle">Contexte — sources tierces</div>
 </header>
 <h1>{address}</h1>
-<h2>Vue au sol (Panoramax)</h2>
-{('<div class="pics">' + pics + '</div>') if pics else '<p class="meta">Aucune photo Panoramax à proximité.</p>'}
+<h2>Photos du lieu</h2>
+{('<div class="pics">' + pics + '</div>') if pics else
+ '<p class="meta">Aucune photo ouverte à proximité — ni vue au sol, ni image de contexte.</p>'}
 <h2>{"Localisation — carte 3D (DPE)" if map_img else "OpenStreetMap"}</h2>
 {(f'<img class="map3d" src="{map_img}"/>'
   '<div class="cap">Bâtiment ciblé en pleine opacité (voisins atténués), coloré par classe DPE. '
@@ -549,7 +559,8 @@ def _context_page(data: dict, photos: list | None, map_img: str | None = None) -
  if map_img else
  f'<table><tr><td class="k" style="width:30%">Voir la zone sur OSM</td><td>{osm}</td></tr></table>'}
 <footer>
-  Imagerie : Panoramax (CC-BY-SA 4.0). Cartographie : OpenStreetMap et contributeurs (ODbL).
+  Imagerie : Panoramax (CC-BY-SA 4.0) et Wikimedia Commons, auteur et licence indiqués
+  sous chaque photo. Cartographie : OpenStreetMap et contributeurs (ODbL).
   Informations de contexte, non contractuelles.
 </footer>
 <style>

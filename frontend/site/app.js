@@ -601,9 +601,17 @@ async function loadStreetview(lon, lat) {
     const r = await fetch(`${API}/streetview?lon=${lon}&lat=${lat}`);
     const { photos } = await r.json();
     if (!photos?.length) return;
-    streetviewCache = `<h3>Vue au sol (Panoramax)</h3><div class="pano-strip">` +
-      photos.map((p) => `<a href="${p.viewer}" target="_blank" rel="noopener"><img src="${p.thumb}" loading="lazy" alt="Photo Panoramax"></a>`).join("") +
-      `</div><p class="hint">Images Panoramax — CC-BY-SA</p>`;
+    // Panoramax couvre mal hors des villes : Commons complète, et l'acheteur
+    // veut d'abord VOIR l'environnement du bien (#200). Chaque image porte son
+    // auteur et sa licence — c'est une obligation des licences CC-BY-SA.
+    streetviewCache = `<h3>Photos du lieu</h3><div class="pano-strip">` +
+      photos.map((p) => {
+        const credit = [p.author, p.licence].filter(Boolean).join(" · ");
+        const label = p.title || (p.source === "Panoramax" ? "Vue au sol" : "Photo");
+        return `<a href="${p.viewer}" target="_blank" rel="noopener" title="${label}${credit ? " — " + credit : ""}">` +
+               `<img src="${p.thumb}" loading="lazy" alt="${label}"></a>`;
+      }).join("") +
+      `</div><p class="hint">${[...new Set(photos.map((p) => p.source).filter(Boolean))].join(" · ")} — réutilisation sous licence libre, auteur cité au survol</p>`;
     el.innerHTML = streetviewCache;
   } catch { /* imagery is best-effort */ }
 }

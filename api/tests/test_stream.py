@@ -169,3 +169,41 @@ def test_privacy_policy_is_published_and_accurate():
     assert "ne quitte pas votre téléphone" in page
     assert main.DEVICE_HEADER == "x-install-id"   # seul identifiant transmis
     assert "never stored nor logged" in api       # cf. bloc GeoIP
+
+
+def test_photos_merge_panoramax_then_commons(monkeypatch):
+    """#200 : Panoramax couvre bien les villes et mal le reste ; sur beaucoup
+    d'adresses la fiche n'affichait AUCUNE image, alors qu'un acheteur veut
+    d'abord voir l'environnement du bien. Commons complète, sans clé.
+
+    L'ordre compte : la vue au sol d'abord — ce qu'on verrait en arrivant —
+    puis le contexte. Et chaque image porte sa licence : l'attribution est une
+    obligation des licences CC-BY-SA, pas une politesse."""
+    async def fake(url, params, ttl=0):
+        if "panoramax" in url:
+            return {"features": [{"id": "pano-1", "assets": {"thumb": {"href": "http://t/1.jpg"}},
+                                  "geometry": {"coordinates": [3.0, 43.0]}, "properties": {}}]}
+        return {"query": {"pages": {"42": {
+            "pageid": 42, "title": "File:Mairie.jpg",
+            "imageinfo": [{"thumburl": "http://c/m.jpg", "url": "http://c/full.jpg",
+                           "descriptionurl": "http://commons/x",
+                           "extmetadata": {"LicenseShortName": {"value": "CC BY-SA 4.0"},
+                                           "Artist": {"value": "<a href='#'>Jean</a>"}}}]}}}}
+    monkeypatch.setattr(main, "_cached_get_json", fake)
+    r = client.get("/v1/streetview?lon=3.0&lat=43.0").json()
+    photos = r["photos"]
+    assert len(photos) == 2
+    assert photos[0]["source"] == "Panoramax", "la vue au sol vient en premier"
+    assert photos[1]["source"] == "Wikimedia Commons"
+    assert photos[1]["licence"] == "CC BY-SA 4.0"
+    assert photos[1]["author"] == "Jean", "le HTML de l'auteur doit être nettoyé"
+
+
+def test_commons_failure_never_breaks_the_photos(monkeypatch):
+    """Une source tierce en panne ne doit pas priver l'utilisateur des autres."""
+    async def fake(url, params, ttl=0):
+        if "commons" in url:
+            raise RuntimeError("commons down")
+        return {"features": []}
+    monkeypatch.setattr(main, "_cached_get_json", fake)
+    assert client.get("/v1/streetview?lon=3.0&lat=43.0").json()["photos"] == []
