@@ -378,11 +378,13 @@ def _groundwater_html(gw: dict) -> str:
 <p class="meta">{gw.get("note") or ""} {gw.get("well_regulation") or ""}</p>"""
 
 
-def build_report_pdf(data: dict, photos: list | None = None, map_img: str | None = None) -> bytes:
-    return HTML(string=_report_html(data, photos, map_img)).write_pdf()
+def build_report_pdf(data: dict, photos: list | None = None, map_img: str | None = None,
+                     aerial_img: str | None = None) -> bytes:
+    return HTML(string=_report_html(data, photos, map_img, aerial_img)).write_pdf()
 
 
-def _report_html(data: dict, photos: list | None = None, map_img: str | None = None) -> str:
+def _report_html(data: dict, photos: list | None = None, map_img: str | None = None,
+                 aerial_img: str | None = None) -> str:
     b = (data.get("buildings") or [{}])[0]
     e = b.get("energy") or {}
     ban = e.get("rental_ban") or {}
@@ -505,13 +507,14 @@ def _report_html(data: dict, photos: list | None = None, map_img: str | None = N
   diagnostic de performance énergétique (DPE) officiel, ni un état des risques et pollutions (ERP)
   réglementaire. Une question sur cette fiche : contact@confinia.io
 </footer>
-{_context_page(data, photos, map_img)}
+{_context_page(data, photos, map_img, aerial_img)}
 {_traceability_annex(data, photos)}
 """
     return html
 
 
-def _context_page(data: dict, photos: list | None, map_img: str | None = None) -> str:
+def _context_page(data: dict, photos: list | None, map_img: str | None = None,
+                  aerial_img: str | None = None) -> str:
     """Second PDF page: third-party context — a rendered DPE-3D map of the
     building (#88) + Panoramax imagery. Falls back to an OSM link when the map
     render is unavailable."""
@@ -549,6 +552,10 @@ def _context_page(data: dict, photos: list | None, map_img: str | None = None) -
   <div class="doctitle">Contexte — sources tierces</div>
 </header>
 <h1>{address}</h1>
+{(f'<h2>Vue aérienne</h2><img class="map3d" src="{aerial_img}"/>'
+   '<div class="cap">Photo aérienne IGN (BD ORTHO) — Licence Ouverte. '
+   'Le terrain, les arbres, les annexes et les accès, que nulle donnée '
+   'structurée ne décrit.</div>') if aerial_img else ''}
 <h2>Photos du lieu</h2>
 {('<div class="pics">' + pics + '</div>') if pics else
  '<p class="meta">Aucune photo ouverte à proximité — ni vue au sol, ni image de contexte.</p>'}
