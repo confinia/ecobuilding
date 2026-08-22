@@ -1989,6 +1989,29 @@ async def quota_preflight(request: Request):
     key = request.headers.get("x-api-key") or request.query_params.get("key")
     sub = _bearer_sub(request)
     tier = None
+    # L'app mobile n'a ni clé ni session : elle s'identifie par son
+    # installation. Sans cette branche, elle recevait le quota ANONYME par IP —
+    # donc un chiffre faux, et sur réseau mobile un chiffre partagé avec des
+    # milliers d'inconnus.
+    device = _device_bucket(request)
+    if device is not None:
+        ent = _credits_get(device)
+        mob_tier = ent.get("tier")
+        beta = (request.headers.get(DEVICE_HEADER) or "").strip() in MOBILE_BETA_IDS
+        if mob_tier and mob_tier in MOBILE_TIERS:
+            included = MOBILE_TIERS[mob_tier]["fiches"]
+            used = (_usage_load().get(_month_key()) or {}).get(device, 0) // CREDIT_COST["report"]
+            plan = "mobile_sub"
+        else:
+            # Les fiches offertes se comptent à VIE, pas par mois.
+            included = None if beta else MOBILE_FREE_REPORTS
+            used = _usage_total(device) // CREDIT_COST["report"]
+            plan = "mobile_beta" if beta else "mobile_free"
+        return {"plan": plan, "tier": mob_tier, "reports_used": used,
+                "reports_included": included,
+                "reports_left": None if included is None else max(0, included - used),
+                # Fiches achetées à l'unité : elles survivent au quota mensuel.
+                "units": int(ent.get("units", 0))}
     if key and key in _load_keys():
         plan = _key_plans().get(key, "free")
         bucket = hashlib.sha256(key.encode()).hexdigest()[:16]

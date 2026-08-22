@@ -141,3 +141,36 @@ def test_grid_is_internally_coherent():
 def test_a_browser_call_is_unaffected():
     """Sans en-tête d'installation, rien ne change pour le web."""
     assert _gate({}, endpoint="lookup") == "anon"
+
+
+def test_quota_preflight_knows_the_installation():
+    """L'app mobile n'a ni clé ni session : sans cette reconnaissance, le
+    pré-vol lui renvoyait le quota ANONYME par IP — un chiffre faux, et sur
+    réseau mobile partagé avec des milliers d'inconnus."""
+    r = client.get("/v1/quota", headers=DEV)
+    assert r.status_code == 200
+    q = r.json()
+    assert q["plan"] == "mobile_free"
+    assert q["reports_included"] == main.MOBILE_FREE_REPORTS
+    assert q["reports_left"] == main.MOBILE_FREE_REPORTS
+    assert q["units"] == 0
+
+    _gate(DEV)                                  # une fiche consommée
+    q = client.get("/v1/quota", headers=DEV).json()
+    assert q["reports_used"] == 1
+    assert q["reports_left"] == main.MOBILE_FREE_REPORTS - 1
+
+    # Un abonnement bascule le décompte sur le quota MENSUEL du palier.
+    bucket = main._device_bucket(type("R", (), {"headers": {"x-install-id": DEV["X-Install-Id"]}})())
+    main._credits_add(bucket, units=3, tier="m30")
+    q = client.get("/v1/quota", headers=DEV).json()
+    assert q["plan"] == "mobile_sub" and q["tier"] == "m30"
+    assert q["reports_included"] == main.MOBILE_TIERS["m30"]["fiches"]
+    assert q["units"] == 3, "les fiches achetées à l'unité ne disparaissent pas"
+
+
+def test_quota_preflight_unchanged_for_the_web():
+    """Sans en-tête d'installation, le web garde exactement son comportement."""
+    q = client.get("/v1/quota").json()
+    assert q["plan"] == "anonymous"
+    assert "units" not in q
