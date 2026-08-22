@@ -41,6 +41,20 @@ map.on('load', () => {
   map.addSource('bdnb', { type: 'vector',
     tiles: [q.get('tiles') || 'https://ecobuilding.confinia.io/api/v1/tiles/batiment_groupe/{z}/{x}/{y}.pbf'],
     minzoom: 14, maxzoom: 14 });   // BDNB ne publie que le z14
+  // Limites de parcelles cadastrales — IGN, Licence Ouverte, sans clé.
+  // « Où s'arrête le terrain ? » est une des premières questions d'un acheteur,
+  // et un volume posé sur un fond de plan n'y répond pas.
+  //
+  // Tuiles VECTORIELLES : la version image imprime le numéro de chaque parcelle
+  // par-dessus la carte, illisible à cette échelle. Ici on ne trace que les
+  // limites, sous les volumes.
+  map.addSource('pci', { type: 'vector',
+    tiles: ['https://data.geopf.fr/tms/1.0.0/PCI/{z}/{x}/{y}.pbf'],
+    minzoom: 13, maxzoom: 16 });
+  map.addLayer({ id: 'pci-parcelles', source: 'pci', 'source-layer': 'parcelle',
+    type: 'line', minzoom: 15,
+    paint: { 'line-color': '#ff8a00', 'line-width': 1.4, 'line-opacity': 0.85 } });
+
   const height = ['coalesce', ['get', 'hauteur_mean'], 6];
   // All buildings dimmed; the target rendered full-opacity so it stands out.
   map.addLayer({ id: 'bdnb-all', source: 'bdnb', 'source-layer': 'sql_statement',

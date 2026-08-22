@@ -379,14 +379,14 @@ def _groundwater_html(gw: dict) -> str:
 
 
 def build_report_pdf(data: dict, photos: list | None = None, map_img: str | None = None,
-                     aerial_img: str | None = None,
+                     aerial_img: str | None = None, aerial_parcels: str | None = None,
                      aerial_outline: str | None = None) -> bytes:
     return HTML(string=_report_html(data, photos, map_img, aerial_img,
-                                    aerial_outline)).write_pdf()
+                                    aerial_parcels, aerial_outline)).write_pdf()
 
 
 def _report_html(data: dict, photos: list | None = None, map_img: str | None = None,
-                 aerial_img: str | None = None,
+                 aerial_img: str | None = None, aerial_parcels: str | None = None,
                  aerial_outline: str | None = None) -> str:
     b = (data.get("buildings") or [{}])[0]
     e = b.get("energy") or {}
@@ -510,7 +510,7 @@ def _report_html(data: dict, photos: list | None = None, map_img: str | None = N
   diagnostic de performance énergétique (DPE) officiel, ni un état des risques et pollutions (ERP)
   réglementaire. Une question sur cette fiche : contact@confinia.io
 </footer>
-{_context_page(data, photos, map_img, aerial_img, aerial_outline)}
+{_context_page(data, photos, map_img, aerial_img, aerial_parcels, aerial_outline)}
 {_traceability_annex(data, photos)}
 """
     return html
@@ -540,8 +540,8 @@ def _target_overlay(outline: str | None) -> str:
 
 
 def _context_page(data: dict, photos: list | None, map_img: str | None = None,
-                  aerial_img: str | None = None,
-                 aerial_outline: str | None = None) -> str:
+                  aerial_img: str | None = None, aerial_parcels: str | None = None,
+                  aerial_outline: str | None = None) -> str:
     """Second PDF page: third-party context — a rendered DPE-3D map of the
     building (#88) + Panoramax imagery. Falls back to an OSM link when the map
     render is unavailable."""
@@ -580,19 +580,22 @@ def _context_page(data: dict, photos: list | None, map_img: str | None = None,
 </header>
 <h1>{address}</h1>
 {(f'<h2>Vue aérienne</h2><div class="aerial"><img class="map3d" src="{aerial_img}"/>'
+   + (f'<img class="parcels" src="{aerial_parcels}"/>' if aerial_parcels else '')
    + _target_overlay(aerial_outline) + '</div>'
-   '<div class="cap">Photo aérienne IGN (BD ORTHO) — Licence Ouverte. '
+   '<div class="cap">Photo aérienne IGN (BD ORTHO)'
+   + (' et limites de parcelles (Parcellaire Express)' if aerial_parcels else '')
+   + ' — Licence Ouverte. '
    + ('Le bâtiment concerné est entouré en cyan. ' if aerial_outline
       else 'Le bâtiment concerné est au centre du repère. ')
    + 'Le terrain, les arbres, les annexes et les accès, que nulle donnée '
    'structurée ne décrit.</div>') if aerial_img else ''}
-<h2>Photos du lieu</h2>
-{('<div class="pics">' + pics + '</div>') if pics else
- '<p class="meta">Aucune photo ouverte à proximité — ni vue au sol, ni image de contexte.</p>'}
+{(f'<h2>Photos du lieu</h2><div class="pics">{pics}</div>') if pics else ''}
 <h2>{"Localisation — carte 3D (DPE)" if map_img else "OpenStreetMap"}</h2>
 {(f'<img class="map3d" src="{map_img}"/>'
   '<div class="cap">Bâtiment ciblé en pleine opacité (voisins atténués), coloré par classe DPE. '
-  'Zoom 18, inclinaison 60°. Fond : OpenStreetMap et contributeurs (ODbL) · Bâtiments &amp; DPE : BDNB (CSTB).</div>')
+  'Limites de parcelles en orange. '
+  'Zoom 18, inclinaison 60°. Fond : OpenStreetMap et contributeurs (ODbL) · Bâtiments &amp; DPE : BDNB (CSTB) '
+  '· Parcelles : IGN Parcellaire Express (Licence Ouverte).</div>')
  if map_img else
  f'<table><tr><td class="k" style="width:30%">Voir la zone sur OSM</td><td>{osm}</td></tr></table>'}
 <footer>
@@ -606,6 +609,12 @@ def _context_page(data: dict, photos: list | None, map_img: str | None = None,
      lotissement se ressemblent et le lecteur ne sait pas lequel est le sien. */
   .aerial {{ position: relative; line-height: 0; }}
   .aerial svg {{ position: absolute; top: 0; left: 0; width: 100%; height: 100%; }}
+  /* Les limites de parcelles, posées sur la photo : « où s'arrête le terrain »
+     est une des premières questions d'un acheteur. Sur le document, le numéro
+     de parcelle a du sens — c'est la référence cadastrale, celle qu'un notaire
+     emploie. À l'écran il ne servait à rien et masquait le reste. */
+  .aerial .parcels {{ position: absolute; top: 0; left: 0; width: 100%;
+                      height: 100%; border-radius: 4pt; opacity: 0.85; }}
   .map3d + .cap {{ font-size: 7.5pt; color: #888; margin-bottom: 4pt; }}
   .pics {{ display: flex; gap: 8pt; flex-wrap: wrap; }}
   .pic img.flat {{ width: 240pt; border-radius: 4pt; }}

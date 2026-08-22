@@ -496,7 +496,12 @@ input.addEventListener("input", () => {
   if (q.length < 3) { list.hidden = true; return; }
   debounce = setTimeout(async () => {
     try {
-      const r = await fetch(`${API}/suggest?q=${encodeURIComponent(q)}`);
+      // Le centre de la carte sert de repère : il suit ce que l'utilisateur
+      // regarde, et ne demande aucune permission. Sans lui, chercher « ecole »
+      // proposait des écoles de toute la France.
+      const c = map && map.getCenter ? map.getCenter() : null;
+      const near = c ? `&lat=${c.lat.toFixed(4)}&lon=${c.lng.toFixed(4)}` : "";
+      const r = await fetch(`${API}/suggest?q=${encodeURIComponent(q)}${near}`);
       const { suggestions } = await r.json();
       list.innerHTML = "";
       suggestions.forEach((s) => {
