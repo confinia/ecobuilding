@@ -33,28 +33,16 @@ mobile/ios/EcoBuilding/*.p8
 # partie commerciale ne doit pas s'y trouver, ni dans son historique.
 mobile/
 
-# Stratégie, prix et monétisation : dépôt privé confinia/ecobuilding-business,
-# cloné ici sous ./business. Rien de tout cela dans un dépôt qui va s'ouvrir.
+# Stratégie, prix, architecture de déploiement, feuille de route : dépôt privé
+# confinia/ecobuilding-business, cloné ici sous ./business. Le code est ouvert,
+# l'information d'affaires ne l'est pas. Les documents n'existent QUE là :
+# aucune copie à la racine, qui finirait par diverger de la version versionnée.
 business/
-BUSINESS.md
-PRICING.md
-MOBILE.md
-IPHONE.md
-TEST_CREEM.md
-TEST_POLAR.md
-STACK_template.md
-STACK_ecobuilding.md
-SPECIFICATIONS.md
-SECURITY.md
-RULES.md
-MOVE.md
-MONITORING.md
-LAUNCH.md
-ISSUES.md
-DEV.md
-DATA.md
-COMMUNICATION.md
-TODO.md
+
+# Applications mobiles : dépôt confinia/ecobuilding-mobile, cloné sous ./mobile.
+# Séparé pour son cycle de vie propre — compilations signées, magasins, versions
+# installées qui survivent des mois à leur serveur.
+mobile/
 
 # Captures réseau de mise au point : volumineuses, et porteuses de jetons de
 # session. Jamais versionnées.
