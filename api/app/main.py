@@ -360,21 +360,76 @@ async def _building_map_png(lon, lat, bdnb_id, bearing: float = -30.0):
 IGN_WMS_URL = "https://data.geopf.fr/wms-r/wms"
 
 
-async def _aerial_png(lon, lat, span: float = 0.0009) -> str | None:
-    """Vue aérienne centrée sur le bâtiment, en donnée intégrée à la fiche.
+async def _building_ring(bdnb_id) -> list[tuple[float, float]] | None:
+    """L'emprise du bâtiment en WGS84, ou None.
+
+    Les géométries BDNB sont en Lambert-93 (EPSG:2154) ; tout le reste de la
+    fiche raisonne en degrés.
+    """
+    if not bdnb_id:
+        return None
+    try:
+        rows = await _cached_get_json(
+            BDNB_BASE_URL,
+            {"batiment_groupe_id": f"eq.{bdnb_id}", "select": "geom_groupe", "limit": "1"},
+            ttl=86400)
+        if not isinstance(rows, list) or not rows:
+            return None
+        raw = rows[0].get("geom_groupe")
+        if not raw:
+            return None
+        import json as _json
+
+        from pyproj import Transformer
+
+        to_wgs84 = Transformer.from_crs(2154, 4326, always_xy=True)
+        geom = _json.loads(raw) if isinstance(raw, str) else dict(raw)
+        polygons = (geom["coordinates"] if geom["type"] == "MultiPolygon"
+                    else [geom["coordinates"]])
+        rings = []
+        for polygon in polygons:
+            ring = polygon[0] if polygon else None
+            if ring and len(ring) > 3:
+                rings.append([to_wgs84.transform(c[0], c[1]) for c in ring])
+        # Un « bâtiment groupe » peut réunir plusieurs corps : on garde le plus
+        # étendu, celui que le lecteur identifiera comme « la maison ».
+        return max(rings, key=len) if rings else None
+    except Exception as e:
+        log.warning("emprise indisponible (%s): %s", bdnb_id, e)
+        return None
+
+
+async def _aerial_view(bdnb_id, lon, lat, span: float = 0.0009) -> tuple[str | None, str | None]:
+    """Vue aérienne du bâtiment, et son emprise tracée par-dessus.
 
     Le rendu 3D dit la CLASSE ÉNERGÉTIQUE ; la photo dit ce qu'on ACHÈTE — le
     terrain, les arbres, la piscine, le portail, l'allée. Rien de tout cela
     n'existe en donnée structurée, et c'est précisément ce qu'un acheteur
     regarde en premier (#200, #258).
 
-    Photo IGN sous Licence Ouverte, sans clé ni compte. Une panne renvoie None :
-    la fiche se génère toujours, simplement sans cette vue.
+    Mais une photo de lotissement où cinq pavillons se ressemblent ne dit pas
+    lequel est le sien (#263). D'où deux précautions : la photo est cadrée sur
+    le BÂTIMENT et non sur le point d'adresse — souvent situé au portail, le
+    bâtiment se retrouvait en haut à gauche —, et son emprise est tracée dessus.
+
+    Photo IGN sous Licence Ouverte, sans clé ni compte. Une panne renvoie
+    (None, None) : la fiche se génère toujours, simplement sans cette vue.
     """
     if lon is None or lat is None:
-        return None
-    # Cadre 16/9 autour du point, pour la même largeur que le rendu 3D.
-    bbox = f"{lon - span},{lat - span * 0.56},{lon + span},{lat + span * 0.56}"
+        return None, None
+
+    ring = await _building_ring(bdnb_id)
+    centre_lon, centre_lat = lon, lat
+    if ring:
+        xs = [p[0] for p in ring]
+        ys = [p[1] for p in ring]
+        centre_lon = (min(xs) + max(xs)) / 2
+        centre_lat = (min(ys) + max(ys)) / 2
+
+    # Cadre 16/9 autour du centre, pour la même largeur que le rendu 3D.
+    west, south = centre_lon - span, centre_lat - span * 0.56
+    width, height = span * 2, span * 2 * 0.56
+    bbox = f"{west},{south},{centre_lon + span},{centre_lat + span * 0.56}"
     try:
         r = await _client.get(IGN_WMS_URL, params={
             "SERVICE": "WMS", "VERSION": "1.3.0", "REQUEST": "GetMap",
@@ -384,12 +439,21 @@ async def _aerial_png(lon, lat, span: float = 0.0009) -> str | None:
         }, timeout=25.0)
         r.raise_for_status()
         if not r.headers.get("content-type", "").startswith("image/"):
-            return None                      # le WMS répond ses erreurs en XML
+            return None, None                # le WMS répond ses erreurs en XML
         import base64
-        return "data:image/jpeg;base64," + base64.b64encode(r.content).decode()
+        image = "data:image/jpeg;base64," + base64.b64encode(r.content).decode()
     except Exception as e:
         log.warning("vue aérienne indisponible (%s, %s): %s", lon, lat, e)
-        return None
+        return None, None
+
+    outline = None
+    if ring:
+        # Repère 0–100 posé sur l'image : l'axe des ordonnées d'une image
+        # descend, celui du monde monte.
+        outline = " ".join(
+            f"{(plon - west) / width * 100:.2f},{(1 - (plat - south) / height) * 100:.2f}"
+            for plon, plat in ring)
+    return image, outline
 
 
 def _rental_ban(dpe_class: str | None) -> dict | None:
@@ -2593,10 +2657,12 @@ async def report(
             pass
     # Les deux vues en parallèle : le rendu 3D et la photo aérienne se
     # complètent, et les demander l'une après l'autre doublerait l'attente.
-    map_img, aerial_img = await asyncio.gather(
+    map_img, aerial = await asyncio.gather(
         _building_map_png(q.get("lon"), q.get("lat"), bdnb_id),
-        _aerial_png(q.get("lon"), q.get("lat")))
-    pdf = build_report_pdf(data, photos=photos, map_img=map_img, aerial_img=aerial_img)
+        _aerial_view(bdnb_id, q.get("lon"), q.get("lat")))
+    aerial_img, aerial_outline = aerial
+    pdf = build_report_pdf(data, photos=photos, map_img=map_img, aerial_img=aerial_img,
+                           aerial_outline=aerial_outline)
     _tile_write(pdf_path, pdf)          # même écriture atomique que les tuiles
     M_REPORTS.add(1, {"has_dpe": str(bool((data["buildings"][0].get("energy") or {}).get("dpe_class"))).lower()})
     return Response(

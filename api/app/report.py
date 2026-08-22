@@ -379,12 +379,15 @@ def _groundwater_html(gw: dict) -> str:
 
 
 def build_report_pdf(data: dict, photos: list | None = None, map_img: str | None = None,
-                     aerial_img: str | None = None) -> bytes:
-    return HTML(string=_report_html(data, photos, map_img, aerial_img)).write_pdf()
+                     aerial_img: str | None = None,
+                     aerial_outline: str | None = None) -> bytes:
+    return HTML(string=_report_html(data, photos, map_img, aerial_img,
+                                    aerial_outline)).write_pdf()
 
 
 def _report_html(data: dict, photos: list | None = None, map_img: str | None = None,
-                 aerial_img: str | None = None) -> str:
+                 aerial_img: str | None = None,
+                 aerial_outline: str | None = None) -> str:
     b = (data.get("buildings") or [{}])[0]
     e = b.get("energy") or {}
     ban = e.get("rental_ban") or {}
@@ -507,14 +510,38 @@ def _report_html(data: dict, photos: list | None = None, map_img: str | None = N
   diagnostic de performance énergétique (DPE) officiel, ni un état des risques et pollutions (ERP)
   réglementaire. Une question sur cette fiche : contact@confinia.io
 </footer>
-{_context_page(data, photos, map_img, aerial_img)}
+{_context_page(data, photos, map_img, aerial_img, aerial_outline)}
 {_traceability_annex(data, photos)}
 """
     return html
 
 
+def _target_overlay(outline: str | None) -> str:
+    """Le tracé posé sur la photo.
+
+    DEUX traits superposés : un large et sombre en dessous, un fin et clair
+    au-dessus. Un trait d'une seule couleur disparaît — le clair sur une toiture
+    en tuiles claires, le sombre sur des arbres. Le liseré garantit le contraste
+    quel que soit ce qu'il y a dessous.
+    """
+    if outline:
+        shape = (f'<polygon points="{outline}" fill="rgba(0,224,255,0.12)" '
+                 'stroke="#00303a" stroke-width="1.4" stroke-linejoin="round"/>'
+                 f'<polygon points="{outline}" fill="none" '
+                 'stroke="#00E0FF" stroke-width="0.7" stroke-linejoin="round"/>')
+    else:
+        # Sans géométrie, la photo est de toute façon centrée sur le point :
+        # un réticule au centre vaut mieux qu'aucune indication.
+        shape = ('<circle cx="50" cy="50" r="7" fill="none" stroke="#00303a" '
+                 'stroke-width="1.6"/>'
+                 '<circle cx="50" cy="50" r="7" fill="none" stroke="#00E0FF" '
+                 'stroke-width="0.8"/>')
+    return (f'<svg viewBox="0 0 100 100" preserveAspectRatio="none">{shape}</svg>')
+
+
 def _context_page(data: dict, photos: list | None, map_img: str | None = None,
-                  aerial_img: str | None = None) -> str:
+                  aerial_img: str | None = None,
+                 aerial_outline: str | None = None) -> str:
     """Second PDF page: third-party context — a rendered DPE-3D map of the
     building (#88) + Panoramax imagery. Falls back to an OSM link when the map
     render is unavailable."""
@@ -552,9 +579,12 @@ def _context_page(data: dict, photos: list | None, map_img: str | None = None,
   <div class="doctitle">Contexte — sources tierces</div>
 </header>
 <h1>{address}</h1>
-{(f'<h2>Vue aérienne</h2><img class="map3d" src="{aerial_img}"/>'
+{(f'<h2>Vue aérienne</h2><div class="aerial"><img class="map3d" src="{aerial_img}"/>'
+   + _target_overlay(aerial_outline) + '</div>'
    '<div class="cap">Photo aérienne IGN (BD ORTHO) — Licence Ouverte. '
-   'Le terrain, les arbres, les annexes et les accès, que nulle donnée '
+   + ('Le bâtiment concerné est entouré en cyan. ' if aerial_outline
+      else 'Le bâtiment concerné est au centre du repère. ')
+   + 'Le terrain, les arbres, les annexes et les accès, que nulle donnée '
    'structurée ne décrit.</div>') if aerial_img else ''}
 <h2>Photos du lieu</h2>
 {('<div class="pics">' + pics + '</div>') if pics else
@@ -572,6 +602,10 @@ def _context_page(data: dict, photos: list | None, map_img: str | None = None,
 </footer>
 <style>
   .map3d {{ width: 100%; border-radius: 4pt; margin-bottom: 3pt; }}
+  /* Le contour est POSÉ sur la photo : sans lui, cinq pavillons d'un
+     lotissement se ressemblent et le lecteur ne sait pas lequel est le sien. */
+  .aerial {{ position: relative; line-height: 0; }}
+  .aerial svg {{ position: absolute; top: 0; left: 0; width: 100%; height: 100%; }}
   .map3d + .cap {{ font-size: 7.5pt; color: #888; margin-bottom: 4pt; }}
   .pics {{ display: flex; gap: 8pt; flex-wrap: wrap; }}
   .pic img.flat {{ width: 240pt; border-radius: 4pt; }}
