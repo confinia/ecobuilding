@@ -197,3 +197,13 @@ def test_quota_preflight_unchanged_for_the_web():
     q = client.get("/v1/quota").json()
     assert q["plan"] == "anonymous"
     assert "units" not in q
+
+
+def test_quota_says_when_it_reopens():
+    """« Demain » ne dit rien à 23 h 50 : le serveur donne l'instant exact, et
+    le client en tire une durée."""
+    from datetime import datetime
+    q = client.get("/v1/quota", headers=DEV).json()
+    reset = datetime.fromisoformat(q["resets_at"])
+    assert reset > datetime.now().astimezone(), "la réouverture doit être future"
+    assert reset.hour == 0 and reset.minute == 0, "minuit, pas une heure arbitraire"

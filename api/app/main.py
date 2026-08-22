@@ -1418,7 +1418,7 @@ M_REPORTS = _meter.create_counter("ecobuilding_reports", description="PDF fiches
 import hashlib
 import secrets as _secrets
 from collections import defaultdict
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 KEYS_PATH = os.environ.get("KEYS_PATH", "/leads/keys.jsonl")
 ANON_DAILY_CAP = int(os.environ.get("ANON_DAILY_CAP", "20"))
@@ -1720,6 +1720,19 @@ def _credits_add(bucket: str, units: int = 0, **extra) -> dict:
     except OSError as e:
         log.warning("crédits non écrits (%s): %s", bucket, e)
     return entry
+
+
+def _quota_reset(month: bool = False) -> str:
+    """Instant de remise à zéro du quota, en ISO 8601 avec fuseau.
+
+    Le client affiche une DURÉE (« dans 3 heures ») : « demain » est inutile à
+    23 h 50, et faux pour qui vient de changer de fuseau."""
+    now = datetime.now().astimezone()
+    if month:
+        nxt = (now.replace(day=28) + timedelta(days=4)).replace(day=1)
+    else:
+        nxt = now + timedelta(days=1)
+    return nxt.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
 
 
 def _daily_load() -> dict:
@@ -2067,6 +2080,10 @@ async def quota_preflight(request: Request):
                 # « par jour » plutôt qu'un solde mensuel : le client doit
                 # pouvoir le DIRE, pas seulement afficher un nombre.
                 "period": "month" if mob_tier else "day",
+                # Instant EXACT de réouverture. « Demain » ne dit rien à 23 h 50 ;
+                # le client peut en tirer « dans 10 minutes ». Le serveur seul
+                # connaît la borne, c'est donc lui qui la donne.
+                "resets_at": _quota_reset(month=bool(mob_tier)),
                 # Bâtiments déjà obtenus aujourd'hui : les redemander est libre.
                 "free_again": _daily_seen(device)}
     if key and key in _load_keys():
