@@ -1519,6 +1519,17 @@ MOBILE_UNIT_EUR = float(os.environ.get("MOBILE_UNIT_EUR", "0.99"))
 # — on ne teste pas un outil de terrain trois fois. L'objectif de cette étape
 # est l'adhésion, pas le revenu (13 abonnés couvrent les frais de l'année).
 MOBILE_FREE_REPORTS = int(os.environ.get("MOBILE_FREE_REPORTS", "10"))
+# Limite mobile exprimée en BÂTIMENTS DISTINCTS PAR JOUR plutôt qu'en total
+# mensuel (demande opérateur 2026-08-22). Deux raisons : « 10 par jour » se
+# comprend sans calcul, là où un solde mensuel oblige à se rationner ; et
+# retélécharger la MÊME fiche ne doit rien coûter — c'est le même document, et
+# le refuser passerait pour une panne.
+MOBILE_DAILY_REPORTS = int(os.environ.get("MOBILE_DAILY_REPORTS", "10"))
+DAILY_PATH = os.environ.get("DAILY_PATH", "/leads/mobile_daily.json")
+# Cache des fiches PDF : 24 h. Une fiche coûte 15 à 45 s de rendu ; la même
+# demandée deux fois doit être servie, pas refabriquée.
+PDF_CACHE_DIR = os.environ.get("PDF_CACHE_DIR", "/tiles/pdf")
+PDF_CACHE_TTL = float(os.environ.get("PDF_CACHE_TTL", str(24 * 3600)))
 # Le quota anonyme du web se compte par IP — inutilisable sur réseau mobile, où
 # des milliers d'abonnés partagent une adresse : les fiches offertes d'un
 # utilisateur seraient consommées par des inconnus. On compte donc par
@@ -1711,7 +1722,40 @@ def _credits_add(bucket: str, units: int = 0, **extra) -> dict:
     return entry
 
 
-def _mobile_gate(request: Request, endpoint: str) -> str | None:
+def _daily_load() -> dict:
+    try:
+        with open(DAILY_PATH) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def _daily_seen(bucket: str) -> list:
+    """Bâtiments déjà servis à cette installation AUJOURD'HUI."""
+    e = _daily_load().get(bucket) or {}
+    return e.get("ids", []) if e.get("day") == date.today().isoformat() else []
+
+
+def _daily_add(bucket: str, subject: str) -> None:
+    data = _daily_load()
+    today = date.today().isoformat()
+    e = data.get(bucket) or {}
+    if e.get("day") != today:
+        e = {"day": today, "ids": []}
+    if subject not in e["ids"]:
+        e["ids"].append(subject)
+    data[bucket] = e
+    try:
+        os.makedirs(os.path.dirname(DAILY_PATH), exist_ok=True)
+        tmp = DAILY_PATH + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(data, f)
+        os.replace(tmp, DAILY_PATH)
+    except OSError as e2:
+        log.warning("journal quotidien non écrit (%s): %s", bucket, e2)
+
+
+def _mobile_gate(request: Request, endpoint: str, subject: str | None = None) -> str | None:
     """Échelle mobile (MOBILE.md §5.2) : 3 fiches offertes par installation,
     puis fiches à l'unité et/ou abonnement. Renvoie None si l'appel ne vient
     pas de l'app (pas d'en-tête d'installation)."""
@@ -1728,7 +1772,12 @@ def _mobile_gate(request: Request, endpoint: str) -> str | None:
         return "mobile_beta"
     ent = _credits_get(bucket)
     tier = ent.get("tier")
-    used_total = _usage_total(bucket) // CREDIT_COST["report"]
+
+    # 0. Fiche DÉJÀ obtenue aujourd'hui : gratuite et non décomptée. C'est le
+    #    même document ; le refuser au motif d'un quota passerait pour une panne.
+    seen = _daily_seen(bucket)
+    if subject and subject in seen:
+        return "mobile_repeat"
 
     # 1. abonnement en cours : quota mensuel du palier
     if tier and tier in MOBILE_TIERS:
@@ -1745,24 +1794,27 @@ def _mobile_gate(request: Request, endpoint: str) -> str | None:
                                f"({MOBILE_TIERS[nxt]['eur']:.2f} €/mois)."
                                if nxt else f"Écrivez-nous : {SUPPORT_EMAIL}"))
 
-    # 2. fiches offertes (à vie, par installation)
-    if used_total < MOBILE_FREE_REPORTS:
+    # 2. quota du jour, en bâtiments DISTINCTS
+    if len(seen) < MOBILE_DAILY_REPORTS:
+        if subject:
+            _daily_add(bucket, subject)
         _usage_add(bucket, CREDIT_COST["report"])
         return "mobile_free"
 
     # 3. fiches achetées à l'unité
     if int(ent.get("units", 0)) > 0:
         _credits_add(bucket, units=-1)
+        if subject:
+            _daily_add(bucket, subject)
         _usage_add(bucket, CREDIT_COST["report"])
         return "mobile_unit"
 
-    raise HTTPException(429, f"Vos {MOBILE_FREE_REPORTS} fiches offertes sont "
-                        f"utilisées. Fiche à l'unité : {MOBILE_UNIT_EUR:.2f} € — "
-                        f"ou {MOBILE_TIERS['m30']['eur']:.2f} €/mois pour "
-                        f"{MOBILE_TIERS['m30']['fiches']} fiches.")
+    raise HTTPException(429, f"Limite du jour atteinte : {MOBILE_DAILY_REPORTS} "
+                        "bâtiments différents. Elle se remet à zéro demain, et "
+                        "les fiches déjà obtenues aujourd'hui restent accessibles.")
 
 
-def _quota_gate(request: Request, endpoint: str):
+def _quota_gate(request: Request, endpoint: str, subject: str | None = None):
     """Tiered access (#206), subscription-first ladder:
       anonymous      -> ANON_MONTHLY_REPORTS fiches/month per IP
       free account   -> FREE_ACCOUNT_REPORTS fiches/month (API key)
@@ -1770,7 +1822,7 @@ def _quota_gate(request: Request, endpoint: str):
     Returns the caller kind for metrics."""
     # L'app mobile s'identifie par son installation, sans compte ni clé : sa
     # propre échelle passe donc AVANT (voir _mobile_gate).
-    mobile = _mobile_gate(request, endpoint)
+    mobile = _mobile_gate(request, endpoint, subject)
     if mobile:
         return mobile
     key = request.headers.get("x-api-key") or request.query_params.get("key")
@@ -2003,15 +2055,20 @@ async def quota_preflight(request: Request):
             used = (_usage_load().get(_month_key()) or {}).get(device, 0) // CREDIT_COST["report"]
             plan = "mobile_sub"
         else:
-            # Les fiches offertes se comptent à VIE, pas par mois.
-            included = None if beta else MOBILE_FREE_REPORTS
-            used = _usage_total(device) // CREDIT_COST["report"]
+            # Limite du JOUR, en bâtiments distincts.
+            included = None if beta else MOBILE_DAILY_REPORTS
+            used = len(_daily_seen(device))
             plan = "mobile_beta" if beta else "mobile_free"
         return {"plan": plan, "tier": mob_tier, "reports_used": used,
                 "reports_included": included,
                 "reports_left": None if included is None else max(0, included - used),
                 # Fiches achetées à l'unité : elles survivent au quota mensuel.
-                "units": int(ent.get("units", 0))}
+                "units": int(ent.get("units", 0)),
+                # « par jour » plutôt qu'un solde mensuel : le client doit
+                # pouvoir le DIRE, pas seulement afficher un nombre.
+                "period": "month" if mob_tier else "day",
+                # Bâtiments déjà obtenus aujourd'hui : les redemander est libre.
+                "free_again": _daily_seen(device)}
     if key and key in _load_keys():
         plan = _key_plans().get(key, "free")
         bucket = hashlib.sha256(key.encode()).hexdigest()[:16]
@@ -2446,7 +2503,21 @@ async def report(
 
     from .report import build_report_pdf
 
-    _quota_gate(request, "report")
+    _quota_gate(request, "report", subject=bdnb_id)
+    # Cache 24 h de la fiche elle-même : redemander le MÊME document ne doit ni
+    # relancer 15 à 45 s de rendu, ni consommer le quota amont. La clé inclut
+    # l'adresse cherchée, qui TITRE la fiche (#146) — deux titres différents
+    # sont deux documents différents.
+    pdf_key = hashlib.sha256(
+        f"{bdnb_id}|{address or ''}|{round(lon, 4) if lon else ''}|"
+        f"{round(lat, 4) if lat else ''}".encode()).hexdigest()[:24]
+    pdf_path = os.path.join(PDF_CACHE_DIR, pdf_key + ".pdf")
+    cached = _tile_read(pdf_path, PDF_CACHE_TTL)
+    if cached:
+        M_CACHE.add(1, {"result": "hit_pdf"})
+        return Response(cached, media_type="application/pdf",
+                        headers={"Content-Disposition":
+                                 f'inline; filename="ecobuilding-{bdnb_id}.pdf"'})
     data = await building(bdnb_id, lon, lat)
     q = data.get("query", {})
     if address:
@@ -2470,6 +2541,7 @@ async def report(
             pass
     map_img = await _building_map_png(q.get("lon"), q.get("lat"), bdnb_id)
     pdf = build_report_pdf(data, photos=photos, map_img=map_img)
+    _tile_write(pdf_path, pdf)          # même écriture atomique que les tuiles
     M_REPORTS.add(1, {"has_dpe": str(bool((data["buildings"][0].get("energy") or {}).get("dpe_class"))).lower()})
     return Response(
         pdf,

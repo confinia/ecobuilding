@@ -28,69 +28,90 @@ OTHER = {"X-Install-Id": "install-fedcba9876543210"}
 def _isolated_store(tmp_path, monkeypatch):
     monkeypatch.setattr(main, "USAGE_PATH", str(tmp_path / "usage.json"))
     monkeypatch.setattr(main, "CREDITS_PATH", str(tmp_path / "credits.json"))
+    monkeypatch.setattr(main, "DAILY_PATH", str(tmp_path / "daily.json"))
     yield
 
 
-def _gate(headers, endpoint="report"):
+def _gate(headers, endpoint="report", subject="bdnb-bg-A"):
     """Appelle la porte de quota comme le ferait la route fiche."""
     from starlette.datastructures import Headers
     from starlette.requests import Request
 
     scope = {"type": "http", "method": "GET", "path": "/v1/report/x.pdf",
              "headers": Headers(headers).raw, "query_string": b""}
-    return main._quota_gate(Request(scope), endpoint)
+    return main._quota_gate(Request(scope), endpoint, subject=subject)
 
 
-def test_free_reports_then_the_wall():
-    free = main.MOBILE_FREE_REPORTS
-    assert free >= 10, "sous 10 essais, l'usage n'a pas le temps de s'installer"
-    assert [_gate(DEV) for _ in range(free)] == ["mobile_free"] * free
+def test_daily_limit_counts_distinct_buildings():
+    """La limite est quotidienne et porte sur des bâtiments DIFFÉRENTS."""
+    n = main.MOBILE_DAILY_REPORTS
+    assert n >= 10, "sous 10 par jour, l'usage de terrain n'a pas la place"
+    for i in range(n):
+        assert _gate(DEV, subject=f"bdnb-bg-{i}") == "mobile_free"
     with pytest.raises(main.HTTPException) as e:
-        _gate(DEV)
+        _gate(DEV, subject="bdnb-bg-TROP")
     assert e.value.status_code == 429
-    # Le mur doit dire le prix, pas seulement refuser (auto-dépannage, #212).
-    assert "0.99" in e.value.detail or "0,99" in e.value.detail
-    assert "4.99" in e.value.detail or "4,99" in e.value.detail
+    # Le mur doit dire quand ça repart, sinon il ressemble à une panne.
+    assert "demain" in e.value.detail
+
+
+def test_same_building_again_is_free():
+    """Redemander la MÊME fiche ne coûte rien : c'est le même document, et le
+    refuser au motif d'un quota passerait pour une panne."""
+    assert _gate(DEV, subject="bdnb-bg-X") == "mobile_free"
+    for _ in range(50):
+        assert _gate(DEV, subject="bdnb-bg-X") == "mobile_repeat"
+    # Et cela n'a pas entamé le quota du jour.
+    for i in range(main.MOBILE_DAILY_REPORTS - 1):
+        assert _gate(DEV, subject=f"bdnb-bg-autre-{i}") == "mobile_free"
 
 
 def test_free_quota_is_per_installation_not_shared():
     """Sur réseau mobile, l'IP est partagée par des milliers d'abonnés : le
     compteur doit suivre l'installation, sinon les fiches offertes d'un
     utilisateur sont consommées par des inconnus."""
-    for _ in range(main.MOBILE_FREE_REPORTS):
-        _gate(DEV)
-    assert _gate(OTHER) == "mobile_free", "une autre installation doit repartir à zéro"
+    for i in range(main.MOBILE_DAILY_REPORTS):
+        _gate(DEV, subject=f"b{i}")
+    assert _gate(OTHER, subject="b0") == "mobile_free", \
+        "une autre installation doit repartir à zéro"
 
 
-def test_free_quota_is_lifetime_not_monthly(monkeypatch):
-    """Les fiches offertes sont un ESSAI : le mois suivant ne les recharge pas."""
-    for _ in range(main.MOBILE_FREE_REPORTS):
-        _gate(DEV)
-    monkeypatch.setattr(main, "_month_key", lambda: "2099-12")
+def test_daily_limit_resets_the_next_day(monkeypatch):
+    """« Par jour » doit vraiment repartir le lendemain."""
+    import datetime
+    for i in range(main.MOBILE_DAILY_REPORTS):
+        _gate(DEV, subject=f"b{i}")
     with pytest.raises(main.HTTPException):
-        _gate(DEV)
+        _gate(DEV, subject="bZ")
+
+    class Tomorrow(datetime.date):
+        @classmethod
+        def today(cls):
+            return datetime.date(2099, 12, 31)
+    monkeypatch.setattr(main, "date", Tomorrow)
+    assert _gate(DEV, subject="bZ") == "mobile_free"
 
 
 def test_unit_purchase_is_consumed_one_by_one():
-    for _ in range(main.MOBILE_FREE_REPORTS):
-        _gate(DEV)
+    for i in range(main.MOBILE_DAILY_REPORTS):
+        _gate(DEV, subject=f"b{i}")
     bucket = main._device_bucket(type("R", (), {"headers": {"x-install-id": DEV["X-Install-Id"]}})())
     main._credits_add(bucket, units=2)
-    assert _gate(DEV) == "mobile_unit"
-    assert _gate(DEV) == "mobile_unit"
+    assert _gate(DEV, subject="bX") == "mobile_unit"
+    assert _gate(DEV, subject="bY") == "mobile_unit"
     with pytest.raises(main.HTTPException):
-        _gate(DEV)                     # les 2 crédits sont épuisés
+        _gate(DEV, subject="bZ")       # les 2 crédits sont épuisés
 
 
 def test_subscription_quota_is_monthly_and_upsells(monkeypatch):
     bucket = main._device_bucket(type("R", (), {"headers": {"x-install-id": DEV["X-Install-Id"]}})())
     main._credits_add(bucket, tier="m30")
-    assert _gate(DEV) == "mobile_sub"
+    assert _gate(DEV, subject="bA") == "mobile_sub"
     # Quota du palier atteint -> proposition du palier supérieur, pas un refus sec.
     monkeypatch.setattr(main, "_usage_load",
                         lambda: {main._month_key(): {bucket: 30 * main.CREDIT_COST["report"]}})
     with pytest.raises(main.HTTPException) as e:
-        _gate(DEV)
+        _gate(DEV, subject="bB")
     assert e.value.status_code == 429
     assert MOBILE_LABEL_150 in e.value.detail
 
@@ -151,14 +172,16 @@ def test_quota_preflight_knows_the_installation():
     assert r.status_code == 200
     q = r.json()
     assert q["plan"] == "mobile_free"
-    assert q["reports_included"] == main.MOBILE_FREE_REPORTS
-    assert q["reports_left"] == main.MOBILE_FREE_REPORTS
+    assert q["reports_included"] == main.MOBILE_DAILY_REPORTS
+    assert q["reports_left"] == main.MOBILE_DAILY_REPORTS
+    assert q["period"] == "day"
     assert q["units"] == 0
 
-    _gate(DEV)                                  # une fiche consommée
+    _gate(DEV, subject="bdnb-bg-Q")             # une fiche consommée
     q = client.get("/v1/quota", headers=DEV).json()
     assert q["reports_used"] == 1
-    assert q["reports_left"] == main.MOBILE_FREE_REPORTS - 1
+    assert q["reports_left"] == main.MOBILE_DAILY_REPORTS - 1
+    assert q["free_again"] == ["bdnb-bg-Q"], "on doit savoir ce qui est déjà obtenu"
 
     # Un abonnement bascule le décompte sur le quota MENSUEL du palier.
     bucket = main._device_bucket(type("R", (), {"headers": {"x-install-id": DEV["X-Install-Id"]}})())
