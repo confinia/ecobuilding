@@ -594,7 +594,8 @@ def _context_page(data: dict, photos: list | None, map_img: str | None = None,
       else 'Le bâtiment concerné est au centre du repère. ')
    + 'Le terrain, les arbres, les annexes et les accès, que nulle donnée '
    'structurée ne décrit.</div>') if aerial_img else ''}
-{(f'<h2>Photos du lieu</h2><div class="pics">{pics}</div>') if pics else ''}
+{(f'<section class="bloc"><h2>Photos du lieu</h2>'
+   f'<div class="pics">{pics}</div></section>') if pics else ''}
 <h2>{"Localisation — carte 3D (DPE)" if map_img else "OpenStreetMap"}</h2>
 {(f'<img class="map3d" src="{map_img}"/>'
   '<div class="cap">Bâtiment ciblé en pleine opacité (voisins atténués), coloré par classe DPE. '
@@ -622,6 +623,14 @@ def _context_page(data: dict, photos: list | None, map_img: str | None = None,
                       height: 100%; border-radius: 4pt; opacity: 0.85; }}
   .map3d + .cap {{ font-size: 7.5pt; color: #888; margin-bottom: 4pt; }}
   .pics {{ display: flex; gap: 8pt; flex-wrap: wrap; }}
+  /* Titre et photos SOLIDAIRES. `.pics` est un conteneur flex, que WeasyPrint
+     traite comme insécable : il basculait donc en entier à la page suivante en
+     laissant son titre derrière, suivi d'un grand blanc. `break-after: avoid`
+     sur le titre n'y change rien — le moteur ne repousse pas la boîte qui
+     précède. Les enfermer dans un même bloc les fait voyager ensemble.
+     Si le bloc dépassait une page entière, la règle serait ignorée et l'on
+     retomberait sur l'ancien comportement : quatre photos tiennent largement. */
+  .bloc {{ break-inside: avoid; page-break-inside: avoid; }}
   .pic img.flat {{ width: 240pt; border-radius: 4pt; }}
   /* Central forward crop of an equirectangular 360 (2:1 image): box shows the
      central 1/4 width (90 deg) x 1/4 height (45 deg). */
