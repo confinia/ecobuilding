@@ -12,6 +12,17 @@ services:
       default:
       internal:
         aliases: [render]
+    # Le rendu tire les tuiles de bâtiments par l'URL PUBLIQUE que l'API lui
+    # passe. Or un conteneur sans privilèges ne peut pas joindre l'IP publique
+    # de son propre hôte : la connexion est refusée (retour en épingle). On
+    # renvoie donc ces noms vers l'hôte lui-même, où l'edge écoute — le
+    # certificat correspond, le SNI aussi, rien d'autre ne change.
+    #
+    # Sans cela le rendu échoue en 500 et la fiche sort sans sa carte 3D.
+    extra_hosts:
+      - "ecobuilding.confinia.io:host-gateway"
+      - "staging.ecobuilding.confinia.io:host-gateway"
+      - "sandbox.ecobuilding.confinia.io:host-gateway"
     restart: unless-stopped
 
 networks:

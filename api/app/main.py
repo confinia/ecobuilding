@@ -32,6 +32,7 @@ BAN_REVERSE_URL = "https://api-adresse.data.gouv.fr/reverse/"
 # issue #28) with config only, no code change. Defaults = the public BDNB API.
 BDNB_URL = os.environ.get(
     "BDNB_URL", "https://api.bdnb.io/v1/bdnb/donnees/batiment_groupe_complet/adresse")
+BAN_REVERSE_URL = "https://api-adresse.data.gouv.fr/reverse/"
 BDNB_BASE_URL = os.environ.get(
     "BDNB_BASE_URL", "https://api.bdnb.io/v1/bdnb/donnees/batiment_groupe_complet")
 # Group <-> addresses relation (#152): a bâtiment groupe can span several
@@ -360,36 +361,112 @@ async def _building_map_png(lon, lat, bdnb_id, bearing: float = -30.0):
 IGN_WMS_URL = "https://data.geopf.fr/wms-r/wms"
 
 
-async def _aerial_png(lon, lat, span: float = 0.0009) -> str | None:
-    """Vue aérienne centrée sur le bâtiment, en donnée intégrée à la fiche.
+async def _building_ring(bdnb_id) -> list[tuple[float, float]] | None:
+    """L'emprise du bâtiment en WGS84, ou None.
+
+    Les géométries BDNB sont en Lambert-93 (EPSG:2154) ; tout le reste de la
+    fiche raisonne en degrés.
+    """
+    if not bdnb_id:
+        return None
+    try:
+        rows = await _cached_get_json(
+            BDNB_BASE_URL,
+            {"batiment_groupe_id": f"eq.{bdnb_id}", "select": "geom_groupe", "limit": "1"},
+            ttl=86400)
+        if not isinstance(rows, list) or not rows:
+            return None
+        raw = rows[0].get("geom_groupe")
+        if not raw:
+            return None
+        import json as _json
+
+        from pyproj import Transformer
+
+        to_wgs84 = Transformer.from_crs(2154, 4326, always_xy=True)
+        geom = _json.loads(raw) if isinstance(raw, str) else dict(raw)
+        polygons = (geom["coordinates"] if geom["type"] == "MultiPolygon"
+                    else [geom["coordinates"]])
+        rings = []
+        for polygon in polygons:
+            ring = polygon[0] if polygon else None
+            if ring and len(ring) > 3:
+                rings.append([to_wgs84.transform(c[0], c[1]) for c in ring])
+        # Un « bâtiment groupe » peut réunir plusieurs corps : on garde le plus
+        # étendu, celui que le lecteur identifiera comme « la maison ».
+        return max(rings, key=len) if rings else None
+    except Exception as e:
+        log.warning("emprise indisponible (%s): %s", bdnb_id, e)
+        return None
+
+
+async def _aerial_view(bdnb_id, lon, lat, span: float = 0.0009) -> dict:
+    """Vue aérienne du bâtiment, et son emprise tracée par-dessus.
 
     Le rendu 3D dit la CLASSE ÉNERGÉTIQUE ; la photo dit ce qu'on ACHÈTE — le
     terrain, les arbres, la piscine, le portail, l'allée. Rien de tout cela
     n'existe en donnée structurée, et c'est précisément ce qu'un acheteur
     regarde en premier (#200, #258).
 
-    Photo IGN sous Licence Ouverte, sans clé ni compte. Une panne renvoie None :
-    la fiche se génère toujours, simplement sans cette vue.
+    Mais une photo de lotissement où cinq pavillons se ressemblent ne dit pas
+    lequel est le sien (#263). D'où deux précautions : la photo est cadrée sur
+    le BÂTIMENT et non sur le point d'adresse — souvent situé au portail, le
+    bâtiment se retrouvait en haut à gauche —, et son emprise est tracée dessus.
+
+    Photo IGN sous Licence Ouverte, sans clé ni compte. Une panne renvoie
+    (None, None) : la fiche se génère toujours, simplement sans cette vue.
     """
     if lon is None or lat is None:
-        return None
-    # Cadre 16/9 autour du point, pour la même largeur que le rendu 3D.
-    bbox = f"{lon - span},{lat - span * 0.56},{lon + span},{lat + span * 0.56}"
-    try:
-        r = await _client.get(IGN_WMS_URL, params={
-            "SERVICE": "WMS", "VERSION": "1.3.0", "REQUEST": "GetMap",
-            "LAYERS": "HR.ORTHOIMAGERY.ORTHOPHOTOS", "STYLES": "",
-            "CRS": "CRS:84", "BBOX": bbox,
-            "WIDTH": "960", "HEIGHT": "540", "FORMAT": "image/jpeg",
-        }, timeout=25.0)
+        return {}
+
+    ring = await _building_ring(bdnb_id)
+    centre_lon, centre_lat = lon, lat
+    if ring:
+        xs = [p[0] for p in ring]
+        ys = [p[1] for p in ring]
+        centre_lon = (min(xs) + max(xs)) / 2
+        centre_lat = (min(ys) + max(ys)) / 2
+
+    # Cadre 16/9 autour du centre, pour la même largeur que le rendu 3D.
+    west, south = centre_lon - span, centre_lat - span * 0.56
+    width, height = span * 2, span * 2 * 0.56
+    bbox = f"{west},{south},{centre_lon + span},{centre_lat + span * 0.56}"
+    frame = {"SERVICE": "WMS", "VERSION": "1.3.0", "REQUEST": "GetMap",
+             "CRS": "CRS:84", "BBOX": bbox, "WIDTH": "960", "HEIGHT": "540"}
+
+    async def layer(name, fmt, transparent=False):
+        params = dict(frame, LAYERS=name, STYLES="", FORMAT=fmt)
+        if transparent:
+            params["TRANSPARENT"] = "TRUE"
+        r = await _client.get(IGN_WMS_URL, params=params, timeout=25.0)
         r.raise_for_status()
         if not r.headers.get("content-type", "").startswith("image/"):
             return None                      # le WMS répond ses erreurs en XML
         import base64
-        return "data:image/jpeg;base64," + base64.b64encode(r.content).decode()
+        return f"data:{fmt};base64," + base64.b64encode(r.content).decode()
+
+    try:
+        # DEUX requêtes, et non une composition côté serveur IGN : demander les
+        # deux couches d'un coup impose le PNG pour toute l'image (4 canaux),
+        # soit 1,4 Mo au lieu de 84 Ko. La photo reste en JPEG, le cadastre seul
+        # part en PNG transparent — 303 Ko à deux, 4,5 fois plus léger.
+        image, parcels = await asyncio.gather(
+            layer("HR.ORTHOIMAGERY.ORTHOPHOTOS", "image/jpeg"),
+            layer("CADASTRALPARCELS.PARCELLAIRE_EXPRESS", "image/png", transparent=True))
+        if image is None:
+            return {}
     except Exception as e:
         log.warning("vue aérienne indisponible (%s, %s): %s", lon, lat, e)
-        return None
+        return {}
+
+    outline = None
+    if ring:
+        # Repère 0–100 posé sur l'image : l'axe des ordonnées d'une image
+        # descend, celui du monde monte.
+        outline = " ".join(
+            f"{(plon - west) / width * 100:.2f},{(1 - (plat - south) / height) * 100:.2f}"
+            for plon, plat in ring)
+    return {"image": image, "parcels": parcels, "outline": outline}
 
 
 def _rental_ban(dpe_class: str | None) -> dict | None:
@@ -624,16 +701,59 @@ async def building_tile(z: int, x: int, y: int):
             _TILE_LOCKS.pop((z, x, y), None)
 
 
+async def _commune_of(lat: float, lon: float) -> str | None:
+    """INSEE code of the commune containing a point, via BAN reverse geocoding."""
+    try:
+        data = await _cached_get_json(
+            BAN_REVERSE_URL, {"lat": lat, "lon": lon, "limit": 1}, ttl=86400)
+        feats = data.get("features") or []
+        return feats[0]["properties"].get("citycode") if feats else None
+    except Exception:
+        return None
+
+
 @app.get("/v1/suggest", tags=["geocoding"])
-async def suggest(q: str = Query(min_length=3, description="Partial address, street or city")):
+async def suggest(
+    q: str = Query(min_length=3, description="Partial address, street or city"),
+    lat: float | None = Query(None, ge=-90, le=90, description="Bias results near this point"),
+    lon: float | None = Query(None, ge=-180, le=180, description="Bias results near this point"),
+):
     """Autocomplete (BAN): cities, streets and full addresses.
 
     `type` is one of municipality | street | locality | housenumber; only
     housenumber entries can be looked up as buildings — others are navigation
     targets.
+
+    Pass `lat`/`lon` to rank results by proximity. Mobile use is local by
+    nature — you are standing in front of the building, or preparing a visit
+    nearby — and a common-noun query ("école", "mairie") is meaningless
+    nationwide: searching "ecole" returned schools from all over France.
     """
+    # Deux requêtes, et non un simple tri.
+    #
+    # BAN's own `lat`/`lon` bias is too weak to matter, and re-ranking what it
+    # returns does nothing: measured from Saint-Vallier (71), NONE of the 20
+    # results for "rue de la republique" were within 40 km. The nearby ones are
+    # not ranked low — they are absent. Text score decides alone.
+    #
+    # So we ask twice: once restricted to the commune under the user, once
+    # nationwide. Local answers come first, the rest still follows — someone
+    # preparing a visit two departments away is not cut off.
+    local: list = []
+    if lat is not None and lon is not None:
+        # Rounded to ~1 km before caching: the exact position would give every
+        # user their own cache entry, and store a precision we have no reason
+        # to keep.
+        citycode = await _commune_of(round(lat, 2), round(lon, 2))
+        if citycode:
+            near_data = await _cached_get_json(
+                BAN_URL, {"q": q, "limit": 6, "citycode": citycode}, ttl=3600)
+            local = near_data.get("features") or []
     data = await _cached_get_json(BAN_URL, {"q": q, "limit": 6}, ttl=3600)
-    feats = data.get("features", [])
+    seen = {f["properties"].get("id") for f in local}
+    feats = local + [f for f in data.get("features", [])
+                     if f["properties"].get("id") not in seen]
+    feats = feats[:6]
     return {
         "suggestions": [
             {
@@ -2593,10 +2713,13 @@ async def report(
             pass
     # Les deux vues en parallèle : le rendu 3D et la photo aérienne se
     # complètent, et les demander l'une après l'autre doublerait l'attente.
-    map_img, aerial_img = await asyncio.gather(
+    map_img, aerial = await asyncio.gather(
         _building_map_png(q.get("lon"), q.get("lat"), bdnb_id),
-        _aerial_png(q.get("lon"), q.get("lat")))
-    pdf = build_report_pdf(data, photos=photos, map_img=map_img, aerial_img=aerial_img)
+        _aerial_view(bdnb_id, q.get("lon"), q.get("lat")))
+    pdf = build_report_pdf(data, photos=photos, map_img=map_img,
+                           aerial_img=aerial.get("image"),
+                           aerial_parcels=aerial.get("parcels"),
+                           aerial_outline=aerial.get("outline"))
     _tile_write(pdf_path, pdf)          # même écriture atomique que les tuiles
     M_REPORTS.add(1, {"has_dpe": str(bool((data["buildings"][0].get("energy") or {}).get("dpe_class"))).lower()})
     return Response(

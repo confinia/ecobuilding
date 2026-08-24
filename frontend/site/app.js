@@ -275,6 +275,15 @@ const DPE_COLORS = ["match", ["get", "classe_bilan_dpe"],
   "E", "#f0b40f", "F", "#eb8235", "G", "#d7221f",
   "#d5cdc0"];
 
+// La MÊME palette, assombrie. Le survol repeignait tout en vert foncé : le
+// bâtiment qu'on s'apprêtait à cliquer perdait sa classe, l'information même
+// qu'on est venu chercher. Ici il s'assombrit dans SA couleur — le repère est
+// net, la classe reste lisible. Mêmes teintes que les applications mobiles.
+const DPE_COLORS_DARK = ["match", ["get", "classe_bilan_dpe"],
+  "A", "#004f1e", "B", "#29662b", "C", "#5c8033", "D", "#998f08",
+  "E", "#946e08", "F", "#8f4d1a", "G", "#7d0f0f",
+  "#6b6359"];
+
 map.on("load", () => {
   // Only extrude BDNB (cquest / OSM-FR feedback, issue #51): the basemap's own
   // OSM building extrusions overlapped the BDNB "bâtiment groupe" layer, with
@@ -317,7 +326,7 @@ map.on("load", () => {
       "fill-extrusion-color": ["case",
         ["boolean", ["feature-state", "loading"], false],
         ["case", ["boolean", ["feature-state", "pulse"], false], "#a7e3c1", "#2b7a4b"],
-        ["boolean", ["feature-state", "hover"], false], "#2b7a4b",
+        ["boolean", ["feature-state", "hover"], false], DPE_COLORS_DARK,
         DPE_COLORS],
       "fill-extrusion-height": ["coalesce", ["get", "hauteur_mean"], 6],
       // Opacité FIXE : fill-extrusion-opacity ne supporte pas les expressions
@@ -496,7 +505,12 @@ input.addEventListener("input", () => {
   if (q.length < 3) { list.hidden = true; return; }
   debounce = setTimeout(async () => {
     try {
-      const r = await fetch(`${API}/suggest?q=${encodeURIComponent(q)}`);
+      // Le centre de la carte sert de repère : il suit ce que l'utilisateur
+      // regarde, et ne demande aucune permission. Sans lui, chercher « ecole »
+      // proposait des écoles de toute la France.
+      const c = map && map.getCenter ? map.getCenter() : null;
+      const near = c ? `&lat=${c.lat.toFixed(4)}&lon=${c.lng.toFixed(4)}` : "";
+      const r = await fetch(`${API}/suggest?q=${encodeURIComponent(q)}${near}`);
       const { suggestions } = await r.json();
       list.innerHTML = "";
       suggestions.forEach((s) => {
@@ -894,8 +908,18 @@ async function showAccount() {
           await refreshQuota();
           showAccount();                       // re-rendu avec le nouveau palier
         } catch (e) {
-          b.disabled = false;
-          b.textContent = "Échec — réessayer";
+          // « Réessayer » est une impasse quand le refus vient du fournisseur
+          // de paiement : le second essai échouera comme le premier. On donne
+          // la seule issue réelle — nous écrire — plutôt qu'un bouton qui
+          // tourne en rond au moment précis où le client accepte de payer.
+          b.replaceWith(Object.assign(document.createElement("p"), {
+            className: "hint",
+            innerHTML: 'Le changement d\'offre n\'a pas pu aboutir. '
+              + 'Écrivez-nous, nous le faisons manuellement sous 24 h : '
+              + '<a href="mailto:contact@confinia.io?subject='
+              + encodeURIComponent("EcoBuilding — changement d'offre vers " + t.toUpperCase())
+              + '">contact@confinia.io</a>',
+          }));
         }
       };
     });
