@@ -37,6 +37,16 @@ http://ecobuilding.confinia.io:13000 {
 		reverse_proxy 127.0.0.1:13070
 	}
 
+	# Couleur qui SERT réellement la production, pour le tableau de bord
+	# plateforme. Émis par le routeur et non par l'application : il apparaît
+	# ainsi même sur une 302, une 401 ou une 500 — précisément quand on veut
+	# savoir qui a répondu.
+	#
+	# Il ne peut pas mentir : ce fichier est celui que promote-up.sh copie en
+	# Caddyfile actif, et c'est la même ligne de décision qui choisit la
+	# couleur annoncée et le port servi, juste en dessous.
+	header X-Active-Colour "green"
+
 	reverse_proxy 127.0.0.1:13200
 }
 
