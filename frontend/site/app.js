@@ -908,8 +908,18 @@ async function showAccount() {
           await refreshQuota();
           showAccount();                       // re-rendu avec le nouveau palier
         } catch (e) {
-          b.disabled = false;
-          b.textContent = "Échec — réessayer";
+          // « Réessayer » est une impasse quand le refus vient du fournisseur
+          // de paiement : le second essai échouera comme le premier. On donne
+          // la seule issue réelle — nous écrire — plutôt qu'un bouton qui
+          // tourne en rond au moment précis où le client accepte de payer.
+          b.replaceWith(Object.assign(document.createElement("p"), {
+            className: "hint",
+            innerHTML: 'Le changement d\'offre n\'a pas pu aboutir. '
+              + 'Écrivez-nous, nous le faisons manuellement sous 24 h : '
+              + '<a href="mailto:contact@confinia.io?subject='
+              + encodeURIComponent("EcoBuilding — changement d'offre vers " + t.toUpperCase())
+              + '">contact@confinia.io</a>',
+          }));
         }
       };
     });
