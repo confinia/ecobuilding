@@ -428,7 +428,12 @@ def _report_html(data: dict, photos: list | None = None, map_img: str | None = N
   .ban.warn {{ background: #fdecea; color: #b3261e; }}
   .ban.ok {{ background: #e8f5e9; color: #2b7a4b; }}
   h2 {{ font-size: 10pt; text-transform: uppercase; letter-spacing: .05em; color: #2b7a4b;
-       border-bottom: 1px solid #ddd; padding-bottom: 2pt; margin: 14pt 0 6pt; }}
+       border-bottom: 1px solid #ddd; padding-bottom: 2pt; margin: 14pt 0 6pt;
+       /* Un titre ne reste JAMAIS seul en bas de page. « Photos du lieu »
+          s'affichait suivi d'un grand blanc, son contenu rejeté à la page
+          suivante : le lecteur en concluait que la fiche était incomplète,
+          alors que les photos étaient là, une page plus loin. */
+       break-after: avoid; page-break-after: avoid; }}
   table {{ width: 100%; border-collapse: collapse; table-layout: fixed; }}
   td {{ padding: 3pt 4pt; border-bottom: 0.5pt dashed #eee; vertical-align: top;
        overflow-wrap: anywhere; word-break: break-word; }}
