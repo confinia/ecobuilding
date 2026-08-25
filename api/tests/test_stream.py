@@ -222,3 +222,81 @@ def test_aerial_view_reaches_the_pdf(monkeypatch):
     assert "IGN" in html and "Licence Ouverte" in html      # attribution due
     # Sans photo aérienne, la fiche se produit quand même.
     assert "Vue aérienne" not in _report_html(data, photos=[], map_img=None)
+
+
+# --- Adresse sans bâtiment : dire pourquoi, et servir ce qu'on a --------------
+#
+# Le panneau affichait « le bâtiment existe peut-être sous une adresse voisine »
+# dans TOUS les cas, y compris outre-mer où c'est faux — la BDNB s'arrête à la
+# métropole. Et le flux n'émettait aucun bloc : les applications mobiles, qui
+# n'affichent que des blocs, restaient sur un écran vide alors que les risques
+# de la zone étaient déjà arrivés.
+
+@pytest.fixture
+def sans_batiment(monkeypatch):
+    """BDNB muette. `ban` fixe la commune, donc le motif attendu."""
+    etat = {"ban": "97411_1060", "label": "Rue de Paris 97400 Saint-Denis",
+            "point": [55.449705, -20.882172]}
+
+    async def fake_get(url, params, ttl=0):
+        if "adresse.data.gouv" in url:
+            return {"features": [{"properties": {"id": etat["ban"],
+                                                 "label": etat["label"]},
+                                  "geometry": {"coordinates": etat["point"]}}]}
+        return []                       # aucun bâtiment à cette adresse
+
+    monkeypatch.setattr(main, "_cached_get_json", fake_get)
+
+    async def risques(*a, **k):
+        return {"commune": "Saint-Denis", "risques_naturels": ["cyclone"],
+                "risques_technologiques": []}
+    monkeypatch.setattr(main, "_area_risks", risques)
+    for name in ("_groundwater", "_solar_pv", "_water_network", "_official_dpe",
+                 "_local_taxes", "_nearby_schools", "_dvf_prices", "_rnb_lookup",
+                 "_click_address"):
+        async def none(*a, **k):
+            return None
+        monkeypatch.setattr(main, name, none)
+    return etat
+
+
+def test_outre_mer_dit_la_vraie_raison(sans_batiment):
+    evs = _events("/v1/lookup/stream?q=rue+de+Paris+Saint-Denis")
+    motif = evs[0]["no_building"]
+    assert motif["reason"] == "outre_mer"
+    # Ne JAMAIS inviter à chercher une adresse voisine là où il n'y en aura pas.
+    assert "voisine" not in motif["text"]
+    assert "métropole" in motif["text"]
+
+
+def test_metropole_garde_la_piste_de_l_adresse_voisine(sans_batiment):
+    sans_batiment["ban"] = "31557_2400_00012"
+    sans_batiment["label"] = "12 Rue de la Licorne 31170 Tournefeuille"
+    sans_batiment["point"] = [1.345887, 43.583127]
+    evs = _events("/v1/lookup/stream?q=12+rue+de+la+Licorne")
+    motif = evs[0]["no_building"]
+    assert motif["reason"] == "absent_bdnb"
+    assert "voisine" in motif["text"], "en métropole, la piste reste valable"
+
+
+def test_le_contexte_part_en_blocs_meme_sans_batiment(sans_batiment):
+    evs = _events("/v1/lookup/stream?q=rue+de+Paris+Saint-Denis")
+    blocs = {e["name"]: e["value"] for e in evs if e["type"] == "block"}
+    assert "area_risks" in blocs, "sans bloc, le mobile reste sur un écran vide"
+    assert blocs["area_risks"]["risques_naturels"] == ["cyclone"]
+    assert evs[-1]["type"] == "done"
+
+
+def test_la_commune_vient_de_la_ban_quand_aucun_batiment_ne_la_porte(
+        sans_batiment, monkeypatch):
+    """Sans bâtiment, `code_commune_insee` n'existe pas : la fiscalité locale et
+    le réseau d'eau étaient donc interrogés avec None, et vides sans raison."""
+    vues = []
+
+    async def taxes(commune):
+        vues.append(commune)
+        return None
+
+    monkeypatch.setattr(main, "_local_taxes", taxes)
+    _events("/v1/lookup/stream?q=rue+de+Paris+Saint-Denis")
+    assert vues == ["97411"], f"commune transmise : {vues}"

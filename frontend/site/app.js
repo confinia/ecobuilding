@@ -729,12 +729,97 @@ function kv(k, v) {
     `<div class="kv"><span class="k">${k}</span><span>${v}</span></div>`;
 }
 
+
+// Section qui ne dépend QUE de la position — donc affichable même
+// sans bâtiment BDNB.
+function sectionNappe(data) {
+  return data.groundwater?.available ? `<h3>Eau souterraine</h3>
+    ${kv("Profondeur de la nappe", data.groundwater.water_table_depth_m != null ? data.groundwater.water_table_depth_m + " m sous le sol" : null)}
+    ${kv("Piézomètre le plus proche", data.groundwater.station_distance_m != null ? `à ${data.groundwater.station_distance_m} m` + (data.groundwater.station_commune ? ` (${data.groundwater.station_commune})` : "") : null)}
+    ${kv("Mesuré le", data.groundwater.measured_on ? String(data.groundwater.measured_on).slice(0, 10) : null)}
+    <p class="hint">${data.groundwater.note || ""} ${data.groundwater.well_regulation || ""}</p>` : "";
+}
+
+
+// Section qui ne dépend QUE de la position — donc affichable même
+// sans bâtiment BDNB.
+function sectionFiscalite(data) {
+  return data.local_taxes ? `<h3>Fiscalité locale${data.local_taxes.year ? ` (${data.local_taxes.year})` : ""}</h3>
+    ${kv("Taxe foncière (bâti), taux global", data.local_taxes.property_tax_built_pct != null ? data.local_taxes.property_tax_built_pct + " %" : null)}
+    ${kv("Ordures ménagères (TEOM)", data.local_taxes.waste_tax_pct != null ? data.local_taxes.waste_tax_pct + " %" : null)}` : "";
+}
+
+
+// Section qui ne dépend QUE de la position — donc affichable même
+// sans bâtiment BDNB.
+function sectionEcoles(data) {
+  return data.schools?.within_2km ? `<h3>Écoles à proximité (${data.schools.within_2km} < 2 km)</h3>
+    ${(data.schools.nearest || []).slice(0, 3).map((s) => kv(`${s.type || "Établissement"}${s.statut ? " · " + s.statut : ""}`, `${s.name} (${s.distance_m} m)`)).join("")}
+    <p class="hint">Proximité ≠ sectorisation (carte scolaire).</p>` : "";
+}
+
+
+// Section qui ne dépend QUE de la position — donc affichable même
+// sans bâtiment BDNB.
+function sectionEau(data) {
+  return data.water_network ? `<h3>Eau potable (commune)</h3>
+    ${kv(`Rendement du réseau${data.water_network.year ? ` (${data.water_network.year})` : ""}`, data.water_network.efficiency_pct != null ? data.water_network.efficiency_pct + " %" : null)}
+    ${kv("Part perdue en fuites", data.water_network.losses_pct != null ? data.water_network.losses_pct + " %" : null)}
+    ${kv("Prix de l'eau (120 m³)", data.water_network.price_eur_m3 != null ? data.water_network.price_eur_m3 + " €/m³" : null)}` : "";
+}
+
+
+// Section qui ne dépend QUE de la position — donc affichable même
+// sans bâtiment BDNB.
+function sectionPrix(data) {
+  return data.prices?.available ? `<h3>Prix de vente (DVF)</h3>
+    ${kv("Médiane commune, maison", data.prices.commune_eur_m2?.Maison?.median ? data.prices.commune_eur_m2.Maison.median.toLocaleString("fr-FR") + " €/m²" : null)}
+    ${kv("Médiane commune, appartement", data.prices.commune_eur_m2?.Appartement?.median ? data.prices.commune_eur_m2.Appartement.median.toLocaleString("fr-FR") + " €/m²" : null)}
+    ${(data.prices.sales || []).slice(0, 3).map((s) => kv(`Vente ${String(s.date || "").slice(0, 10)}`, `${(s.valeur_fonciere || 0).toLocaleString("fr-FR")} € (${s.type_local || "?"}${s.surface_m2 ? ", " + Math.round(s.surface_m2) + " m²" : ""})`)).join("")}
+    <p class="hint">Transactions réelles DGFiP (DVF) : parcelle du bâtiment et médianes communales.</p>` : "";
+}
+
+
+// Section qui ne dépend QUE de la position — donc affichable même
+// sans bâtiment BDNB.
+function sectionRisques(data) {
+  const risks = (data.area_risks?.risques_naturels || []).concat(data.area_risks?.risques_technologiques || []);
+  return risks.length
+    ? `<div class="risk-block"><span class="k">Risques de la zone</span>
+        <div class="risk-chips">${risks.map((r) => `<span class="chip">${humanizeRisk(r)}</span>`).join("")}</div></div>`
+    : "";
+}
+
+function sectionRapportRisques(data) {
+  return data.area_risks?.report_url
+    ? `<p class="hint"><a href="${data.area_risks.report_url}" target="_blank" rel="noopener">Rapport Géorisques complet →</a></p>`
+    : "";
+}
+
 function renderPanel(s, data, opts) {
   const b = data.buildings?.[0];
   if (b?.bdnb_id) setUrlBuilding(b.bdnb_id);
   if (!b) {
-    showPanel(`<h2>${s.label}</h2><p class="hint">Aucune fiche BDNB trouvée pour cette adresse.
-      Le bâtiment existe peut-être sous une adresse voisine.</p>`);
+    // Pas de bâtiment ne veut pas dire rien à dire.
+    //
+    // Cette branche affichait UNE phrase et jetait tout le reste — alors que
+    // les risques de la zone, la nappe, la fiscalité et les écoles étaient
+    // déjà arrivés : ils ne dépendent que du point, pas du bâtiment. Et la
+    // phrase invitait à chercher « sous une adresse voisine », ce qui est faux
+    // outre-mer, où la BDNB n'a aucun bâtiment nulle part.
+    showPanel(`<h2>${s.label}</h2>
+      <p class="hint">${data.no_building?.text
+        || "Aucun bâtiment n'est décrit à cette adresse dans la base nationale (BDNB)."}</p>
+      ${sectionRisques(data)}
+      ${sectionRapportRisques(data)}
+      ${sectionNappe(data)}
+      ${sectionFiscalite(data)}
+      ${sectionEcoles(data)}
+      ${sectionEau(data)}
+      ${sectionPrix(data)}
+      <div id="streetview"></div>
+    `, opts);
+    loadStreetview(data.query?.lon, data.query?.lat);
     return;
   }
   const cls = b.energy?.dpe_class;
@@ -744,11 +829,7 @@ function renderPanel(s, data, opts) {
     ? `<div class="ban-warning">⚠ Location interdite à partir du <strong>${ban.rental_ban_date.slice(0, 4)}</strong> (loi Climat &amp; Résilience)</div>`
     : `<div class="ban-warning ban-ok">✓ Aucune interdiction de location prévue pour cette classe</div>`;
 
-  const risks = (data.area_risks?.risques_naturels || []).concat(data.area_risks?.risques_technologiques || []);
-  const risksHtml = risks.length
-    ? `<div class="risk-block"><span class="k">Risques de la zone</span>
-        <div class="risk-chips">${risks.map((r) => `<span class="chip">${humanizeRisk(r)}</span>`).join("")}</div></div>`
-    : "";
+  const risksHtml = sectionRisques(data);
 
   // Title with the address the user searched — a BDNB "bâtiment groupe" can
   // span several streets and its principal address then reads as the wrong
@@ -789,34 +870,19 @@ function renderPanel(s, data, opts) {
     <h3>Risques</h3>
     ${kv("Retrait-gonflement argiles", b.risks?.clay_shrink_swell)}
     ${risksHtml}
-    ${data.area_risks?.report_url ? `<p class="hint"><a href="${data.area_risks.report_url}" target="_blank" rel="noopener">Rapport Géorisques complet →</a></p>` : ""}
+    ${sectionRapportRisques(data)}
     ${b.cooling?.has_cooling ? `<h3>Climatisation</h3>
     ${kv("Générateur", b.cooling.generator_type)}
     ${kv("Ancienneté", b.cooling.generator_age)}` : ""}
-    ${data.groundwater?.available ? `<h3>Eau souterraine</h3>
-    ${kv("Profondeur de la nappe", data.groundwater.water_table_depth_m != null ? data.groundwater.water_table_depth_m + " m sous le sol" : null)}
-    ${kv("Piézomètre le plus proche", data.groundwater.station_distance_m != null ? `à ${data.groundwater.station_distance_m} m` + (data.groundwater.station_commune ? ` (${data.groundwater.station_commune})` : "") : null)}
-    ${kv("Mesuré le", data.groundwater.measured_on ? String(data.groundwater.measured_on).slice(0, 10) : null)}
-    <p class="hint">${data.groundwater.note || ""} ${data.groundwater.well_regulation || ""}</p>` : ""}
-    ${data.local_taxes ? `<h3>Fiscalité locale${data.local_taxes.year ? ` (${data.local_taxes.year})` : ""}</h3>
-    ${kv("Taxe foncière (bâti), taux global", data.local_taxes.property_tax_built_pct != null ? data.local_taxes.property_tax_built_pct + " %" : null)}
-    ${kv("Ordures ménagères (TEOM)", data.local_taxes.waste_tax_pct != null ? data.local_taxes.waste_tax_pct + " %" : null)}` : ""}
-    ${data.schools?.within_2km ? `<h3>Écoles à proximité (${data.schools.within_2km} < 2 km)</h3>
-    ${(data.schools.nearest || []).slice(0, 3).map((s) => kv(`${s.type || "Établissement"}${s.statut ? " · " + s.statut : ""}`, `${s.name} (${s.distance_m} m)`)).join("")}
-    <p class="hint">Proximité ≠ sectorisation (carte scolaire).</p>` : ""}
-    ${data.water_network ? `<h3>Eau potable (commune)</h3>
-    ${kv(`Rendement du réseau${data.water_network.year ? ` (${data.water_network.year})` : ""}`, data.water_network.efficiency_pct != null ? data.water_network.efficiency_pct + " %" : null)}
-    ${kv("Part perdue en fuites", data.water_network.losses_pct != null ? data.water_network.losses_pct + " %" : null)}
-    ${kv("Prix de l'eau (120 m³)", data.water_network.price_eur_m3 != null ? data.water_network.price_eur_m3 + " €/m³" : null)}` : ""}
+    ${sectionNappe(data)}
+    ${sectionFiscalite(data)}
+    ${sectionEcoles(data)}
+    ${sectionEau(data)}
     <h3>Solaire</h3>
     ${kv("Favorable au solaire thermique", b.solar?.thermal_favourable === true ? "oui" : b.solar?.thermal_favourable === false ? "non" : null)}
     ${kv("Potentiel annuel", b.solar?.thermal_potential_kwh_y ? b.solar.thermal_potential_kwh_y + " kWh/an" : null)}
     ${kv("Productible photovoltaïque", data.solar_pv?.yield_kwh_per_kwc_y ? Math.round(data.solar_pv.yield_kwh_per_kwc_y) + " kWh/an par kWc (PVGIS)" : null)}
-    ${data.prices?.available ? `<h3>Prix de vente (DVF)</h3>
-    ${kv("Médiane commune, maison", data.prices.commune_eur_m2?.Maison?.median ? data.prices.commune_eur_m2.Maison.median.toLocaleString("fr-FR") + " €/m²" : null)}
-    ${kv("Médiane commune, appartement", data.prices.commune_eur_m2?.Appartement?.median ? data.prices.commune_eur_m2.Appartement.median.toLocaleString("fr-FR") + " €/m²" : null)}
-    ${(data.prices.sales || []).slice(0, 3).map((s) => kv(`Vente ${String(s.date || "").slice(0, 10)}`, `${(s.valeur_fonciere || 0).toLocaleString("fr-FR")} € (${s.type_local || "?"}${s.surface_m2 ? ", " + Math.round(s.surface_m2) + " m²" : ""})`)).join("")}
-    <p class="hint">Transactions réelles DGFiP (DVF) : parcelle du bâtiment et médianes communales.</p>` : ""}
+    ${sectionPrix(data)}
     <p><button id="report-btn" class="report-link" data-url="${API}/report/${encodeURIComponent(b.bdnb_id)}.pdf${reportParams.length ? "?" + reportParams.join("&") : ""}">📄 Fiche PDF normalisée</button></p>
     <div id="streetview"></div>
     ${pendingHtml}

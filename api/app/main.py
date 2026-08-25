@@ -877,6 +877,42 @@ async def _solar_pv(lon, lat):
         return None
 
 
+# Départements et collectivités d'outre-mer : la BDNB s'arrête à la métropole
+# (zéro ligne sur 971 à 976, vérifié source par source), et aucune adresse
+# voisine ne changera cela. Le dire vaut mieux que de laisser chercher.
+_OUTRE_MER = ("97", "98")
+
+
+def _commune_de_ban(ban_id):
+    """Code INSEE porté par un identifiant BAN (`97411_1060` -> `97411`)."""
+    if not isinstance(ban_id, str) or "_" not in ban_id:
+        return None
+    code = ban_id.split("_", 1)[0]
+    return code if len(code) == 5 else None
+
+
+def _motif_sans_batiment(ban_id):
+    """Pourquoi cette adresse n'a pas de bâtiment — jamais None quand il n'y en a pas.
+
+    Deux motifs, et la différence compte : hors métropole c'est définitif et
+    général, ailleurs c'est une lacune ponctuelle que l'adresse voisine peut
+    combler. L'ancien message servait la seconde phrase dans les deux cas, donc
+    une invitation à chercher là où il n'y a rien à trouver.
+
+    `reason` est stable et destiné au code ; `text` est destiné à l'oeil.
+    """
+    code = _commune_de_ban(ban_id)
+    if code and code.startswith(_OUTRE_MER):
+        return {"reason": "outre_mer",
+                "text": "La base nationale des bâtiments (BDNB) s'arrête à la "
+                        "métropole : aucun bâtiment n'y est décrit outre-mer. "
+                        "Ce qui suit ne dépend que de la position."}
+    return {"reason": "absent_bdnb",
+            "text": "Aucun bâtiment n'est décrit à cette adresse dans la base "
+                    "nationale (BDNB). Il l'est peut-être sous une adresse "
+                    "voisine. Ce qui suit ne dépend que de la position."}
+
+
 async def _do_lookup(q, ban_id, address, lon, lat):
     rows = await _cached_get_json(
         BDNB_URL, {"cle_interop_adr": f"eq.{ban_id}", "limit": "5"}, ttl=86400
@@ -885,7 +921,8 @@ async def _do_lookup(q, ban_id, address, lon, lat):
         log.warning("BDNB error: %s", rows)
         rows = []
 
-    commune = rows[0].get("code_commune_insee") if rows else None
+    commune = (rows[0].get("code_commune_insee") if rows
+               else _commune_de_ban(ban_id))
     first_id = rows[0].get("batiment_groupe_id") if rows else None
 
     # UN SEUL agrégat par bâtiment (demande opérateur : « charger une fois, pas
@@ -953,6 +990,7 @@ async def _do_lookup(q, ban_id, address, lon, lat):
         "local_taxes": local_taxes,
         "schools": schools,
         "sources": sources,
+        "no_building": _motif_sans_batiment(ban_id),
     }
     return result
 
@@ -1037,7 +1075,18 @@ async def lookup_stream(
 
         async def one():
             yield json.dumps({"type": "core", "query": data["query"],
-                              "buildings": data["buildings"]}) + "\n"
+                              "buildings": data["buildings"],
+                              "no_building": data.get("no_building")}) + "\n"
+            # Le contexte part en BLOCS, comme sur le chemin ordinaire.
+            #
+            # Il ne partait qu'avec `done`, et les applications mobiles, qui
+            # n'affichent que des blocs, restaient donc sur un écran vide alors
+            # que les risques de la zone étaient déjà en main.
+            for nom in ("area_risks", "groundwater", "solar_pv",
+                        "water_network", "official_dpe", "local_taxes",
+                        "schools"):
+                yield json.dumps({"type": "block", "name": nom,
+                                  "value": data.get(nom)}) + "\n"
             yield json.dumps(dict(data, type="done")) + "\n"
         return StreamingResponse(one(), media_type="application/x-ndjson",
                                  headers={"Cache-Control": "no-store"})
