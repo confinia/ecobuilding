@@ -290,6 +290,38 @@ def _local_taxes_html(t: dict) -> str:
 publié (DGFiP). La taxe due dépend de la valeur locative cadastrale du bien.</p>"""
 
 
+def _commune_html(c: dict) -> str:
+    """La commune au sens civil, et le nom qu'elle portait avant (#275).
+
+    Un acte ancien nomme parfois une commune qui n'existe plus. Et quand rien
+    n'a bougé, le dire — daté et sourcé — vaut aussi la peine.
+
+    Les réserves de la source sont reprises telles quelles : reprendre ses
+    chiffres sans ses réserves affirmerait plus qu'elle ne le fait.
+    """
+    if not c or not c.get("nom"):
+        return ""
+    avant = (_row("Auparavant",
+                  f"{c['precedent']['nom']}, jusqu'au {c['precedent']['jusqu_au_fr']}")
+             if c.get("precedent") else "")
+    reserves = list(c.get("limites") or []) + [
+        d.get("texte") for d in (c.get("non_etablis") or []) if d.get("texte")]
+    credits = " ; ".join(
+        f"{a.get('attribution')} ({a.get('license')})"
+        for a in (c.get("attribution") or []) if a.get("attribution"))
+    return f"""
+<h2>Commune</h2>
+<table>
+  {_row("Commune", f"{c['nom']} ({c['code']})")}
+  {_row("Nom et limites inchangés depuis" if c.get("existe_encore")
+        else "A cessé d'exister le", c.get("depuis_fr"))}
+  {avant}
+  {_row("Données arrêtées au", c.get("arret_des_donnees_fr"))}
+</table>
+{f'<p class="meta">{" ".join(reserves)}</p>' if reserves else ""}
+{f'<p class="meta">Source : {credits}.</p>' if credits else ""}"""
+
+
 def _schools_html(sc: dict) -> str:
     """Nearest schools (#194) — proximity, NOT the carte scolaire."""
     if not sc:
@@ -508,6 +540,7 @@ def _report_html(data: dict, photos: list | None = None, map_img: str | None = N
 {_prices_html(data.get("prices"))}
 {_local_taxes_html(data.get("local_taxes") or {})}
 {_schools_html(data.get("schools") or {})}
+{_commune_html(data.get("commune") or {})}
 
 <footer>
   Sources : BDNB (CSTB), Base Adresse Nationale, Géorisques — Licence Ouverte, attributions requises.

@@ -51,6 +51,9 @@ services:
       KC_ADMIN_BASE: http://keycloak:8080/auth
       OIDC_JWKS_URL: http://keycloak:8080/auth/realms/confinia/protocol/openid-connect/certs
       OIDC_ISSUER: https://ecobuilding.confinia.io/auth/realms/confinia
+      # Histoire des communes (#275) : vient de deploy/secrets.env. Vide, le
+      # bloc commune ne s'affiche pas — la fiche ne dépend jamais d'un tiers.
+      CONFINIA_API_KEY: "${CONFINIA_API_KEY:-}"
     volumes:
       # Country-level GeoIP (dbip-country-lite) — provisioned by deploy.sh,
       # outside git and outside the rsync --delete scope.
