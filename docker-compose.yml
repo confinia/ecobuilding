@@ -54,6 +54,14 @@ services:
       # Histoire des communes (#275) : vient de deploy/secrets.env. Vide, le
       # bloc commune ne s'affiche pas — la fiche ne dépend jamais d'un tiers.
       CONFINIA_API_KEY: "${CONFINIA_API_KEY:-}"
+    # `api.confinia.io` pointe sur l'ADRESSE PUBLIQUE DE CETTE MACHINE : Confinia
+    # tourne sur la même VM. Un conteneur sans privilèges ne sait pas revenir
+    # sur l'IP publique de son propre hôte (pas de retour en épingle), et
+    # l'appel échouait en « connection refused » — le bloc commune disparaissait
+    # alors silencieusement, ce qui est son comportement voulu en cas de panne
+    # et masquait donc la cause. Même remède que pour le service de rendu.
+    extra_hosts:
+      - "api.confinia.io:host-gateway"
     volumes:
       # Country-level GeoIP (dbip-country-lite) — provisioned by deploy.sh,
       # outside git and outside the rsync --delete scope.
