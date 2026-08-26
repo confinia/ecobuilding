@@ -178,6 +178,48 @@ def c_mobile_contract():
             f"paliers {', '.join(sorted(m['tiers']))}")
 
 
+def c_commune_history():
+    """Si l'intégration Confinia est DÉCLARÉE configurée, le bloc doit arriver.
+
+    Ce contrôle existe parce que son absence a laissé passer une intégration
+    morte. Le bloc commune disparaît quand Confinia est injoignable — c'est
+    voulu, la fiche ne doit jamais dépendre d'un tiers — mais ce silence
+    masquait sa propre panne : le conteneur ne pouvait pas joindre l'API
+    (`api.confinia.io` pointe sur l'IP publique de la VM elle-même), et rien
+    ne s'en plaignait.
+
+    Un contrôle qui accepte les deux réponses ne teste rien. Celui-ci compare
+    ce que l'API DÉCLARE à ce qu'elle SERT.
+    """
+    cfg = get_json(f"{API}/config", 20)
+    # Le champ DOIT exister : sans lui, ce contrôle passerait sur n'importe
+    # quelle version — y compris une qui aurait perdu l'intégration. C'est
+    # exactement le trou que ce contrôle est né pour boucher.
+    integrations = cfg.get("integrations")
+    assert isinstance(integrations, dict), \
+        "/v1/config ne déclare plus ses intégrations"
+    assert "commune_history" in integrations, \
+        "l'intégration commune n'est plus déclarée"
+    if not integrations["commune_history"]:
+        return "non configuré ici"          # état déclaré, donc pas un écart
+
+    url = f"{API}/lookup/stream?q=" + urllib.parse.quote(REF_ADDRESS)
+    bloc = None
+    with get(url, 120) as r:
+        for line in r:
+            ev = json.loads(line)
+            if ev.get("type") == "block" and ev.get("name") == "commune":
+                bloc = ev.get("value")
+                break
+    assert bloc, "intégration déclarée configurée, bloc commune ABSENT"
+    assert bloc.get("code"), "bloc commune sans code INSEE"
+    # Les réserves de la source ne doivent jamais se perdre en route : les
+    # reprendre sans elles affirmerait plus que Confinia ne le fait.
+    assert bloc.get("attribution"), "attribution perdue"
+    assert bloc.get("arret_des_donnees"), "date d'arrêt des données perdue"
+    return f"{bloc['nom']} ({bloc['code']}), arrêt {bloc.get('arret_des_donnees')}"
+
+
 def c_payment_rule():
     """Règle 7 : la production ne porte aucune configuration de paiement."""
     cfg = get_json(f"{API}/config", 20)
@@ -195,6 +237,7 @@ CHECKS = [
     ("bloc prix DVF", c_prices),
     ("cohérence d'authentification", c_auth_consistency),
     ("contrat d'API de l'app mobile", c_mobile_contract),
+    ("histoire de la commune", c_commune_history),
     ("règle de paiement", c_payment_rule),
 ]
 

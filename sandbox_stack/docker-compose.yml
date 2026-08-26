@@ -48,6 +48,14 @@ services:
   sandbox-api:
     build: ../api
     image: ecobuilding-api:latest      # reuse the prod-built image
+    # `api.confinia.io` pointe sur l'ADRESSE PUBLIQUE DE CETTE MACHINE : Confinia
+    # tourne sur la même VM. Un conteneur sans privilèges ne sait pas revenir
+    # sur l'IP publique de son propre hôte (pas de retour en épingle), et
+    # l'appel échouait en « connection refused » — le bloc commune disparaissait
+    # alors silencieusement, ce qui est son comportement voulu en cas de panne
+    # et masquait donc la cause. Même remède que pour le service de rendu.
+    extra_hosts:
+      - "api.confinia.io:host-gateway"
     env_file:
       - ./secrets.env                  # KC_BOOTSTRAP_ADMIN_*, POLAR_* (sandbox)
     environment:

@@ -248,7 +248,10 @@ BUILDING_CACHE_TTL = float(os.environ.get("BUILDING_CACHE_TTL", "21600"))
 M_CACHE = _meter.create_counter("ecobuilding_upstream_cache", description="Upstream cache hits/misses", unit="1")
 
 
-async def _cached_get_json(url: str, params: dict, ttl: float):
+async def _cached_get_json(url: str, params: dict, ttl: float, headers: dict | None = None):
+    # `headers` ne participe PAS à la clé : il ne porte que des jetons
+    # d'authentification, jamais rien qui change la réponse — et l'y mettre
+    # écrirait un secret dans une clé de cache.
     key = url + "?" + "&".join(f"{k}={v}" for k, v in sorted(params.items()))
     now = time.monotonic()
     hit = _CACHE.get(key)
@@ -257,7 +260,7 @@ async def _cached_get_json(url: str, params: dict, ttl: float):
         M_CACHE.add(1, {"result": "hit"})
         return hit[1]
     M_CACHE.add(1, {"result": "miss"})
-    resp = await _client.get(url, params=params)
+    resp = await _client.get(url, params=params, headers=headers)
     resp.raise_for_status()
     data = resp.json()
     _CACHE[key] = (now, data)
@@ -952,10 +955,11 @@ async def _do_lookup(q, ban_id, address, lon, lat):
     # Aucun bâtiment BDNB à cette adresse : on sert quand même le contexte
     # (risques, nappe, solaire…), qui ne dépend que du point.
     (risks, groundwater, solar_pv, water_network, official_dpe,
-     local_taxes, schools) = await asyncio.gather(
+     local_taxes, schools, commune_hist) = await asyncio.gather(
         _area_risks(lon, lat), _groundwater(lon, lat), _solar_pv(lon, lat),
         _water_network(commune), _noop(),
-        _local_taxes(commune), _nearby_schools(lon, lat))
+        _local_taxes(commune), _nearby_schools(lon, lat),
+        _commune_history(commune, lon, lat))
 
     M_LOOKUPS.add(1, {"status": "no_building"})
     sources = [
@@ -978,6 +982,7 @@ async def _do_lookup(q, ban_id, address, lon, lat):
     market_dia = _dia_market(lon, lat, commune)
     if market_dia:
         sources.append("DIA — Montpellier Méditerranée Métropole — Open Data")
+    sources += _credits_confinia(commune_hist, sources)
     result = {
         "query": {"q": q, "ban_id": ban_id, "address": address, "lon": lon, "lat": lat},
         "buildings": [_normalize_building(r) for r in rows],
@@ -989,6 +994,7 @@ async def _do_lookup(q, ban_id, address, lon, lat):
         "official_dpe": official_dpe,
         "local_taxes": local_taxes,
         "schools": schools,
+        "commune": commune_hist,
         "sources": sources,
         "no_building": _motif_sans_batiment(ban_id),
     }
@@ -1084,7 +1090,7 @@ async def lookup_stream(
             # que les risques de la zone étaient déjà en main.
             for nom in ("area_risks", "groundwater", "solar_pv",
                         "water_network", "official_dpe", "local_taxes",
-                        "schools"):
+                        "schools", "commune"):
                 yield json.dumps({"type": "block", "name": nom,
                                   "value": data.get(nom)}) + "\n"
             yield json.dumps(dict(data, type="done")) + "\n"
@@ -1397,7 +1403,8 @@ async def building(
 # Les neuf sources d'un bâtiment, NOMMÉES : l'agrégat classique les attend
 # toutes, le flux (/v1/buildings/{id}/stream) les émet au fil de l'eau.
 _BLOCK_NAMES = ("prices", "area_risks", "groundwater", "solar_pv", "click_addr",
-                "water_network", "official_dpe", "local_taxes", "schools", "rnb")
+                "water_network", "official_dpe", "local_taxes", "schools", "rnb",
+                "commune")
 
 
 def _building_block_coros(bdnb_id, lon, lat, row):
@@ -1407,7 +1414,25 @@ def _building_block_coros(bdnb_id, lon, lat, row):
             _click_address(bdnb_id, lon, lat),
             _water_network(commune), _official_dpe(bdnb_id),
             _local_taxes(commune), _nearby_schools(lon, lat),
-            _rnb_lookup(lon, lat))
+            _rnb_lookup(lon, lat), _commune_history(commune, lon, lat))
+
+
+
+def _credits_confinia(commune_hist, deja):
+    """Crédits des sources que Confinia a RÉELLEMENT lues pour cette commune.
+
+    La donnée est ouverte, pas anonyme : `INTEGRATION.md` en fait une
+    obligation, et `sources` y nomme le millésime lu — jamais « le dernier ».
+    """
+    lignes = []
+    for a in (commune_hist or {}).get("attribution") or []:
+        mention, licence = a.get("attribution"), a.get("license")
+        if not mention:
+            continue
+        ligne = f"{mention} — {licence}" if licence else mention
+        if ligne not in deja and ligne not in lignes:
+            lignes.append(ligne)
+    return lignes
 
 
 def _assemble_building(bdnb_id, lon, lat, row, v):
@@ -1416,6 +1441,7 @@ def _assemble_building(bdnb_id, lon, lat, row, v):
     solar_pv, click_addr = v["solar_pv"], v["click_addr"]
     water_network, official_dpe = v["water_network"], v["official_dpe"]
     local_taxes, schools, rnb = v["local_taxes"], v["schools"], v["rnb"]
+    commune_hist = v.get("commune")
     sources = ["BDNB (CSTB) — Licence Ouverte v2.0", "Géorisques — Licence Ouverte"]
     if prices:
         sources.append("DVF (DGFiP) / Etalab — Licence Ouverte")
@@ -1436,6 +1462,7 @@ def _assemble_building(bdnb_id, lon, lat, row, v):
         sources.append("Référentiel National des Bâtiments (RNB) — Licence Ouverte")
     if market_dia:
         sources.append("DIA — Montpellier Méditerranée Métropole — Open Data")
+    sources += _credits_confinia(commune_hist, sources)
     result = {
         # Prefer the group-member address at the clicked point (#152); the
         # principal address stays on buildings[0].address for the UI's row.
@@ -1454,6 +1481,7 @@ def _assemble_building(bdnb_id, lon, lat, row, v):
         "local_taxes": local_taxes,
         "schools": schools,
         "prices": prices,
+        "commune": commune_hist,
         "sources": sources,
     }
     return result
@@ -1515,7 +1543,8 @@ async def _building_events(bdnb_id, lon, lat, query_extra=None, extra_rows=()):
         yield json.dumps({"type": "core", "query": _q(done["query"]),
                           "buildings": done["buildings"] + list(extra_rows)}) + "\n"
         for name in ("area_risks", "groundwater", "solar_pv", "water_network",
-                     "official_dpe", "local_taxes", "schools", "prices", "rnb"):
+                     "official_dpe", "local_taxes", "schools", "prices", "rnb",
+                     "commune"):
             yield json.dumps({"type": "block", "name": name,
                               "value": done.get(name)}) + "\n"
         yield json.dumps({"type": "done", "sources": done["sources"],
@@ -1560,6 +1589,141 @@ async def _building_events(bdnb_id, lon, lat, query_extra=None, extra_rows=()):
                       "buildings": result["buildings"] + list(extra_rows),
                       "market_dia": result.get("market_dia"),
                       "sources": result["sources"]}) + "\n"
+
+
+
+# --- Histoire de la commune (Confinia, #275) ---------------------------------
+#
+# EcoBuilding répond « qu'est-ce que ce bâtiment ». Confinia répond « dans
+# quelle commune il est au sens civil, et comment elle s'appelait avant ». Un
+# acte ancien nomme parfois une commune qui n'existe plus : en Haute-Garonne,
+# trois ont disparu en dix ans. Router le code mort vers son successeur est ce
+# que personne d'autre ne fait — et pour l'immense majorité des bâtiments il ne
+# s'est rien passé, ce qui mérite aussi d'être dit, daté et sourcé.
+CONFINIA_BASE_URL = os.environ.get("CONFINIA_BASE_URL", "https://api.confinia.io/v1")
+CONFINIA_API_KEY = os.environ.get("CONFINIA_API_KEY", "")
+# La réponse ne bouge qu'à la ré-ingestion, côté Confinia. Une journée de cache
+# est déjà généreuse pour nous, et économe pour eux : `/facts` consomme une
+# unité par commune distincte, même sous une clé illimitée.
+CONFINIA_TTL = float(os.environ.get("CONFINIA_TTL", str(86400)))
+
+_MOIS_FR = ("janvier", "février", "mars", "avril", "mai", "juin", "juillet",
+            "août", "septembre", "octobre", "novembre", "décembre")
+
+
+def _date_fr(iso):
+    """« 2019-01-01 » -> « 1ᵉʳ janvier 2019 ». Rend l'entrée telle quelle si ce
+    n'est pas une date."""
+    if not isinstance(iso, str) or len(iso) < 10:
+        return iso
+    try:
+        a, m, j = int(iso[0:4]), int(iso[5:7]), int(iso[8:10])
+        assert 1 <= m <= 12 and 1 <= j <= 31
+    except (ValueError, AssertionError):
+        return iso
+    return f"{'1ᵉʳ' if j == 1 else j} {_MOIS_FR[m - 1]} {a}"
+
+
+def _reformule_dates(texte):
+    """Passe en toutes lettres une date ISO qui traînerait dans une phrase.
+
+    Filet, plus correctif. Confinia servait « au 2026-01-01 » dans sa prose
+    française — ce qui n'est pas du français — et l'a corrigé le 2026-08-26,
+    dans les deux langues (confinia-core#269). Sur les charges utiles
+    d'aujourd'hui cette fonction ne remplace donc rien.
+
+    On la garde parce que ces phrases atterrissent dans une fiche remise à un
+    acheteur : si une date ISO réapparaissait un jour dans un enregistrement ou
+    une langue qu'on ne surveille pas, mieux vaut qu'elle se lise. Reformuler
+    est explicitement permis — « print it, or re-word it, but do not drop it » :
+    on change la tournure, jamais le fond.
+    """
+    import re as _re
+
+    if not isinstance(texte, str):
+        return texte
+    return _re.sub(r"\d{4}-\d{2}-\d{2}", lambda m: _date_fr(m.group(0)), texte)
+
+
+async def _nom_d_avant(lon, lat, depuis, nom_actuel):
+    """Comment s'appelait CE lieu la veille du changement.
+
+    On interroge le POINT à une date, pas le lignage du code : quand
+    Saint-Béat absorbe Lez, le code 31471 s'est appelé « Saint-Béat » —
+    c'est vrai du code, et faux pour un bâtiment qui était à Lez. Seul le
+    point tranche, et c'est précisément ce que l'API sait faire.
+
+    Vérifié : un point intérieur de l'ancienne Lez rend « Lez » au
+    2018-12-31 et « Saint-Béat-Lez » au 2019-01-01.
+    """
+    if lon is None or lat is None or not isinstance(depuis, str) or len(depuis) < 10:
+        return None
+    try:
+        from datetime import date, timedelta
+
+        veille = (date(int(depuis[0:4]), int(depuis[5:7]), int(depuis[8:10]))
+                  - timedelta(days=1)).isoformat()
+        avant = await _cached_get_json(
+            f"{CONFINIA_BASE_URL}/communes",
+            {"lat": round(lat, 6), "lon": round(lon, 6), "at": veille},
+            ttl=CONFINIA_TTL)
+        props = (avant or {}).get("properties") or {}
+        nom = props.get("nom")
+        if not nom or nom == nom_actuel:
+            return None
+        return {"nom": nom, "code": props.get("code"),
+                "jusqu_au": depuis, "jusqu_au_fr": _date_fr(depuis)}
+    except Exception as e:
+        log.info("Confinia nom d'avant (%s,%s au %s): %s", lon, lat, depuis, e)
+        return None
+
+
+async def _commune_history(commune, lon=None, lat=None):
+    """La commune au sens civil, ses noms passés, et ce qui borne ces faits.
+
+    Rend None — donc pas de bloc — si la clé manque ou si Confinia se tait :
+    la fiche ne doit jamais dépendre d'un tiers.
+
+    Ce qu'on ne jette JAMAIS, parce que c'est ce qui distingue une donnée
+    sourcée d'une affirmation : `declined` (pourquoi un fait n'a PAS pu être
+    établi — sans quoi on ne distingue pas « jamais calculé » de « pas
+    établissable ici »), `limitations` (ce que les faits ne soutiennent pas) et
+    `attribution` (la donnée est ouverte, pas anonyme).
+    """
+    if not commune or not CONFINIA_API_KEY:
+        return None
+    try:
+        entetes = {"X-API-Key": CONFINIA_API_KEY}
+        faits = await _cached_get_json(
+            f"{CONFINIA_BASE_URL}/communes/{commune}/facts",
+            {"country": "FR", "lang": "fr"}, ttl=CONFINIA_TTL, headers=entetes)
+        unite = faits.get("unit") or {}
+        if not unite.get("code"):
+            return None
+
+        actuel = unite.get("name")
+        # Un seul nom d'avant, jamais une frise : la fiche dit « Lez jusqu'au
+        # 1ᵉʳ janvier 2019 », elle ne déroule pas l'histoire (hors périmètre).
+        precedent = await _nom_d_avant(lon, lat, unite.get("valid_from"), actuel)
+
+        return {
+            "code": unite.get("code"),
+            "nom": actuel,
+            "depuis": unite.get("valid_from"),
+            "depuis_fr": _date_fr(unite.get("valid_from")),
+            "existe_encore": unite.get("valid_to") is None,
+            "precedent": precedent,
+            "arret_des_donnees": faits.get("as_known_on"),
+            "arret_des_donnees_fr": _date_fr(faits.get("as_known_on")),
+            "non_etablis": [{"raison": d.get("reason"),
+                             "texte": _reformule_dates(d.get("text"))}
+                            for d in (faits.get("declined") or [])],
+            "limites": [_reformule_dates(x) for x in (faits.get("limitations") or [])],
+            "attribution": faits.get("attribution") or [],
+        }
+    except Exception as e:
+        log.warning("Confinia commune %s: %s", commune, e)
+        return None
 
 
 # --- Identity (Keycloak, shared /auth) ---------------------------------------
@@ -2351,6 +2515,15 @@ async def config():
                               "label": v["label"]} for k, v in PRO_TIERS.items()},
             "free_tiers": {"anonymous_reports_month": ANON_MONTHLY_REPORTS,
                            "free_account_reports_month": FREE_ACCOUNT_REPORTS},
+            # Intégrations dont la présence dépend d'un secret, DÉCLARÉES ici.
+            #
+            # Le bloc commune disparaît quand Confinia est injoignable — c'est
+            # voulu, la fiche ne doit jamais dépendre d'un tiers. Mais ce
+            # silence masquait sa propre panne : le conteneur ne joignait pas
+            # l'API, et le contrôle public passait quand même, puisqu'il
+            # acceptait les deux réponses. En déclarant ce qui EST configuré,
+            # on rend l'écart détectable : configuré et absent = panne.
+            "integrations": {"commune_history": bool(CONFINIA_API_KEY)},
             # Offre MOBILE, distincte des paliers web (MOBILE.md §5.2) : l'app
             # lit ses prix ici plutôt que de les écrire en dur, comme le web.
             "mobile": {"tiers": {k: {"eur": v["eur"], "fiches_month": v["fiches"],
