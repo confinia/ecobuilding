@@ -236,13 +236,15 @@ def test_tier_pricing_is_consistent_everywhere():
     html = (ROOT / "frontend/site/offres.html").read_text()
     for n in ("9 €", "29 €", "99 €", "30 fiches", "100 fiches"):
         assert n in html, n
-    assert "3 fiches" in html and "10 fiches" in html  # free ladder
+    # L'échelle gratuite : 10 fiches par mois, avec ou sans compte (2026-08-26).
+    # Le compte ne se distingue plus par le volume mais par la clé API.
+    assert "10 fiches" in html and "clé API" in html
     assert "crédit" not in html.lower()                # billed unit = la fiche
     main_py = (ROOT / "api/app/main.py").read_text()
     assert '"s": {"eur": 9,  "fiches": 30' in main_py
     assert '"m": {"eur": 29, "fiches": 100' in main_py
     assert '"l": {"eur": 99, "fiches": null' in main_py
-    assert 'ANON_MONTHLY_REPORTS", "3"' in main_py
+    assert 'ANON_MONTHLY_REPORTS", "10"' in main_py
     assert 'FREE_ACCOUNT_REPORTS", "10"' in main_py
     assert '"report": 1' in main_py                    # one unit = one fiche
     # PRICING.md vit désormais dans le dépôt PRIVÉ de monétisation : ce test

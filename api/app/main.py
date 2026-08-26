@@ -1691,10 +1691,19 @@ def _load_keys() -> set:
 # Pricing v3 (#224) — the billed unit is the FICHE, not an internal credit:
 # the Polar checkout showed « credits €0.01/unit », which read as if a PDF cost
 # one cent. Raw API calls are no longer billed at all (they only added noise).
-#   sans compte  : 3 fiches/mois
+#   sans compte  : 10 fiches/mois
 #   compte gratuit: 10 fiches/mois
 #   pro          : 10 fiches offertes, puis 0,49 EUR la fiche, plafond 99 EUR
-ANON_MONTHLY_REPORTS = int(os.environ.get("ANON_MONTHLY_REPORTS", "3"))
+#
+# Le plafond anonyme passe de 3 à 10 le 2026-08-26 : à 3, une personne à qui on
+# montre le produit était bloquée avant d'avoir compris à quoi il sert — le cas
+# s'est présenté lors d'une démonstration à une professionnelle de l'immobilier.
+#
+# CONSÉQUENCE ASSUMÉE : le compte gratuit donne le MÊME nombre de fiches, donc
+# il n'apporte plus rien pour l'instant. Le plafond bas existait justement pour
+# provoquer l'inscription (#206). Rétablir un écart demandera de monter le
+# compte gratuit, pas de redescendre l'anonyme.
+ANON_MONTHLY_REPORTS = int(os.environ.get("ANON_MONTHLY_REPORTS", "10"))
 FREE_ACCOUNT_REPORTS = int(os.environ.get("FREE_ACCOUNT_REPORTS", "10"))
 # Pricing v4 (PRICING.md) — subscription tiers. The v3 metered grid
 # (0,49 €/fiche, plafond 99 €) died with the move to Creem as merchant of
