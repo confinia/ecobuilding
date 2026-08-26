@@ -2515,6 +2515,15 @@ async def config():
                               "label": v["label"]} for k, v in PRO_TIERS.items()},
             "free_tiers": {"anonymous_reports_month": ANON_MONTHLY_REPORTS,
                            "free_account_reports_month": FREE_ACCOUNT_REPORTS},
+            # Intégrations dont la présence dépend d'un secret, DÉCLARÉES ici.
+            #
+            # Le bloc commune disparaît quand Confinia est injoignable — c'est
+            # voulu, la fiche ne doit jamais dépendre d'un tiers. Mais ce
+            # silence masquait sa propre panne : le conteneur ne joignait pas
+            # l'API, et le contrôle public passait quand même, puisqu'il
+            # acceptait les deux réponses. En déclarant ce qui EST configuré,
+            # on rend l'écart détectable : configuré et absent = panne.
+            "integrations": {"commune_history": bool(CONFINIA_API_KEY)},
             # Offre MOBILE, distincte des paliers web (MOBILE.md §5.2) : l'app
             # lit ses prix ici plutôt que de les écrire en dur, comme le web.
             "mobile": {"tiers": {k: {"eur": v["eur"], "fiches_month": v["fiches"],
