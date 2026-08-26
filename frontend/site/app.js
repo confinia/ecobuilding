@@ -666,7 +666,7 @@ const STREAM_PENDING = {
   solar_pv: "Solaire (PVGIS)", water_network: "Eau potable (SISPEA)",
   official_dpe: "DPE officiel (ADEME)", local_taxes: "Fiscalité locale (DGFiP)",
   schools: "Écoles (annuaire)", prices: "Prix de vente (DVF)", rnb: "ID-RNB",
-  commune: "Commune (Confinia)",
+  commune: "Commune (Confinia)", dpe_spread: "DPE des logements (ADEME)",
 };
 async function consumeBuildingStream(response, searched) {
   const reader = response.body.getReader();
@@ -822,6 +822,31 @@ function sectionCommune(data) {
     ${reserves.length ? `<p class="hint">${reserves.map((r) => r).join(" ")}</p>` : ""}`;
 }
 
+
+// L'éventail des DPE connus à l'adresse (#287).
+//
+// Une professionnelle de la promotion immobilière : « Tu raisonnes en DPE par
+// bâtiment. Mais il arrive que les apparts d'une même résidence aient des DPE
+// différents. » Mesuré : dès qu'une adresse porte plusieurs diagnostics, deux
+// fois sur trois les classes diffèrent. Annoncer une classe unique, c'est se
+// tromper pour presque tous les logements.
+//
+// Rien ne s'affiche s'il n'y a qu'un diagnostic : la fiche a déjà raison là.
+function sectionEventailDpe(data) {
+  const e = data.dpe_spread;
+  if (!e || !e.diagnostics) return "";
+  const parts = Object.entries(e.repartition || {})
+    .map(([c, n]) => `<span class="dpe-badge dpe-${c}">${c}</span>&nbsp;${n}`).join(" · ");
+  const titre = e.identiques
+    ? `${e.diagnostics} diagnostics connus à cette adresse, tous en ${e.classe_min}.`
+    : `${e.diagnostics} diagnostics connus à cette adresse : de <strong>${e.classe_min}</strong>
+       à <strong>${e.classe_max}</strong>.`;
+  return `<div class="dpe-spread"><p class="hint">${titre}
+      La classe ci-dessus est celle du logement représentatif du bâtiment,
+      pas celle de tous.</p>
+    <p>${parts}</p></div>`;
+}
+
 function renderPanel(s, data, opts) {
   const b = data.buildings?.[0];
   if (b?.bdnb_id) setUrlBuilding(b.bdnb_id);
@@ -876,6 +901,7 @@ function renderPanel(s, data, opts) {
     <h3>Énergie (DPE)</h3>
     <p>${dpeBadge} ${b.energy?.consumption_kwh_m2y ? `&nbsp;${Math.round(b.energy.consumption_kwh_m2y)} kWh/m²/an` : ""}</p>
     ${banHtml}
+    ${sectionEventailDpe(data)}
     ${kv("Date du DPE", b.energy?.dpe_date ? String(b.energy.dpe_date).slice(0, 10) : null)}
     ${kv("GES", b.energy?.ghg_kgco2_m2y ? Math.round(b.energy.ghg_kgco2_m2y) + " kgCO₂/m²/an" : null)}
     ${kv("N° DPE officiel", data.official_dpe?.dpe_number)}

@@ -159,3 +159,70 @@ async def test_le_lookup_par_point_qui_echoue_ne_perd_pas_le_bloc(monkeypatch):
     b = await main._commune_history("31471", 0.70517, 42.90902)
     assert b is not None, "la commune reste connue même sans son nom d'avant"
     assert b["precedent"] is None
+
+
+# --- Éventail des DPE (#287) -------------------------------------------------
+#
+# « Tu raisonnes en DPE par bâtiment. Mais il arrive que les apparts d'une même
+# résidence aient des DPE différents. » Mesuré sur 1 000 diagnostics : dès
+# qu'une adresse en porte plusieurs, deux fois sur trois les classes diffèrent.
+
+def test_l_eventail_se_lit_de_A_vers_G_et_non_par_ordre_alphabetique():
+    import app.main as main
+
+    assert main._classe_min_max(["G", "C", "E"]) == ("C", "G")
+    assert main._classe_min_max(["D"]) == ("D", "D")
+    assert main._classe_min_max([]) == (None, None)
+    assert main._classe_min_max(["?", "X"]) == (None, None)
+
+
+@pytest.mark.anyio
+async def test_un_seul_diagnostic_ne_produit_aucun_bloc(monkeypatch):
+    """La fiche a déjà raison dans ce cas : elle ne doit pas changer."""
+    import app.main as main
+
+    async def faux(url, params, ttl=0, headers=None):
+        if "rel_batiment" in url:
+            return [{"cle_interop_adr": "34172_0001_00001"}]
+        return {"results": [{"etiquette_dpe": "D", "surface_habitable_logement": 50}]}
+
+    monkeypatch.setattr(main, "_cached_get_json", faux)
+    assert await main._dpe_spread("bdnb-bg-X", None, None) is None
+
+
+@pytest.mark.anyio
+async def test_plusieurs_classes_donnent_l_eventail_et_sa_repartition(monkeypatch):
+    import app.main as main
+
+    async def faux(url, params, ttl=0, headers=None):
+        if "rel_batiment" in url:
+            return [{"cle_interop_adr": "34172_4725_00002_bis"}]
+        return {"results": [
+            {"etiquette_dpe": "C", "surface_habitable_logement": 77,
+             "numero_etage_appartement": 0},
+            {"etiquette_dpe": "G", "surface_habitable_logement": 31.7},
+            {"etiquette_dpe": "C", "surface_habitable_logement": 58.9},
+        ]}
+
+    monkeypatch.setattr(main, "_cached_get_json", faux)
+    r = await main._dpe_spread("bdnb-bg-X", None, None)
+    assert r["diagnostics"] == 3
+    assert (r["classe_min"], r["classe_max"]) == ("C", "G")
+    assert r["identiques"] is False
+    assert r["repartition"] == {"C": 2, "G": 1}
+    # Trié par surface décroissante : c'est le critère qu'un acheteur reconnaît,
+    # pas l'étage, renseigné dans 17 % des cas seulement.
+    assert [x["surface_m2"] for x in r["logements"]] == [77, 58.9, 31.7]
+
+
+@pytest.mark.anyio
+async def test_l_ademe_muette_ne_casse_pas_la_fiche(monkeypatch):
+    import app.main as main
+
+    async def faux(url, params, ttl=0, headers=None):
+        if "rel_batiment" in url:
+            return [{"cle_interop_adr": "x"}]
+        raise RuntimeError("ADEME injoignable")
+
+    monkeypatch.setattr(main, "_cached_get_json", faux)
+    assert await main._dpe_spread("bdnb-bg-X", None, None) is None
