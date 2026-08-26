@@ -2630,11 +2630,26 @@ async def pro_upgrade(request: Request,
     try:
         resp = await _client.post(
             f"{CREEM_API_BASE}/subscriptions/{cur['id']}/upgrade",
-            json={"product_id": target},
+            # `update_behavior` est facultatif et vaut « proration-charge-immediately »
+            # par défaut — on l'écrit quand même : c'est une décision de
+            # facturation, elle doit se lire dans le code et non dépendre d'un
+            # défaut qui peut changer. `proration-charge` est d'ailleurs déjà
+            # déprécié chez eux.
+            json={"product_id": target,
+                  "update_behavior": "proration-charge-immediately"},
             headers={"x-api-key": CREEM_API_KEY})
         resp.raise_for_status()
     except httpx.HTTPError as e:
-        log.warning("Creem upgrade failed: %s", e)
+        # Le CORPS de la réponse, pas seulement le code.
+        #
+        # Ce bloc n'a longtemps journalisé que « 403 Client error », et il a
+        # fallu des jours pour découvrir que le corps distinguait un vrai refus
+        # de portée (`Forbidden` avec message) d'une erreur serveur déguisée
+        # (`Bad Request` sans message). Se priver du corps, c'est se priver du
+        # seul endroit où le fournisseur explique.
+        corps = getattr(getattr(e, "response", None), "text", "")
+        log.warning("Creem upgrade failed (%s -> %s): %s | %s",
+                    _creem_tier_of(cur), tier, e, corps[:500])
         raise HTTPException(502, "Échec du changement d'offre")
     _pro_set(sub_id_kc, True, tier=tier, subscription_id=cur["id"], source="upgrade")
     M_PRO.add(1, {"event": "upgrade", "tier": tier})

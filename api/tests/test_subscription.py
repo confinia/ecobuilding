@@ -82,3 +82,49 @@ def test_anonymous_cap_hints_signup():
 @pytest.mark.skip(reason="Key provisioning not implemented — issue #27")
 def test_key_bypasses_anonymous_cap():
     raise NotImplementedError
+
+
+def test_le_changement_de_palier_nomme_son_comportement_de_prorata(monkeypatch):
+    """#268 — l'intention de facturation ne doit pas dépendre d'un défaut.
+
+    L'appel a longtemps échoué en 403 : Creem traduisait toute erreur serveur
+    non reconnue en un 403 générique sans message, ce qui a fait chercher du
+    côté de la clé et des portées pendant des jours. La charge utile était
+    bonne — vérifié le 2026-08-26, montée ET descente en 200.
+
+    `update_behavior` reste facultatif ; on l'écrit parce qu'un prorata est une
+    décision de facturation, pas un détail de transport.
+    """
+    import app.main as main
+
+    envoye = {}
+
+    class Reponse:
+        status_code = 200
+
+        def raise_for_status(self):
+            pass
+
+    async def faux_post(url, json=None, headers=None):
+        envoye["url"] = url
+        envoye["json"] = json
+        return Reponse()
+
+    monkeypatch.setattr(main._client, "post", faux_post)
+    monkeypatch.setattr(main, "CREEM_API_KEY", "creem_test_x")
+    monkeypatch.setattr(main, "PAYMENT_PROVIDER", "creem")
+    monkeypatch.setattr(main, "CREEM_PRODUCTS", {"s": "prod_S", "l": "prod_L"})
+    monkeypatch.setattr(main, "_creem_find_subscription",
+                        lambda email: {"id": "sub_1", "product": {"id": "prod_S"}})
+    monkeypatch.setattr(main, "_decode_token",
+                        lambda t: {"sub": "kc-1", "email": "a@b.c"})
+    monkeypatch.setattr(main, "_pro_set", lambda *a, **k: None)
+
+    from fastapi.testclient import TestClient
+
+    r = TestClient(main.app).post("/v1/pro/upgrade?tier=l",
+                                  headers={"Authorization": "Bearer jeton"})
+    assert r.status_code == 200, r.text
+    assert envoye["url"].endswith("/subscriptions/sub_1/upgrade")
+    assert envoye["json"]["product_id"] == "prod_L"
+    assert envoye["json"]["update_behavior"] == "proration-charge-immediately"
