@@ -659,7 +659,7 @@ def test_pro_tier_grid_v4():
     assert _tier_for(31) == "m" and _usage_cost(100)["cost_eur"] == 29.0
     assert _tier_for(101) == "l" and _usage_cost(10_000)["cost_eur"] == 99.0
     tiers = _usage_cost(0)["free_tiers"]
-    assert tiers["anonymous_reports_month"] == 3
+    assert tiers["anonymous_reports_month"] == 10
     assert tiers["free_account_reports_month"] == 10
 
 
@@ -675,7 +675,8 @@ def test_quota_preflight_reads_without_consuming(tmp_path, monkeypatch):
     q2 = client.get("/v1/quota", headers=h).json()
     assert q1 == q2                                   # lecture seule
     assert q1["plan"] == "anonymous"
-    assert q1["reports_used"] == 2 and q1["reports_left"] == 1
+    assert q1["reports_used"] == 2
+    assert q1["reports_left"] == main.ANON_MONTHLY_REPORTS - 2
     # compte gratuit par clé
     monkeypatch.setattr(main, "_load_keys", lambda: {"K1"})
     kq = client.get("/v1/quota", headers={"X-API-Key": "K1"}).json()
