@@ -876,7 +876,20 @@ function renderPanel(s, data, opts) {
   }
   const cls = b.energy?.dpe_class;
   const ban = b.energy?.rental_ban;
-  const dpeBadge = `<span class="dpe-badge dpe-${cls || "unknown"}">${cls || "?"}</span>`;
+  // Le badge dit l'ÉVENTAIL quand les logements diffèrent (#287).
+  //
+  // Une lettre unique est l'élément le plus visible de la fiche, et elle a
+  // l'air catégorique. Mesuré : dès qu'un immeuble porte plusieurs
+  // diagnostics, deux fois sur trois les classes diffèrent — le badge
+  // affirmait donc une certitude fausse pour presque tous les logements.
+  // Le dégradé va de la couleur de la meilleure classe à celle de la pire.
+  const spread = data.dpe_spread;
+  const eventail = spread && !spread.identiques && spread.classe_min && spread.classe_max;
+  const dpeBadge = eventail
+    ? `<span class="dpe-badge dpe-range" style="background:linear-gradient(100deg,
+         var(--dpe-${spread.classe_min}) 0%, var(--dpe-${spread.classe_max}) 100%)"
+       >${spread.classe_min}&nbsp;–&nbsp;${spread.classe_max}</span>`
+    : `<span class="dpe-badge dpe-${cls || "unknown"}">${cls || "?"}</span>`;
   const banHtml = !cls ? "" : ban?.rental_ban_date
     ? `<div class="ban-warning">⚠ Location interdite à partir du <strong>${ban.rental_ban_date.slice(0, 4)}</strong> (loi Climat &amp; Résilience)</div>`
     : `<div class="ban-warning ban-ok">✓ Aucune interdiction de location prévue pour cette classe</div>`;

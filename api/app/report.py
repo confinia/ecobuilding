@@ -455,6 +455,24 @@ def _report_html(data: dict, photos: list | None = None, map_img: str | None = N
     pv = data.get("solar_pv") or {}
     cls = (e.get("dpe_class") or "?").upper()
     color = DPE_COLORS.get(cls, "#999")
+    # Le badge dit l'EVENTAIL quand les logements de l'immeuble different
+    # (#287). Une lettre unique est l'element le plus visible du document, et
+    # elle a l'air categorique : mesure, elle est fausse deux fois sur trois
+    # des qu'un immeuble porte plusieurs diagnostics. Le degrade va de la
+    # couleur de la meilleure classe a celle de la pire.
+    spread = data.get("dpe_spread") or {}
+    eventail = bool(not spread.get("identiques")
+                    and spread.get("classe_min") and spread.get("classe_max"))
+    if eventail:
+        c1 = DPE_COLORS.get(spread["classe_min"], "#999")
+        c2 = DPE_COLORS.get(spread["classe_max"], "#999")
+        badge = ('<span class="dpe" style="background:linear-gradient(100deg,'
+                 + c1 + ' 0%,' + c2 + ' 100%);padding-left:10px;'
+                 'padding-right:10px">'
+                 + spread["classe_min"] + '&nbsp;-&nbsp;' + spread["classe_max"]
+                 + '</span>')
+    else:
+        badge = '<span class="dpe">' + cls + '</span>'
     now = datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M UTC")
     address = data.get("query", {}).get("address") or b.get("address") or "Adresse inconnue"
 
@@ -519,7 +537,7 @@ def _report_html(data: dict, photos: list | None = None, map_img: str | None = N
 <p class="meta">Identifiant BDNB : {b.get("bdnb_id") or "—"} · Générée le {now} · ecobuilding.confinia.io</p>
 
 <h2>Énergie (DPE)</h2>
-<p><span class="dpe">{cls}</span>&nbsp;&nbsp;{f"{round(conso)} kWh/m²/an" if conso else "Aucun DPE enregistré dans la BDNB pour ce bâtiment"}</p>
+<p>{badge}&nbsp;&nbsp;{f"{round(conso)} kWh/m²/an" if conso else "Aucun DPE enregistré dans la BDNB pour ce bâtiment"}</p>
 {ban_html}
 {_dpe_spread_html(data.get("dpe_spread") or {})}
 {('<table class="labels"><tr>'

@@ -40,10 +40,26 @@ html, body { margin: 0; height: 100%; font-family: system-ui, -apple-system, san
   display: inline-block; min-width: 34px; text-align: center; font-weight: 700;
   color: #fff; border-radius: 6px; padding: 4px 8px; font-size: 16px;
 }
-.dpe-A { background: #009036; } .dpe-B { background: #52b153; } .dpe-C { background: #a5cc74; }
-.dpe-D { background: #f4e70f; color: #333; } .dpe-E { background: #f0b40f; }
-.dpe-F { background: #eb8235; } .dpe-G { background: #d7221f; }
+/* Les sept couleurs officielles du DPE, nommées UNE fois : le badge d'éventail
+   (#287) compose son dégradé à partir des mêmes valeurs, et deux teintes qui
+   divergeraient donneraient deux vérités visuelles. */
+:root {
+  --dpe-A: #009036; --dpe-B: #52b153; --dpe-C: #a5cc74; --dpe-D: #f4e70f;
+  --dpe-E: #f0b40f; --dpe-F: #eb8235; --dpe-G: #d7221f;
+}
+.dpe-A { background: var(--dpe-A); } .dpe-B { background: var(--dpe-B); }
+.dpe-C { background: var(--dpe-C); }
+.dpe-D { background: var(--dpe-D); color: #333; } .dpe-E { background: var(--dpe-E); }
+.dpe-F { background: var(--dpe-F); } .dpe-G { background: var(--dpe-G); }
 .dpe-unknown { background: #999; }
+/* Badge d'ÉVENTAIL : « C – G » quand les logements de l'immeuble n'ont pas la
+   même classe (#287). Le dégradé va de la couleur de la meilleure à celle de
+   la pire : une lettre unique afficherait une certitude que la donnée ne
+   porte pas — mesuré, elle est fausse deux fois sur trois. */
+.dpe-badge.dpe-range {
+  color: #fff; text-shadow: 0 1px 2px rgba(0, 0, 0, .45);
+  padding-left: 10px; padding-right: 10px; letter-spacing: .5px;
+}
 .ban-warning { margin: 8px 0; padding: 8px 10px; border-radius: 8px; font-size: 13px; background: #fdecea; color: #b3261e; }
 .ban-ok { background: #e8f5e9; color: #2b7a4b; }
 #legend {
