@@ -479,8 +479,19 @@ def _rental_ban(dpe_class: str | None) -> dict | None:
     return {
         "dpe_class": dpe_class.upper(),
         "rental_ban_date": date,
+        # ISO dans le CHAMP, français dans la PHRASE.
+        #
+        # La note disait « à partir du 2025-01-01 » : une date technique posée
+        # dans une phrase française, sur la ligne la plus alarmante de la fiche
+        # — celle qui annonce à quelqu'un qu'il ne pourra plus louer son bien.
+        # C'est le défaut que nous avions signalé à une source tierce le matin
+        # même (confinia-core#269) ; il était chez nous aussi.
+        #
+        # `rental_ban_date` reste en ISO : un champ se compare et se recopie,
+        # une phrase se lit.
         "note": (
-            f"Location interdite à partir du {date} (loi Climat et Résilience)"
+            f"Location interdite à partir du {_date_fr(date)} "
+            "(loi Climat et Résilience)"
             if date
             else "Aucune interdiction de location prévue pour cette classe"
         ),
