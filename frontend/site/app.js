@@ -1153,8 +1153,20 @@ async function downloadReport(btn) {
       if (tab) tab.location = url; else window.open(url, "_blank");
       return;
     }
-    const blobUrl = URL.createObjectURL(await r.blob());
-    if (tab) tab.location = blobUrl; else window.open(blobUrl, "_blank");
+    // On navigue vers l'URL RÉELLE, pas vers un blob.
+    //
+    // Un blob n'a aucun en-tête : le `Content-Disposition` du serveur était
+    // perdu, et le navigateur nommait le fichier d'après l'identifiant du blob
+    // — « 9e2a675e-ea29-4758….pdf » arrivait ainsi en pièce jointe. L'adresse
+    // du bien est dans l'en-tête ; encore faut-il la laisser vivre.
+    //
+    // Le fetch ci-dessus n'a pas servi pour rien : il a attendu la génération
+    // en montrant la progression, et la fiche est maintenant dans le cache
+    // disque du serveur. Cette seconde requête revient en ~0,2 s et ne
+    // consomme PAS de seconde fiche — le même document servi le même jour est
+    // gratuit, comme sur mobile.
+    await r.blob();                        // vide le corps, la fiche est en cache
+    if (tab) tab.location = url; else window.open(url, "_blank");
   } catch (e) {
     if (tab) tab.close();
     btn.textContent = "Erreur de génération, réessayez";
