@@ -2051,6 +2051,16 @@ def _quota_gate(request: Request, endpoint: str, subject: str | None = None):
     mobile = _mobile_gate(request, endpoint, subject)
     if mobile:
         return mobile
+    # Fiche DÉJÀ obtenue aujourd'hui : gratuite et non décomptée — exactement
+    # comme sur mobile (voir _mobile_gate). C'est le même document ; le
+    # facturer deux fois punit l'utilisateur qui rouvre son propre onglet, et
+    # empêchait le web de rediriger vers l'URL réelle de la fiche.
+    if subject and endpoint == "report":
+        ip_ = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip() or "?"
+        seau = ("ip:" + hashlib.sha256(ip_.encode()).hexdigest()[:16])
+        if subject in _daily_seen(seau):
+            return "web_repeat"
+
     key = request.headers.get("x-api-key") or request.query_params.get("key")
     if key and key in _load_keys():
         plan = _key_plans().get(key, "free")
@@ -2114,6 +2124,8 @@ def _quota_gate(request: Request, endpoint: str, subject: str | None = None):
         # Monthly, not daily: a daily cap of 20 was never reached, so nobody
         # ever created an account (#206).
         bucket = "ip:" + hashlib.sha256(ip.encode()).hexdigest()[:16]
+        if subject:
+            _daily_add(bucket, subject)
         used = _usage_add(bucket, CREDIT_COST["report"]) // CREDIT_COST["report"]
         if used > ANON_MONTHLY_REPORTS:
             raise HTTPException(
@@ -2760,9 +2772,13 @@ async def report(
     cached = _tile_read(pdf_path, PDF_CACHE_TTL)
     if cached:
         M_CACHE.add(1, {"result": "hit_pdf"})
+        # Le nom voyage dans un fichier voisin : sur un cache chaud, l'adresse
+        # n'a pas encore été chargée, et re-générer la fiche pour la connaître
+        # coûterait les quinze secondes qu'on vient justement d'économiser.
+        nom = (_tile_read(pdf_path + ".nom", None) or b"").decode() \
+            or _nom_de_fiche(None, bdnb_id)
         return Response(cached, media_type="application/pdf",
-                        headers={"Content-Disposition":
-                                 f'inline; filename="ecobuilding-{bdnb_id}.pdf"'})
+                        headers={"Content-Disposition": _disposition(nom)})
     data = await building(bdnb_id, lon, lat)
     q = data.get("query", {})
     if address:
@@ -2794,12 +2810,52 @@ async def report(
                            aerial_parcels=aerial.get("parcels"),
                            aerial_outline=aerial.get("outline"))
     _tile_write(pdf_path, pdf)          # même écriture atomique que les tuiles
+    nom = _nom_de_fiche(q.get("address") or (data["buildings"][0] or {}).get("address"),
+                        bdnb_id)
+    _tile_write(pdf_path + ".nom", nom.encode())
     M_REPORTS.add(1, {"has_dpe": str(bool((data["buildings"][0].get("energy") or {}).get("dpe_class"))).lower()})
     return Response(
         pdf,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'inline; filename="ecobuilding-{bdnb_id}.pdf"'},
+        headers={"Content-Disposition": _disposition(nom)},
     )
+
+
+_INTERDITS_FICHIER = str.maketrans({c: None for c in '/\\:*?"<>|\r\n\t'})
+
+
+def _nom_de_fiche(adresse, bdnb_id):
+    """Nom du fichier PDF, tel qu'il apparaîtra dans les pièces jointes.
+
+    La fiche s'appelait « ecobuilding-bdnb-bg-6ZEE-2XTC-6ZUK.pdf » : un
+    identifiant qui ne veut rien dire hors de ce dépôt. Or ce document se
+    classe, se transfère à un notaire, à un confrère, à un client — il doit
+    porter le nom sous lequel le bien existe pour tout le monde : son adresse.
+
+    Sans adresse connue, on garde l'identifiant plutôt que d'inventer.
+    """
+    base = (adresse or "").translate(_INTERDITS_FICHIER).strip()
+    base = " ".join(base.split())          # espaces multiples, sauts de ligne
+    if not base:
+        base = bdnb_id
+    if len(base) > 110:                    # les systèmes de fichiers plafonnent
+        base = base[:110].rsplit(" ", 1)[0]
+    return f"EcoBuilding — {base}.pdf"
+
+
+def _disposition(nom):
+    """En-tête `Content-Disposition` acceptant les accents.
+
+    `filename=` ne transporte que de l'ASCII : « rue de l'Aiguillerie » y perd
+    ses accents ou casse l'en-tête. `filename*` (RFC 5987) porte l'UTF-8, et
+    l'ASCII reste là pour les clients anciens.
+    """
+    import urllib.parse
+
+    ascii_ = " ".join(nom.encode("ascii", "ignore").decode().split()) \
+        or "EcoBuilding.pdf"
+    return (f'inline; filename="{ascii_}"; '
+            f"filename*=UTF-8''{urllib.parse.quote(nom)}")
 
 
 PANORAMAX_URL = "https://api.panoramax.xyz/api/search"

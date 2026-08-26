@@ -940,3 +940,53 @@ def test_lookup_and_report_share_one_aggregate(monkeypatch):
     assert r2.status_code == 200
     assert len(calls) == after_lookup, \
         "la fiche PDF a rejoué l'orchestration au lieu de lire le cache"
+
+
+# --- Nom de la fiche PDF (#282) ----------------------------------------------
+#
+# Une fiche envoyée à une professionnelle de l'immobilier est arrivée nommée
+# « 9e2a675e-ea29-4758-9761-bfbf31ad39d1.pdf ». Un document qui se classe, se
+# transfère à un notaire ou à un client doit porter le nom sous lequel le bien
+# existe : son adresse.
+
+def test_la_fiche_porte_l_adresse_et_non_un_identifiant():
+    import app.main as main
+
+    nom = main._nom_de_fiche("21 Rue de l'Aiguillerie 34000 Montpellier", "bdnb-bg-X")
+    assert nom == "EcoBuilding — 21 Rue de l'Aiguillerie 34000 Montpellier.pdf"
+    assert "bdnb" not in nom
+
+
+def test_sans_adresse_on_garde_l_identifiant_plutot_que_d_inventer():
+    import app.main as main
+
+    assert main._nom_de_fiche(None, "bdnb-bg-X") == "EcoBuilding — bdnb-bg-X.pdf"
+    assert main._nom_de_fiche("   ", "bdnb-bg-X") == "EcoBuilding — bdnb-bg-X.pdf"
+
+
+def test_les_caracteres_interdits_par_les_systemes_de_fichiers_tombent():
+    import app.main as main
+
+    nom = main._nom_de_fiche('A/B: rue "test" <x>|y', "bdnb-bg-X")
+    assert not set(nom) & set('/\\:*?"<>|')
+
+
+def test_un_nom_trop_long_est_tronque_sur_un_mot():
+    import app.main as main
+
+    nom = main._nom_de_fiche("rue " + "tres longue " * 20, "bdnb-bg-X")
+    assert len(nom) < 140
+    assert not nom.replace(".pdf", "").endswith(" ")
+
+
+def test_l_entete_transporte_les_accents_sans_casser_les_clients_anciens():
+    """`filename=` ne transporte que de l'ASCII : « Aiguillerie » y perdrait
+    ses accents. `filename*` (RFC 5987) porte l'UTF-8, et l'ASCII reste là."""
+    import app.main as main
+
+    d = main._disposition("EcoBuilding — 3 rue de l'Église, Sète.pdf")
+    assert d.startswith("inline; filename=\"")
+    assert "filename*=UTF-8''" in d
+    assert "%C3%89glise" in d          # É encodé, donc préservé
+    ascii_part = d.split('"')[1]
+    assert ascii_part.isascii() and "  " not in ascii_part
