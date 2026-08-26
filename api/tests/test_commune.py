@@ -91,7 +91,11 @@ async def test_les_trois_champs_interdits_de_perte_sont_la(confinia):
 
 
 @pytest.mark.anyio
-async def test_les_dates_iso_sont_reformulees_pas_supprimees(confinia):
+async def test_une_date_iso_egaree_dans_une_phrase_se_lit_quand_meme(confinia):
+    """Filet. Confinia a corrigé sa prose le 2026-08-26 : ses phrases n'ont
+    plus de dates ISO, dans aucune des deux langues. Ce test garde le
+    comportement au cas où l'une réapparaîtrait — ces phrases finissent dans
+    une fiche remise à un acheteur."""
     b = await _bloc()
     limite = b["limites"][0]
     assert "2026-01-01" not in limite, "une date ISO dans une phrase française"

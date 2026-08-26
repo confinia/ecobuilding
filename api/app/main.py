@@ -1625,13 +1625,18 @@ def _date_fr(iso):
 
 
 def _reformule_dates(texte):
-    """Passe les dates ISO d'un texte français en toutes lettres.
+    """Passe en toutes lettres une date ISO qui traînerait dans une phrase.
 
-    Confinia assume l'ISO 8601 comme format de SON document (confinia-core#269).
-    C'est un choix défendable chez eux et illisible chez nous : « au 2026-01-01 »
-    n'est pas du français. `INTEGRATION.md` autorise explicitement à reformuler
-    — « print it, or re-word it, but do not drop it » — donc on reformule la
-    tournure sans jamais toucher au fond.
+    Filet, plus correctif. Confinia servait « au 2026-01-01 » dans sa prose
+    française — ce qui n'est pas du français — et l'a corrigé le 2026-08-26,
+    dans les deux langues (confinia-core#269). Sur les charges utiles
+    d'aujourd'hui cette fonction ne remplace donc rien.
+
+    On la garde parce que ces phrases atterrissent dans une fiche remise à un
+    acheteur : si une date ISO réapparaissait un jour dans un enregistrement ou
+    une langue qu'on ne surveille pas, mieux vaut qu'elle se lise. Reformuler
+    est explicitement permis — « print it, or re-word it, but do not drop it » :
+    on change la tournure, jamais le fond.
     """
     import re as _re
 
