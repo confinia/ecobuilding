@@ -291,12 +291,41 @@ def _dpe_spread_html(e: dict) -> str:
              if e.get("identiques") else
              f"{e['diagnostics']} diagnostics connus à cette adresse : "
              f"de {e['classe_min']} à {e['classe_max']}.")
+    couv = (f" L'immeuble compte {e['logements_batiment']} logements."
+            if e.get("logements_batiment") else "")
+    # La liste des logements, pour que le lecteur RECONNAISSE le sien.
+    #
+    # On ne prétend pas désigner son lot — le DPE ne porte ni numéro de lot ni
+    # étage fiable. On lui donne les deux clés qu'il possède : sa surface, lue
+    # sur l'annonce, et le numéro de DPE que le vendeur lui remet
+    # obligatoirement. Et on dit, LIGNE PAR LIGNE, quand la surface ne tranche
+    # pas — ce qui n'arrive que dans un cas sur cinq.
+    lignes = []
+    for l in (e.get("logements") or []):
+        m2 = l.get("surface_m2")
+        cout = l.get("cout_annuel_eur")
+        marque = ("seul de cette surface" if l.get("identifiable")
+                  else f"{l.get('memes_surfaces')} logements de cette surface")
+        lignes.append(
+            f"<tr><td>{m2 if m2 is not None else '—'} m²</td>"
+            f"<td>{l.get('classe')}</td>"
+            f"<td>{_eur(round(cout)) if cout else '—'}</td>"
+            f"<td>{marque}</td>"
+            f"<td>{l.get('numero_dpe') or ''}</td></tr>")
+    table = ""
+    if lignes:
+        table = ("""
+<table class="logements"><tr><th>Surface</th><th>DPE</th><th>Coût annuel</th>
+<th>Identification</th><th>N° DPE officiel</th></tr>""" + "".join(lignes) + """</table>
+<p class="meta">Retrouvez le logement concerné par sa surface, ou par le numéro
+de DPE que le vendeur remet obligatoirement — il est vérifiable sur
+l'observatoire de l'ADEME.</p>""")
     return f"""
 <div class="ban">{titre} La classe ci-dessus est celle du logement
-représentatif du bâtiment, pas celle de tous.</div>
+représentatif du bâtiment, pas celle de tous.{couv}</div>
 <p class="meta">Répartition — {parts}. Source : ADEME, observatoire DPE.
 Seuls les logements diagnostiqués figurent : c'est un minimum observé, pas un
-inventaire de l'immeuble.</p>"""
+inventaire de l'immeuble.</p>{table}"""
 
 
 def _local_taxes_html(t: dict) -> str:

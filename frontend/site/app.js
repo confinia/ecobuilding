@@ -843,10 +843,31 @@ function sectionEventailDpe(data) {
     ? `${e.diagnostics} diagnostics connus à cette adresse, tous en ${e.classe_min}.`
     : `${e.diagnostics} diagnostics connus à cette adresse : de <strong>${e.classe_min}</strong>
        à <strong>${e.classe_max}</strong>.`;
+  const couv = e.logements_batiment
+    ? ` L'immeuble compte ${e.logements_batiment} logements.` : "";
+  // La liste des logements, pour que le lecteur RECONNAISSE le sien.
+  //
+  // On ne prétend pas désigner son lot : on lui donne les deux clés qu'il
+  // possède — sa surface, lue sur l'annonce, et le numéro de DPE que le
+  // vendeur lui remet. Et on dit franchement quand la surface ne tranche pas.
+  const lignes = (e.logements || []).map((l) => `<tr>
+      <td>${l.surface_m2 != null ? l.surface_m2 + " m²" : "—"}</td>
+      <td><span class="dpe-badge dpe-${l.classe}">${l.classe}</span></td>
+      <td>${l.cout_annuel_eur ? Math.round(l.cout_annuel_eur).toLocaleString("fr-FR") + " €/an" : "—"}</td>
+      <td class="hint">${l.identifiable
+        ? "seul de cette surface"
+        : `⚠ ${l.memes_surfaces} logements de cette surface`}</td>
+      <td class="hint">${l.numero_dpe || ""}</td></tr>`).join("");
   return `<div class="dpe-spread"><p class="hint">${titre}
       La classe ci-dessus est celle du logement représentatif du bâtiment,
-      pas celle de tous.</p>
-    <p>${parts}</p></div>`;
+      pas celle de tous.${couv}</p>
+    <p>${parts}</p>
+    ${lignes ? `<table class="logements"><thead><tr>
+        <th>Surface</th><th>DPE</th><th>Coût</th><th>Identification</th><th>N° DPE</th>
+      </tr></thead><tbody>${lignes}</tbody></table>
+      <p class="hint">Seuls les logements diagnostiqués figurent : c'est un minimum
+      observé, pas un inventaire. Retrouvez le vôtre par sa surface, ou par le
+      numéro de DPE que le vendeur vous remet.</p>` : ""}</div>`;
 }
 
 function renderPanel(s, data, opts) {

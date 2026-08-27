@@ -313,3 +313,44 @@ async def test_sans_coordonnees_on_les_tire_de_l_emprise(monkeypatch):
     # Le point interrogé est bien le centre de l'emprise.
     assert abs(demande["lon"] - 2.32553) < 1e-4
     assert abs(demande["lat"] - 48.86633) < 1e-4
+
+
+@pytest.mark.anyio
+async def test_chaque_logement_dit_s_il_est_identifiable(monkeypatch):
+    """« Deux appartements de 43 m² restent indiscernables » — vrai, mais
+    minoritaire : mesuré sur 398 logements d'immeubles à diagnostics
+    multiples, la surface est unique dans 78 % des cas.
+
+    On le dit donc LIGNE PAR LIGNE plutôt qu'en avertissement général : jeter
+    le doute sur tout quand l'ambiguïté ne touche qu'un cas sur cinq serait
+    aussi trompeur que de la taire."""
+    import app.main as main
+
+    monkeypatch.setattr(main, "CONFINIA_API_KEY", "clé")
+
+    async def faux(url, params, ttl=0, headers=None):
+        if "rel_batiment" in url:
+            return [{"cle_interop_adr": "x"}]
+        return {"results": [
+            {"numero_dpe": "A1", "etiquette_dpe": "C", "surface_habitable_logement": 77,
+             "cout_total_5_usages": 1067.5},
+            {"numero_dpe": "B2", "etiquette_dpe": "E", "surface_habitable_logement": 43},
+            {"numero_dpe": "C3", "etiquette_dpe": "G", "surface_habitable_logement": 43},
+        ]}
+
+    monkeypatch.setattr(main, "_cached_get_json", faux)
+    r = await main._dpe_spread("bdnb-bg-X", None, None, logements_bdnb=22)
+
+    par_numero = {x["numero_dpe"]: x for x in r["logements"]}
+    assert par_numero["A1"]["identifiable"] is True
+    assert par_numero["A1"]["memes_surfaces"] == 1
+    assert par_numero["B2"]["identifiable"] is False
+    assert par_numero["B2"]["memes_surfaces"] == 2
+    assert r["identifiables"] == 1
+
+    # La couverture : sans elle, montrer trois logements laisserait croire à
+    # un inventaire de l'immeuble.
+    assert r["logements_batiment"] == 22
+    # Le numéro de DPE voyage : c'est la seule clé qui tranche à coup sûr.
+    assert all(x.get("numero_dpe") for x in r["logements"])
+    assert par_numero["A1"]["cout_annuel_eur"] == 1067.5
