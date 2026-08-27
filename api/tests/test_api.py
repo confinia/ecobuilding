@@ -1195,3 +1195,59 @@ async def test_les_deux_vues_paralleles_portent_chacune_leur_duree():
     finally:
         main.M_REPORT_STAGE.record = orig
     assert r == ["ok", "ok"] and sorted(vus) == ["aerial", "render_3d"]
+
+
+# --- Cache du rendu 3D (#280) ------------------------------------------------
+#
+# 11,7 s mesurées en production pour cette seule étape, repayées à chaque
+# génération : le cache de la fiche finie ne protège que la combinaison exacte
+# de paramètres, pas la vue.
+
+@pytest.mark.anyio
+async def test_le_rendu_3d_ne_se_paie_qu_une_fois(monkeypatch, tmp_path):
+    import app.main as main
+
+    monkeypatch.setattr(main, "TILES_DIR", str(tmp_path))
+    monkeypatch.setattr(main, "RENDER_URL", "http://render/shot")
+    appels = []
+
+    class Reponse:
+        content = b"\x89PNG" + b"x" * 20_000
+        def raise_for_status(self): pass
+
+    async def faux_get(url, params=None, timeout=None):
+        appels.append(url)
+        return Reponse()
+
+    monkeypatch.setattr(main._client, "get", faux_get)
+    a = await main._building_map_png(3.87, 43.61, "bdnb-bg-X")
+    b = await main._building_map_png(3.87, 43.61, "bdnb-bg-X")
+    assert a == b and a.startswith("data:image/png;base64,")
+    assert len(appels) == 1, "la même vue a été rendue deux fois"
+    # Une AUTRE vue n'est pas servie par le cache de la première.
+    await main._building_map_png(3.88, 43.61, "bdnb-bg-Y")
+    assert len(appels) == 2
+
+
+@pytest.mark.anyio
+async def test_une_capture_tronquee_n_entre_pas_au_cache(monkeypatch, tmp_path):
+    """Elle y resterait trente jours : mieux vaut repayer le rendu au prochain
+    appel que servir un mois d'images vides."""
+    import app.main as main
+
+    monkeypatch.setattr(main, "TILES_DIR", str(tmp_path))
+    monkeypatch.setattr(main, "RENDER_URL", "http://render/shot")
+    appels = []
+
+    class Tronquee:
+        content = b"\x89PNG"                       # 4 octets : invraisemblable
+        def raise_for_status(self): pass
+
+    async def faux_get(url, params=None, timeout=None):
+        appels.append(url)
+        return Tronquee()
+
+    monkeypatch.setattr(main._client, "get", faux_get)
+    await main._building_map_png(3.87, 43.61, "bdnb-bg-X")
+    await main._building_map_png(3.87, 43.61, "bdnb-bg-X")
+    assert len(appels) == 2, "une capture tronquée a été mise en cache"
