@@ -273,7 +273,7 @@ def _principal_address_note(shown_address: str, b: dict) -> str:
             f'adresse principale : {principal}</p>')
 
 
-def _dpe_spread_html(e: dict) -> str:
+def _dpe_spread_html(e: dict, dpe_representatif: str | None = None) -> str:
     """L'éventail des DPE connus à l'adresse (#287).
 
     Une classe unique par bâtiment se trompe pour presque tous les logements
@@ -291,12 +291,61 @@ def _dpe_spread_html(e: dict) -> str:
              if e.get("identiques") else
              f"{e['diagnostics']} diagnostics connus à cette adresse : "
              f"de {e['classe_min']} à {e['classe_max']}.")
+    couv = (f" L'immeuble compte {e['logements_batiment']} logements."
+            if e.get("logements_batiment") else "")
+    # La liste des logements, pour que le lecteur RECONNAISSE le sien.
+    #
+    # On ne prétend pas désigner son lot — le DPE ne porte ni numéro de lot ni
+    # étage fiable. On lui donne les deux clés qu'il possède : sa surface, lue
+    # sur l'annonce, et le numéro de DPE que le vendeur lui remet
+    # obligatoirement. Et on dit, LIGNE PAR LIGNE, quand la surface ne tranche
+    # pas — ce qui n'arrive que dans un cas sur cinq.
+    # UN BLOC PAR DPE.
+    #
+    # Un tableau suivi des caractéristiques détaillées d'un seul logement se
+    # lisait comme « trois diagnostics, une seule date ». Chaque diagnostic a
+    # sa date, sa consommation, son coût et son isolation : il lui faut son
+    # bloc.
+    blocs = []
+    for l in (e.get("logements") or []):
+        m2 = l.get("surface_m2")
+        est_repr = bool(dpe_representatif and l.get("numero_dpe") == dpe_representatif)
+        isolation = " · ".join(x for x in (
+            f"enveloppe {l['isolation_enveloppe']}" if l.get("isolation_enveloppe") else "",
+            f"menuiseries {l['isolation_menuiseries']}" if l.get("isolation_menuiseries") else "",
+        ) if x)
+        marque = ("seul logement de cette surface" if l.get("identifiable")
+                  else f"{l.get('memes_surfaces')} logements de cette surface — indiscernables")
+        # Nom distinct de `titre` : celui-ci porte la phrase d'introduction de
+        # la section, et la réutiliser dans la boucle l'écrasait — la fiche
+        # rendue affichait « 7.6 m² La classe ci-dessus est... » au lieu de
+        # « 3 diagnostics connus à cette adresse : de D à G. »
+        entete = (f"{m2} m²" if m2 is not None else "Logement")
+        blocs.append(
+            f'<div class="logement{" repr" if est_repr else ""}">'
+            f'<div class="logement-t"><strong>{entete} — classe {l.get("classe")}</strong>'
+            f'{" · classe affichée ci-dessus" if est_repr else ""}</div>'
+            "<table>"
+            + _row("Établi le", l.get("etabli_le"))
+            + _row("Consommation", l.get("conso_kwh_m2y") and round(l["conso_kwh_m2y"]), " kWh/m²/an")
+            + _row("GES", l.get("ges_kgco2_m2y") and round(l["ges_kgco2_m2y"]), " kgCO₂/m²/an")
+            + _row("Coût annuel", _eur(l["cout_annuel_eur"]) + " €/an" if l.get("cout_annuel_eur") else None)
+            + _row("Isolation", isolation or None)
+            + _row("N° DPE", l.get("numero_dpe"))
+            + "</table>"
+            + f'<p class="meta">{marque}</p></div>')
+    table = ""
+    if blocs:
+        table = "".join(blocs) + """
+<p class="meta">Retrouvez le logement concerné par sa surface, ou par le numéro
+de DPE que le vendeur remet obligatoirement — il est vérifiable sur
+l'observatoire de l'ADEME.</p>"""
     return f"""
 <div class="ban">{titre} La classe ci-dessus est celle du logement
-représentatif du bâtiment, pas celle de tous.</div>
+représentatif du bâtiment, pas celle de tous.{couv}</div>
 <p class="meta">Répartition — {parts}. Source : ADEME, observatoire DPE.
 Seuls les logements diagnostiqués figurent : c'est un minimum observé, pas un
-inventaire de l'immeuble.</p>"""
+inventaire de l'immeuble.</p>{table}"""
 
 
 def _local_taxes_html(t: dict) -> str:
@@ -501,7 +550,12 @@ def _report_html(data: dict, photos: list | None = None, map_img: str | None = N
   .dpe {{ display: inline-block; min-width: 26pt; text-align: center; font-weight: bold;
          color: #fff; background: {color}; border-radius: 4pt; padding: 4pt 8pt; font-size: 15pt; }}
   {'.dpe { color: #333; }' if cls == 'D' else ''}
-  .ban {{ margin: 6pt 0; padding: 6pt 8pt; border-radius: 4pt; font-size: 10pt; }}
+    .logement {{ border: 1pt solid #e0e0e0; border-radius: 5pt; padding: 5pt 7pt;
+    margin: 5pt 0; break-inside: avoid; }}
+  .logement.repr {{ border-color: #2b7a4b; background: #f5faf7; }}
+  .logement-t {{ font-size: 9.5pt; margin-bottom: 2pt; }}
+  .logement table {{ margin: 0; }}
+.ban {{ margin: 6pt 0; padding: 6pt 8pt; border-radius: 4pt; font-size: 10pt; }}
   .ban.warn {{ background: #fdecea; color: #b3261e; }}
   .ban.ok {{ background: #e8f5e9; color: #2b7a4b; }}
   h2 {{ font-size: 10pt; text-transform: uppercase; letter-spacing: .05em; color: #2b7a4b;
@@ -531,7 +585,11 @@ def _report_html(data: dict, photos: list | None = None, map_img: str | None = N
 </style>
 <header>
   <div class="brand">EcoBuilding</div>
-  <div class="doctitle">Fiche bâtiment normalisée — données ouvertes</div>
+  <!-- « normalisée » promettait une norme qui n'existe pas : ce document est
+       assemblé à partir de données ouvertes, il ne se conforme à aucun
+       référentiel. Dire ce qu'il EST — formaté par nous, sourcé chez l'État —
+       vaut mieux que d'emprunter l'autorité d'une norme. -->
+  <div class="doctitle">Fiche bâtiment formatée et sourcée — données ouvertes</div>
 </header>
 <h1>{address}</h1>
 {_principal_address_note(address, b)}
@@ -540,7 +598,7 @@ def _report_html(data: dict, photos: list | None = None, map_img: str | None = N
 <h2>Énergie (DPE)</h2>
 <p>{badge}&nbsp;&nbsp;{f"{round(conso)} kWh/m²/an" if conso else "Aucun DPE enregistré dans la BDNB pour ce bâtiment"}</p>
 {ban_html}
-{_dpe_spread_html(data.get("dpe_spread") or {})}
+{_dpe_spread_html(data.get("dpe_spread") or {}, (data.get("official_dpe") or {}).get("dpe_number"))}
 {('<table class="labels"><tr>'
   '<td><div class="lbl-title">Étiquette énergie <span>(kWh/m²/an, énergie primaire)</span></div>'
   + _scale(cls, DPE_COLORS, f"{round(conso)}" if conso else "") +

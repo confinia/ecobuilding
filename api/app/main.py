@@ -1426,7 +1426,7 @@ def _building_block_coros(bdnb_id, lon, lat, row):
             _water_network(commune), _official_dpe(bdnb_id),
             _local_taxes(commune), _nearby_schools(lon, lat),
             _rnb_lookup(lon, lat), _commune_history(commune, lon, lat, bdnb_id),
-            _dpe_spread(bdnb_id, lon, lat))
+            _dpe_spread(bdnb_id, lon, lat, row.get("nb_log")))
 
 
 
@@ -1628,7 +1628,7 @@ def _classe_min_max(classes):
     return (connues[0], connues[-1]) if connues else (None, None)
 
 
-async def _dpe_spread(bdnb_id, lon, lat):
+async def _dpe_spread(bdnb_id, lon, lat, logements_bdnb=None):
     """Les DPE connus aux adresses du bâtiment, et leur dispersion.
 
     None quand il n'y a rien à dire — zéro ou un seul diagnostic — pour que la
@@ -1653,15 +1653,39 @@ async def _dpe_spread(bdnb_id, lon, lat):
             d = await _cached_get_json(
                 ADEME_DPE_URL,
                 {"identifiant_ban_eq": ban, "size": "100",
-                 "select": ",".join(("etiquette_dpe", "surface_habitable_logement",
+                 # Assez de champs pour donner à CHAQUE logement un bloc
+                 # complet, en un seul appel par adresse. La fiche montrait un
+                 # tableau de plusieurs logements puis les caractéristiques
+                 # détaillées d'un seul, sans dire lequel — d'où la question
+                 # « 3 DPE, une seule date ? ».
+                 "select": ",".join(("numero_dpe", "etiquette_dpe",
+                                     "surface_habitable_logement",
                                      "numero_etage_appartement", "type_batiment",
-                                     "type_installation_chauffage", "date_etablissement_dpe"))},
+                                     "type_installation_chauffage",
+                                     "date_etablissement_dpe",
+                                     "conso_5_usages_par_m2_ep",
+                                     "emission_ges_5_usages_par_m2",
+                                     "cout_total_5_usages",
+                                     "qualite_isolation_enveloppe",
+                                     "qualite_isolation_menuiseries",
+                                     "description_installation_chauffage_n1"))},
                 ttl=7 * 86400)
             for r in (d.get("results") or []):
                 if r.get("etiquette_dpe"):
                     logements.append({
+                        # Le numéro de DPE est délivré par l'ADEME et
+                        # VÉRIFIABLE par n'importe qui sur leur observatoire.
+                        # C'est la seule clé qui identifie un logement à coup
+                        # sûr : le vendeur remet ce numéro à l'acquéreur.
+                        "numero_dpe": r.get("numero_dpe"),
                         "classe": r["etiquette_dpe"],
                         "surface_m2": r.get("surface_habitable_logement"),
+                        "cout_annuel_eur": r.get("cout_total_5_usages"),
+                        "conso_kwh_m2y": r.get("conso_5_usages_par_m2_ep"),
+                        "ges_kgco2_m2y": r.get("emission_ges_5_usages_par_m2"),
+                        "isolation_enveloppe": r.get("qualite_isolation_enveloppe"),
+                        "isolation_menuiseries": r.get("qualite_isolation_menuiseries"),
+                        "chauffage_detail": r.get("description_installation_chauffage_n1"),
                         # L'étage n'est renseigné que dans 17 % des cas : on le
                         # porte quand il existe, on n'en fait jamais un axe.
                         "etage": r.get("numero_etage_appartement"),
@@ -1674,6 +1698,21 @@ async def _dpe_spread(bdnb_id, lon, lat):
 
         classes = [x["classe"] for x in logements]
         basse, haute = _classe_min_max(classes)
+
+        # Identifiable ou non, LIGNE PAR LIGNE.
+        #
+        # Deux appartements de 43 m² sont indiscernables — mais mesuré sur 398
+        # logements d'immeubles à diagnostics multiples, la surface est unique
+        # dans 78 % des cas. L'ambiguïté est donc minoritaire, et surtout on
+        # sait où elle est : dire « un seul logement de cette surface » vaut
+        # mieux qu'un avertissement général qui jette le doute sur tout.
+        surfaces = [x.get("surface_m2") for x in logements]
+        for x in logements:
+            m2 = x.get("surface_m2")
+            n = surfaces.count(m2) if m2 is not None else 0
+            x["memes_surfaces"] = n
+            x["identifiable"] = n == 1
+
         logements.sort(key=lambda x: -(x.get("surface_m2") or 0))
         return {
             "diagnostics": len(logements),
@@ -1682,6 +1721,11 @@ async def _dpe_spread(bdnb_id, lon, lat):
             "classe_max": haute,
             "identiques": basse == haute,
             "repartition": {c: classes.count(c) for c in sorted(set(classes))},
+            "identifiables": sum(1 for x in logements if x["identifiable"]),
+            # La COUVERTURE, sans quoi montrer douze logements laisserait
+            # croire à un inventaire. La BDNB sait combien l'immeuble en
+            # compte ; l'ADEME ne connaît que ceux qui ont été diagnostiqués.
+            "logements_batiment": logements_bdnb,
             # Assez pour montrer l'éventail sans transformer la fiche en liste.
             "logements": logements[:12],
         }
