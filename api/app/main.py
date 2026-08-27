@@ -3280,34 +3280,55 @@ async def report(
             or _nom_de_fiche(None, bdnb_id)
         return Response(cached, media_type="application/pdf",
                         headers={"Content-Disposition": _disposition(nom)})
-    with _chrono("data"):
-        data = await building(bdnb_id, lon, lat)
-    q = data.get("query", {})
-    if address:
-        q["address"] = address  # title with the searched address (#146)
-    # Self-resolve coordinates from the building's address if the caller did not
-    # pass them, so the Panoramax context page works regardless of entry point.
-    if q.get("lon") is None and (data.get("buildings") or [{}])[0].get("address"):
+    async def _photos_sures(plon, plat):
+        """Les photos, sans jamais faire tomber la fiche."""
         try:
-            geo = await _cached_get_json(
-                BAN_URL, {"q": data["buildings"][0]["address"], "limit": 1}, ttl=86400)
-            feats = geo.get("features", [])
-            if feats:
-                q["lon"], q["lat"] = feats[0]["geometry"]["coordinates"][:2]
+            return await _nearby_photos(plon, plat)
         except httpx.HTTPError:
-            pass
-    photos = []
-    if q.get("lon") is not None and q.get("lat") is not None:
-        try:
+            return []
+
+    if lon is not None and lat is not None:
+        # TOUT part en même temps. Les deux vues et les photos n'ont besoin
+        # que de la position et de l'identifiant — connus dès la requête —
+        # mais attendaient la fin des neuf sources de l'agrégat. Ce faux
+        # ordre coûtait ~5 s à CHAQUE première impression (#280) :
+        # données (9 s) puis vues (5 s) au lieu de max(9, 5).
+        data, photos, map_img, aerial = await asyncio.gather(
+            _chronometre("data", building(bdnb_id, lon, lat)),
+            _chronometre("photos", _photos_sures(lon, lat)),
+            _chronometre("render_3d", _building_map_png(lon, lat, bdnb_id)),
+            _chronometre("aerial", _aerial_view(bdnb_id, lon, lat)))
+        q = data.get("query", {})
+        if address:
+            q["address"] = address  # title with the searched address (#146)
+    else:
+        # Sans position — un lien partagé nu — l'ordre séquentiel demeure :
+        # les coordonnées sortent de l'agrégat, les vues ne peuvent pas
+        # partir avant lui.
+        with _chrono("data"):
+            data = await building(bdnb_id, lon, lat)
+        q = data.get("query", {})
+        if address:
+            q["address"] = address  # title with the searched address (#146)
+        # Self-resolve coordinates from the building's address if the caller
+        # did not pass them, so the Panoramax context page works regardless of
+        # entry point.
+        if q.get("lon") is None and (data.get("buildings") or [{}])[0].get("address"):
+            try:
+                geo = await _cached_get_json(
+                    BAN_URL, {"q": data["buildings"][0]["address"], "limit": 1}, ttl=86400)
+                feats = geo.get("features", [])
+                if feats:
+                    q["lon"], q["lat"] = feats[0]["geometry"]["coordinates"][:2]
+            except httpx.HTTPError:
+                pass
+        photos = []
+        if q.get("lon") is not None and q.get("lat") is not None:
             with _chrono("photos"):
-                photos = await _nearby_photos(q["lon"], q["lat"])
-        except httpx.HTTPError:
-            pass
-    # Les deux vues en parallèle : le rendu 3D et la photo aérienne se
-    # complètent, et les demander l'une après l'autre doublerait l'attente.
-    map_img, aerial = await asyncio.gather(
-        _chronometre("render_3d", _building_map_png(q.get("lon"), q.get("lat"), bdnb_id)),
-        _chronometre("aerial", _aerial_view(bdnb_id, q.get("lon"), q.get("lat"))))
+                photos = await _photos_sures(q["lon"], q["lat"])
+        map_img, aerial = await asyncio.gather(
+            _chronometre("render_3d", _building_map_png(q.get("lon"), q.get("lat"), bdnb_id)),
+            _chronometre("aerial", _aerial_view(bdnb_id, q.get("lon"), q.get("lat"))))
     with _chrono("compose"):
         pdf = build_report_pdf(data, photos=photos, map_img=map_img,
                                aerial_img=aerial.get("image"),

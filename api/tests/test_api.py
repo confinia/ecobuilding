@@ -1251,3 +1251,54 @@ async def test_une_capture_tronquee_n_entre_pas_au_cache(monkeypatch, tmp_path):
     await main._building_map_png(3.87, 43.61, "bdnb-bg-X")
     await main._building_map_png(3.87, 43.61, "bdnb-bg-X")
     assert len(appels) == 2, "une capture tronquée a été mise en cache"
+
+
+@pytest.mark.anyio
+async def test_les_vues_ne_font_plus_la_queue_derriere_les_donnees(monkeypatch, tmp_path):
+    """#280, première impression : les vues n'ont besoin que de la position,
+    connue dès la requête — elles attendaient pourtant la fin des neuf
+    sources. Deux travaux de 0,15 s chacun doivent coûter ~0,15 s, pas 0,3."""
+    import asyncio
+    import time as _t
+
+    import app.main as main
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setattr(main, "TILES_DIR", str(tmp_path))
+    monkeypatch.setattr(main, "PDF_CACHE_DIR", str(tmp_path / "pdf"))
+    monkeypatch.setattr(main, "USAGE_PATH", str(tmp_path / "u.json"))
+    monkeypatch.setattr(main, "DAILY_PATH", str(tmp_path / "d.json"))
+
+    async def lent_building(bdnb_id, lon, lat):
+        await asyncio.sleep(0.15)
+        return {"query": {"bdnb_id": bdnb_id, "lon": lon, "lat": lat,
+                          "address": "1 Rue Test 34000 Montpellier"},
+                "buildings": [{"bdnb_id": bdnb_id,
+                               "address": "1 Rue Test 34000 Montpellier",
+                               "energy": {}}],
+                "sources": []}
+
+    async def lent_render(lon, lat, bdnb_id, bearing=-30.0):
+        await asyncio.sleep(0.15)
+        return None
+
+    async def aerienne_vide(*a, **k):
+        return {}                      # la vraie fonction rend toujours un dict
+
+    async def aucune_photo(*a, **k):
+        return []
+
+    monkeypatch.setattr(main, "building", lent_building)
+    monkeypatch.setattr(main, "_building_map_png", lent_render)
+    monkeypatch.setattr(main, "_aerial_view", aerienne_vide)
+    monkeypatch.setattr(main, "_nearby_photos", aucune_photo)
+    monkeypatch.setattr(main, "build_report_pdf",
+                        lambda *a, **k: b"%PDF-1.4 fake", raising=False)
+    import app.report as report
+    monkeypatch.setattr(report, "build_report_pdf", lambda *a, **k: b"%PDF-1.4 fake")
+
+    t0 = _t.monotonic()
+    r = TestClient(main.app).get("/v1/report/bdnb-bg-PAR.pdf?lon=3.87&lat=43.61")
+    duree = _t.monotonic() - t0
+    assert r.status_code == 200, r.text
+    assert duree < 0.28, f"les travaux se sont enchaînés au lieu de se recouvrir : {duree:.2f}s"
