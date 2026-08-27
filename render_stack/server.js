@@ -51,8 +51,12 @@ app.get('/shot', async (req, res) => {
     if (err) throw new Error('map error: ' + err);
     await new Promise(r => setTimeout(r, 800));   // let tiles settle
     const el = await page.$('#map');
-    const png = await el.screenshot({ type: 'png' });
-    res.type('png').send(png);
+    // JPEG et non PNG : la capture pesait 0,6 à 1,3 Mo (960×540 à l'échelle 2)
+    // et ces octets se payaient trois fois — composition WeasyPrint (~5 s
+    // mesurées, #280), poids du PDF téléchargé, place au cache. Une carte en
+    // aplats souffre peu du JPEG à cette qualité.
+    const img = await el.screenshot({ type: 'jpeg', quality: 85 });
+    res.type('jpeg').send(img);
   } catch (e) {
     console.error('shot failed:', e.message);
     res.status(500).send(String(e.message));
