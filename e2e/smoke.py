@@ -21,6 +21,7 @@ Usage :  python3 e2e/smoke.py [https://staging.ecobuilding.confinia.io]
 Sortie  : 0 si tout passe, 1 sinon (utilisable comme garde-fou de déploiement).
 """
 import json
+import os
 import sys
 import time
 import urllib.error
@@ -40,15 +41,30 @@ REF_TILE = "14/8297/5635"
 results = []
 
 
+# Fenêtre de grâce au démarrage (#303). Juste après un déploiement, la pile
+# répond au /healthz avant que ses dépendances soient prêtes : trois faux
+# rouges en trois jours, chacun vert à la main une minute après. Pendant cette
+# fenêtre, un échec est réessayé au lieu d'être jugé ; passée la fenêtre, il
+# est définitif — le rouge reste digne de confiance, au prix d'au plus 90 s de
+# retard sur un vrai incident.
+_GRACE_DEADLINE = time.time() + float(os.environ.get("SMOKE_GRACE_S", "90"))
+
+
 def check(name, fn):
     t0 = time.time()
-    try:
-        detail = fn()
-        ok = True
-    except AssertionError as e:
-        detail, ok = str(e), False
-    except Exception as e:                       # réseau, JSON, timeout…
-        detail, ok = f"{type(e).__name__}: {e}", False
+    while True:
+        try:
+            detail = fn()
+            ok = True
+        except AssertionError as e:
+            detail, ok = str(e), False
+        except Exception as e:                   # réseau, JSON, timeout…
+            detail, ok = f"{type(e).__name__}: {e}", False
+        if ok or time.time() >= _GRACE_DEADLINE:
+            break
+        time.sleep(5)
+    # La durée inclut les réessais : une pile lente à démarrer doit se VOIR
+    # dans les journaux, pas seulement finir par passer.
     results.append((ok, name, detail, time.time() - t0))
 
 
