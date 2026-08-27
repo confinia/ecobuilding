@@ -2441,7 +2441,11 @@ mois sont offertes. Le compte ajoute :</p>
   <li>Le suivi de votre consommation</li>
   <li>Un quota qui vous suit, quel que soit l'appareil ou le réseau</li>
 </ul>
-<p><a class="btn s" href="https://ecobuilding.confinia.io/offres.html">Voir les offres Pro</a></p>
+{'<p><a class="btn s" href="https://ecobuilding.confinia.io/offres.html">Voir les offres Pro</a></p>'
+  if PAYMENT_PROVIDER != "none" else
+  '<p class="help">Besoin de plus de fiches ? Les offres payantes ne sont pas '
+  'encore ouvertes : dites-nous votre volume, c\'est ce qui décide de leur '
+  'ouverture.</p>'}
 <p class="help">Un problème, une question ? Écrivez à
 <a href="mailto:{SUPPORT_EMAIL}?subject=EcoBuilding%20-%20aide">{SUPPORT_EMAIL}</a>, on répond.</p>
 </body></html>""")

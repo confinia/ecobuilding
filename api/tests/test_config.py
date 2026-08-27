@@ -323,3 +323,26 @@ def test_account_panel_and_payment_banner():
     assert "setOffset" not in app
     css = (ROOT / "frontend/site/style.css").read_text()
     assert "#paybanner" in css and "ul.keys" in css
+
+
+def test_aucun_bouton_pro_quand_le_paiement_est_ferme():
+    """Un bouton qui finit en « momentanément indisponible » est pire que pas
+    de bouton : l'utilisateur a voulu payer et s'est heurté à une alerte.
+
+    Le drapeau existait déjà, mais n'était posé qu'à UN endroit — l'en-tête.
+    Le mur de quota, lui, proposait Pro quoi qu'il arrive. Ce test verrouille
+    les deux surfaces."""
+    js = (ROOT / "frontend/site/app.js").read_text()
+    # Le mur web ne propose Pro que si l'offre est réellement ouverte.
+    i = js.index("function showQuotaPanel")
+    bloc = js[i:i + 3000]
+    assert "ECO_PRO_ENABLED" in bloc, \
+        "le mur de quota ignore si Pro est achetable"
+    assert "mailto:contact@confinia.io" in bloc, \
+        "sans offre ouverte, le mur doit recueillir le besoin, pas le perdre"
+
+    # Et le mur rendu par le serveur suit la même règle.
+    main_py = (ROOT / "api/app/main.py").read_text()
+    j = main_py.index("Limite gratuite atteinte — EcoBuilding")
+    assert 'PAYMENT_PROVIDER != "none"' in main_py[j:j + 2500], \
+        "la page 429 propose les offres même quand rien n'est achetable"
