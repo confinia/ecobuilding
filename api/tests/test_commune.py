@@ -282,3 +282,34 @@ async def test_une_commune_eteinte_montre_sa_date_de_FIN(monkeypatch):
     assert r["existe_encore"] is False
     assert r["jusqu_au_fr"] == "1ᵉʳ janvier 2019"        # la fin
     assert r["depuis_fr"] == "1ᵉʳ janvier 1943"          # le début, distinct
+
+
+@pytest.mark.anyio
+async def test_sans_coordonnees_on_les_tire_de_l_emprise(monkeypatch):
+    """Une fiche ouverte par identifiant seul — un lien partagé — n'a pas de
+    position. Sans elle, le code de la BDNB reprenait la main et Paris
+    redevenait « éteinte ». L'emprise du bâtiment donne le point."""
+    import app.main as main
+
+    monkeypatch.setattr(main, "CONFINIA_API_KEY", "clé")
+    demande = {}
+
+    async def anneau(bid):
+        return [(2.3250, 48.8660), (2.3258, 48.8660), (2.3258, 48.8670)]
+
+    async def faux(url, params, ttl=0, headers=None):
+        if url.endswith("/communes"):
+            demande.update(params)
+            return {"properties": {"code": "75056", "nom": "Paris"}}
+        return {"unit": {"code": "75056", "name": "Paris",
+                         "valid_from": "1943-01-01", "valid_to": None},
+                "as_known_on": "2026-01-01", "versions": [],
+                "declined": [], "limitations": [], "attribution": []}
+
+    monkeypatch.setattr(main, "_building_ring", anneau)
+    monkeypatch.setattr(main, "_cached_get_json", faux)
+    r = await main._commune_history("75101", None, None, bdnb_id="bdnb-bg-X")
+    assert r["code"] == "75056"
+    # Le point interrogé est bien le centre de l'emprise.
+    assert abs(demande["lon"] - 2.32553) < 1e-4
+    assert abs(demande["lat"] - 48.86633) < 1e-4

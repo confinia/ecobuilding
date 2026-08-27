@@ -1425,7 +1425,7 @@ def _building_block_coros(bdnb_id, lon, lat, row):
             _click_address(bdnb_id, lon, lat),
             _water_network(commune), _official_dpe(bdnb_id),
             _local_taxes(commune), _nearby_schools(lon, lat),
-            _rnb_lookup(lon, lat), _commune_history(commune, lon, lat),
+            _rnb_lookup(lon, lat), _commune_history(commune, lon, lat, bdnb_id),
             _dpe_spread(bdnb_id, lon, lat))
 
 
@@ -1803,7 +1803,7 @@ async def _commune_du_point(lon, lat):
         return None
 
 
-async def _commune_history(commune, lon=None, lat=None):
+async def _commune_history(commune, lon=None, lat=None, bdnb_id=None):
     """La commune au sens civil, ses noms passés, et ce qui borne ces faits.
 
     Rend None — donc pas de bloc — si la clé manque ou si Confinia se tait :
@@ -1819,6 +1819,16 @@ async def _commune_history(commune, lon=None, lat=None):
         return None
     # Le POINT prime sur le code : il désigne la commune vivante, là où le code
     # de la BDNB peut désigner un arrondissement que Confinia tient pour éteint.
+    #
+    # Sans coordonnées — une fiche ouverte par identifiant seul — on les tire
+    # de l'emprise du bâtiment. Sans cela le correctif ne valait que pour le
+    # clic sur la carte, et Paris redevenait « éteinte » dès qu'on partageait
+    # un lien sans position.
+    if (lon is None or lat is None) and bdnb_id:
+        anneau = await _building_ring(bdnb_id)
+        if anneau:
+            lon = sum(c[0] for c in anneau) / len(anneau)
+            lat = sum(c[1] for c in anneau) / len(anneau)
     commune = await _commune_du_point(lon, lat) or commune
     if not commune:
         return None
