@@ -2202,7 +2202,11 @@ def _usage_cost(fiches: int) -> dict:
         "tiers": {k: {"eur": v["eur"], "fiches_month": v["fiches"], "label": v["label"]}
                   for k, v in PRO_TIERS.items()},
         "free_tiers": {"anonymous_reports_month": ANON_MONTHLY_REPORTS,
-                       "free_account_reports_month": FREE_ACCOUNT_REPORTS},
+                       # Le droit d'un compte gratuit est QUOTIDIEN (#290).
+                       # L'ancien champ mensuel reste exposé : une application
+                       # déjà installée le lit, et le retirer la casserait.
+                       "free_account_reports_month": FREE_ACCOUNT_REPORTS,
+                       "free_account_reports_day": FREE_ACCOUNT_DAILY_REPORTS},
     }
 
 
