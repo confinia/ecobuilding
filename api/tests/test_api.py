@@ -1159,3 +1159,39 @@ def test_le_previsionnel_et_l_usage_annoncent_le_meme_droit(monkeypatch, tmp_pat
     assert quota["reports_left"] == usage["reports_left"] \
         == main.FREE_ACCOUNT_DAILY_REPORTS - 2
     assert quota["free_again"] == ["bdnb-a", "bdnb-b"]
+
+
+def test_le_chronometre_mesure_meme_l_echec():
+    """#280 : un échec LENT est précisément ce qu'on veut voir. Un chronomètre
+    qui ne mesure que les succès rendrait la panne invisible — le travers
+    rencontré quatre fois cette semaine sous d'autres formes."""
+    import app.main as main
+
+    vus = []
+    orig = main.M_REPORT_STAGE.record
+    main.M_REPORT_STAGE.record = lambda v, attrs: vus.append((attrs["stage"], v))
+    try:
+        with pytest.raises(RuntimeError):
+            with main._chrono("essai"):
+                raise RuntimeError("étape en panne")
+    finally:
+        main.M_REPORT_STAGE.record = orig
+    assert vus and vus[0][0] == "essai" and vus[0][1] >= 0
+
+
+@pytest.mark.anyio
+async def test_les_deux_vues_paralleles_portent_chacune_leur_duree():
+    import app.main as main
+
+    vus = []
+    orig = main.M_REPORT_STAGE.record
+    main.M_REPORT_STAGE.record = lambda v, attrs: vus.append(attrs["stage"])
+    try:
+        async def vite():
+            return "ok"
+        import asyncio
+        r = await asyncio.gather(main._chronometre("render_3d", vite()),
+                                 main._chronometre("aerial", vite()))
+    finally:
+        main.M_REPORT_STAGE.record = orig
+    assert r == ["ok", "ok"] and sorted(vus) == ["aerial", "render_3d"]

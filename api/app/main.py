@@ -1966,6 +1966,41 @@ async def me(request: Request):
 
 
 M_REPORTS = _meter.create_counter("ecobuilding_reports", description="PDF fiches generated", unit="1")
+# La durée de CHAQUE étape de la fiche (#280). On comptait tout, on ne
+# chronométrait rien : quand un utilisateur a signalé « près d'une minute »,
+# il a fallu vingt minutes de sondage manuel pour attribuer la moitié du
+# temps, et l'autre moitié est restée inexpliquée. Un histogramme par étape
+# rend la prochaine minute lisible en une requête Grafana.
+# Chaque MUR de quota affiché (#292) : c'est le signal d'affaires que la règle
+# 7 attend — quelqu'un voulait une fiche et ne l'a pas eue. Compté par plan et
+# par période, jamais par personne.
+M_QUOTA_WALL = _meter.create_counter(
+    "ecobuilding_quota_walls", description="Quota refusals shown", unit="1")
+M_REPORT_STAGE = _meter.create_histogram(
+    "ecobuilding_report_stage_seconds",
+    description="PDF report generation, per stage", unit="s")
+
+
+class _chrono:
+    """Chronomètre d'étape : mesure même quand l'étape échoue — un échec lent
+    est précisément ce qu'on veut voir."""
+
+    def __init__(self, etape):
+        self.etape = etape
+
+    def __enter__(self):
+        self.debut = time.monotonic()
+
+    def __exit__(self, *exc):
+        M_REPORT_STAGE.record(time.monotonic() - self.debut,
+                              {"stage": self.etape})
+
+
+async def _chronometre(etape, coro):
+    """Même chose pour une coroutine lancée dans un gather : les deux vues
+    partent en parallèle, chacune doit porter sa propre durée."""
+    with _chrono(etape):
+        return await coro
 
 # --- API keys & soft quota (issue #27) ---------------------------------------
 # Keys are minted by signed-in users (bound to their org) and stored on the
@@ -2437,6 +2472,7 @@ def _quota_gate(request: Request, endpoint: str, subject: str | None = None):
             key_id = hashlib.sha256(key.encode()).hexdigest()[:16]
             used = (_usage_load().get(_month_key()) or {}).get(key_id, 0) // CREDIT_COST["report"]
             if used >= FREE_ACCOUNT_REPORTS:
+                M_QUOTA_WALL.add(1, {"plan": "key_free", "period": "month"})
                 raise HTTPException(
                     429,
                     f"Compte gratuit : {FREE_ACCOUNT_REPORTS} fiches par mois atteintes. "
@@ -2458,6 +2494,7 @@ def _quota_gate(request: Request, endpoint: str, subject: str | None = None):
                            // CREDIT_COST["report"]
                     if used >= quota:
                         nxt = {"s": "m", "m": "l"}.get(tier)
+                        M_QUOTA_WALL.add(1, {"plan": "pro", "period": "month"})
                         raise HTTPException(
                             429,
                             f"{PRO_TIERS[tier]['label']} : {quota} fiches par mois atteintes. "
@@ -2482,6 +2519,7 @@ def _quota_gate(request: Request, endpoint: str, subject: str | None = None):
             vues = _daily_seen(uid)
             deja_vue = bool(subject) and subject in vues
             if not deja_vue and len(vues) >= FREE_ACCOUNT_DAILY_REPORTS:
+                M_QUOTA_WALL.add(1, {"plan": "free", "period": "day"})
                 raise HTTPException(
                     429,
                     f"Compte gratuit : {FREE_ACCOUNT_DAILY_REPORTS} fiches par jour "
@@ -2514,6 +2552,7 @@ def _quota_gate(request: Request, endpoint: str, subject: str | None = None):
         bucket = _seau_ip(request)
         used = _usage_add(bucket, CREDIT_COST["report"]) // CREDIT_COST["report"]
         if used > ANON_MONTHLY_REPORTS:
+            M_QUOTA_WALL.add(1, {"plan": "anonymous", "period": "month"})
             raise HTTPException(
                 429,
                 f"Limite gratuite atteinte ({ANON_MONTHLY_REPORTS} fiches par mois sans compte). "
@@ -3219,7 +3258,8 @@ async def report(
             or _nom_de_fiche(None, bdnb_id)
         return Response(cached, media_type="application/pdf",
                         headers={"Content-Disposition": _disposition(nom)})
-    data = await building(bdnb_id, lon, lat)
+    with _chrono("data"):
+        data = await building(bdnb_id, lon, lat)
     q = data.get("query", {})
     if address:
         q["address"] = address  # title with the searched address (#146)
@@ -3237,19 +3277,22 @@ async def report(
     photos = []
     if q.get("lon") is not None and q.get("lat") is not None:
         try:
-            photos = await _nearby_photos(q["lon"], q["lat"])
+            with _chrono("photos"):
+                photos = await _nearby_photos(q["lon"], q["lat"])
         except httpx.HTTPError:
             pass
     # Les deux vues en parallèle : le rendu 3D et la photo aérienne se
     # complètent, et les demander l'une après l'autre doublerait l'attente.
     map_img, aerial = await asyncio.gather(
-        _building_map_png(q.get("lon"), q.get("lat"), bdnb_id),
-        _aerial_view(bdnb_id, q.get("lon"), q.get("lat")))
-    pdf = build_report_pdf(data, photos=photos, map_img=map_img,
-                           aerial_img=aerial.get("image"),
-                           aerial_parcels=aerial.get("parcels"),
-                           aerial_outline=aerial.get("outline"))
-    _tile_write(pdf_path, pdf)          # même écriture atomique que les tuiles
+        _chronometre("render_3d", _building_map_png(q.get("lon"), q.get("lat"), bdnb_id)),
+        _chronometre("aerial", _aerial_view(bdnb_id, q.get("lon"), q.get("lat"))))
+    with _chrono("compose"):
+        pdf = build_report_pdf(data, photos=photos, map_img=map_img,
+                               aerial_img=aerial.get("image"),
+                               aerial_parcels=aerial.get("parcels"),
+                               aerial_outline=aerial.get("outline"))
+    with _chrono("cache_write"):
+        _tile_write(pdf_path, pdf)      # même écriture atomique que les tuiles
     nom = _nom_de_fiche(q.get("address") or (data["buildings"][0] or {}).get("address"),
                         bdnb_id)
     _tile_write(pdf_path + ".nom", nom.encode())
