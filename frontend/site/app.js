@@ -90,8 +90,31 @@ async function ecoPricing() {
         if (chip) { chip.style.cursor = "pointer"; chip.title = "Mon compte, mes clés API";
                     chip.onclick = () => { track("account_open"); showAccount(); }; }
         if (window.ECO_PRO_ENABLED) show("gopro", true);
-        window.ecoToken = () => kc.token;
-        setInterval(() => kc.updateToken(60).catch(() => {}), 30000);
+        // Un jeton périmé ne part JAMAIS (#305). Après une mise en veille,
+        // le rafraîchissement échoue en silence et chaque requête partait
+        // avec un Bearer mort : le serveur traitait l'utilisateur en anonyme
+        // — mauvais plan, mauvais quota — pendant que l'écran affichait
+        // encore son compte. Rendre null vaut mieux que mentir : les appels
+        // redeviennent franchement anonymes, et l'en-tête le dit.
+        window.ecoToken = () => (kc.isTokenExpired(5) ? null : kc.token);
+        const sessionExpiree = () => {
+          const el = document.getElementById("userlabel");
+          if (!el || el.dataset.expired) return;
+          el.dataset.expired = "1";
+          el.textContent = "Session expirée — se reconnecter";
+          el.onclick = () => kc.login();
+          window.ecoQuota = null;
+          track("session_expired_shown");
+        };
+        setInterval(() => kc.updateToken(60).then((renewed) => {
+          const el = document.getElementById("userlabel");
+          if (renewed && el && el.dataset.expired) {
+            delete el.dataset.expired;               // la session a survécu
+            location.reload();                       // repartir d'un état vrai
+          }
+        }).catch(() => {
+          if (kc.isTokenExpired(0)) sessionExpiree();
+        }), 30000);
         track("signed_in_view");
         refreshQuota();
         if (new URLSearchParams(location.search).get("welcome") === "1") {
