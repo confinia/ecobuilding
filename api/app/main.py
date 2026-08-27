@@ -2731,9 +2731,22 @@ async def quota_preflight(request: Request):
     included = (PRO_TIERS[tier]["fiches"] if tier
                 else FREE_ACCOUNT_REPORTS if plan == "free"
                 else ANON_MONTHLY_REPORTS)
+    periode = "month"
+    if plan == "free":
+        # Le droit d'un compte gratuit est QUOTIDIEN, en documents distincts
+        # (#290). Ce pré-vol comptait encore au mois : l'en-tête disait « 10
+        # fiches restantes aujourd'hui » pendant que le mur, déclenché par ce
+        # même pré-vol, disait « limite atteinte ». Deux endpoints annonçaient
+        # deux mondes — la même dispersion que config/pricing, une heure plus
+        # tôt, sur une autre paire.
+        used = len(_daily_seen(bucket))
+        included = FREE_ACCOUNT_DAILY_REPORTS
+        periode = "day"
     return {"plan": plan, "tier": tier, "reports_used": used,
-            "reports_included": included,
-            "reports_left": None if included is None else max(0, included - used)}
+            "reports_included": included, "period": periode,
+            "reports_left": None if included is None else max(0, included - used),
+            # Bâtiments déjà obtenus aujourd'hui : les redemander est libre.
+            "free_again": _daily_seen(bucket) if plan == "free" else []}
 
 
 @app.get("/v1/config", tags=["meta"])

@@ -1126,3 +1126,36 @@ def test_la_fiche_annonce_le_nombre_de_diagnostics_avant_de_les_lister():
     assert "25.2 m² — classe G" in html and "7.6 m² — classe D" in html
     # Et celui dont la classe est affichée en tête est signalé.
     assert html.index("classe affichée ci-dessus") < html.index("7.6 m²")
+
+
+def test_le_previsionnel_et_l_usage_annoncent_le_meme_droit(monkeypatch, tmp_path):
+    """L'en-tête lit /v1/usage, le mur du bouton PDF lit /v1/quota. Le premier
+    disait « 10 fiches restantes aujourd'hui » pendant que le second, resté au
+    comptage mensuel, déclenchait « Limite atteinte » — vécu par l'opérateur en
+    production. Deux surfaces de quota, une seule mise à jour : troisième
+    occurrence du même défaut en une journée (config/pricing, usage/quota).
+
+    Ce test lie les DEUX endpoints sur le même état : ils doivent dire le même
+    reste, la même période."""
+    import app.main as main
+
+    monkeypatch.setattr(main, "USAGE_PATH", str(tmp_path / "u.json"))
+    monkeypatch.setattr(main, "DAILY_PATH", str(tmp_path / "d.json"))
+    monkeypatch.setattr(main, "_load_keys", lambda: set())
+    monkeypatch.setattr(main, "_decode_token", lambda t: {"sub": "u-quota"})
+    monkeypatch.setattr(main, "_pro_active", lambda sub: False)
+
+    import hashlib
+    bucket = "kc:" + hashlib.sha256(b"u-quota").hexdigest()[:14]
+    # 12 fiches CE MOIS (facture), 2 aujourd'hui (droit).
+    main._usage_add(bucket, 12 * main.CREDIT_COST["report"])
+    main._daily_add(bucket, "bdnb-a"); main._daily_add(bucket, "bdnb-b")
+
+    h = {"Authorization": "Bearer x"}
+    quota = client.get("/v1/quota", headers=h).json()
+    usage = client.get("/v1/usage", headers=h).json()
+    assert quota["period"] == usage["period"] == "day"
+    assert quota["reports_used"] == usage["reports_used"] == 2
+    assert quota["reports_left"] == usage["reports_left"] \
+        == main.FREE_ACCOUNT_DAILY_REPORTS - 2
+    assert quota["free_again"] == ["bdnb-a", "bdnb-b"]
