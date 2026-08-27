@@ -339,12 +339,31 @@ async def _dvf_prices(bdnb_id: str):
         return None
 
 
+# Le rendu 3D est l'étape la plus chère de la fiche : 11,7 s mesurées en
+# production (#280), repayées à chaque génération pour la même vue — le cache
+# de la fiche FINIE ne protège que la combinaison exacte de paramètres, pas la
+# vue. On met donc l'image elle-même en cache, par vue demandée. Le paysage
+# bâti et les DPE bougent au rythme du millésime BDNB : 30 jours, comme les
+# tuiles dont ce rendu est fait.
+RENDER_CACHE_TTL = float(os.environ.get("RENDER_CACHE_TTL", str(30 * 86400)))
+
+
 async def _building_map_png(lon, lat, bdnb_id, bearing: float = -30.0):
     """Rendered DPE-3D map (PNG data URI) centered on the building, via the
     headless render service (#88). None when not wired or on error, so the
     report always generates."""
     if not RENDER_URL or lon is None or lat is None:
         return None
+    chemin = os.path.join(
+        TILES_DIR, "render",
+        hashlib.sha256(f"{round(lon, 5)}|{round(lat, 5)}|{bdnb_id}|{bearing}"
+                       .encode()).hexdigest()[:24] + ".png")
+    import base64
+
+    en_cache = _tile_read(chemin, RENDER_CACHE_TTL)
+    if en_cache:
+        M_CACHE.add(1, {"result": "hit_render"})
+        return "data:image/png;base64," + base64.b64encode(en_cache).decode()
     try:
         r = await _client.get(RENDER_URL, params={
             "lon": lon, "lat": lat, "zoom": 18, "pitch": 60,
@@ -354,7 +373,10 @@ async def _building_map_png(lon, lat, bdnb_id, bearing: float = -30.0):
             "tiles": f"{PUBLIC_BASE_URL}/api/v1/tiles/batiment_groupe/"
                      "{z}/{x}/{y}.pbf"}, timeout=45.0)
         r.raise_for_status()
-        import base64
+        # Une capture vide ou tronquée ne doit JAMAIS entrer au cache : elle y
+        # resterait trente jours. Un PNG plausible fait au moins quelques Ko.
+        if len(r.content) > 10_000:
+            _tile_write(chemin, r.content)
         return "data:image/png;base64," + base64.b64encode(r.content).decode()
     except Exception as e:
         log.warning("building map render failed for %s: %s", bdnb_id, e)
