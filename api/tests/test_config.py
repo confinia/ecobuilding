@@ -356,9 +356,14 @@ def test_la_fiche_ne_se_dit_pas_normalisee():
     surenchère que ce produit passe son temps à retirer — et l'opérateur
     l'avait déjà corrigé sur la fiche App Store sans que ce soit répercuté."""
     report = (ROOT / "api/app/report.py").read_text()
-    entete = report[report.index('class="doctitle"'):][:160]
-    assert "normalis" not in entete, entete
-    assert "sourcée" in entete
+    assert "Fiche bâtiment normalisée" not in report
+    assert "Fiche bâtiment formatée et sourcée" in report
+    # Aucun titre de document ne doit revendiquer une norme — il y en a deux,
+    # la fiche et son annexe de traçabilité, et mon premier test ne visait que
+    # la première trouvée, qui se trouvait être l'annexe.
+    for i, ligne in enumerate(report.splitlines()):
+        if 'class="doctitle"' in ligne:
+            assert "normalis" not in ligne, f"ligne {i + 1} : {ligne}"
 
     app = (ROOT / "frontend/site/app.js").read_text()
     bouton = app[app.index('id="report-btn"'):][:400]
