@@ -694,15 +694,26 @@ def test_usage_counter_accumulates_per_month(tmp_path, monkeypatch):
 
 def test_usage_endpoint_requires_key_and_reports_cost(tmp_path, monkeypatch):
     monkeypatch.setattr(main, "USAGE_PATH", str(tmp_path / "usage.json"))
+    monkeypatch.setattr(main, "DAILY_PATH", str(tmp_path / "daily.json"))
     monkeypatch.setattr(main, "_load_keys", lambda: {"K1"})
     assert client.get("/v1/usage").status_code == 401
     import hashlib
     kid = hashlib.sha256(b"K1").hexdigest()[:16]
-    main._usage_add(kid, 20)                       # 20 fiches this month
+    main._usage_add(kid, 20)                       # 20 fiches ce mois
     body = client.get("/v1/usage", headers={"X-API-Key": "K1"}).json()
-    # A FREE account sees its allowance, not a bill (#206).
+    # Un compte GRATUIT voit son droit, pas une facture (#206) — et ce droit
+    # est QUOTIDIEN depuis #290 : le total du mois reste visible à part, il
+    # sert la facture, pas le plafond.
     assert body["plan"] == "free" and body["cost_eur"] == 0.0
-    assert body["reports_used"] == 20 and body["reports_left"] == 0
+    assert body["period"] == "day"
+    assert body["reports_used_month"] == 20
+    assert body["reports_used"] == 0                       # rien servi aujourd'hui
+    assert body["reports_left"] == main.FREE_ACCOUNT_DAILY_REPORTS
+    for i in range(3):
+        main._daily_add(kid, f"bdnb-{i}")
+    apres = client.get("/v1/usage", headers={"X-API-Key": "K1"}).json()
+    assert apres["reports_used"] == 3
+    assert apres["reports_left"] == main.FREE_ACCOUNT_DAILY_REPORTS - 3
     # A PRO subscriber sees the fixed tier price and the tier allowance (v4).
     monkeypatch.setattr(main, "_key_plans", lambda: {"K1": "pro"})
     monkeypatch.setattr(main, "_key_owners", lambda: {"K1": "sub-1"})
@@ -775,6 +786,7 @@ def test_registered_user_gets_the_free_account_ladder(tmp_path, monkeypatch):
     """#206: a signed-in browser user (no API key) consumes the free-account
     allowance, and a subscriber is never blocked."""
     monkeypatch.setattr(main, "USAGE_PATH", str(tmp_path / "usage.json"))
+    monkeypatch.setattr(main, "DAILY_PATH", str(tmp_path / "daily.json"))
     monkeypatch.setattr(main, "_load_keys", lambda: set())
     monkeypatch.setattr(main, "_decode_token", lambda t: {"sub": "user-1"})
     monkeypatch.setattr(main, "_pro_active", lambda sub: False)
@@ -783,11 +795,16 @@ def test_registered_user_gets_the_free_account_ladder(tmp_path, monkeypatch):
         headers = {"authorization": "Bearer x", "x-forwarded-for": "10.0.0.9"}
         query_params: dict = {}
 
-    for _ in range(main.FREE_ACCOUNT_REPORTS):
-        assert main._quota_gate(Req(), "report") == "user_free"
+    # Le droit d'un compte gratuit est QUOTIDIEN, en fiches distinctes (#290) :
+    # il ne se comptait plus au mois depuis que le plafond anonyme l'avait
+    # rejoint, et créer un compte n'apportait alors plus rien.
+    for i in range(main.FREE_ACCOUNT_DAILY_REPORTS):
+        assert main._quota_gate(Req(), "report", subject=f"bdnb-{i}") == "user_free"
+    # La MÊME fiche, rouverte, ne consomme rien.
+    assert main._quota_gate(Req(), "report", subject="bdnb-0") == "user_free"
     with pytest.raises(HTTPException) as e:
-        main._quota_gate(Req(), "report")
-    assert "Pro" in e.value.detail                    # upsell, not a dead end
+        main._quota_gate(Req(), "report", subject="bdnb-neuf")
+    assert "par jour" in e.value.detail and "demain" in e.value.detail
 
     monkeypatch.setattr(main, "_pro_active", lambda sub: True)
     assert main._quota_gate(Req(), "report") == "user_pro"   # never blocked
