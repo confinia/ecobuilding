@@ -1404,7 +1404,7 @@ async def building(
 # toutes, le flux (/v1/buildings/{id}/stream) les émet au fil de l'eau.
 _BLOCK_NAMES = ("prices", "area_risks", "groundwater", "solar_pv", "click_addr",
                 "water_network", "official_dpe", "local_taxes", "schools", "rnb",
-                "commune")
+                "commune", "dpe_spread")
 
 
 def _building_block_coros(bdnb_id, lon, lat, row):
@@ -1414,7 +1414,8 @@ def _building_block_coros(bdnb_id, lon, lat, row):
             _click_address(bdnb_id, lon, lat),
             _water_network(commune), _official_dpe(bdnb_id),
             _local_taxes(commune), _nearby_schools(lon, lat),
-            _rnb_lookup(lon, lat), _commune_history(commune, lon, lat))
+            _rnb_lookup(lon, lat), _commune_history(commune, lon, lat),
+            _dpe_spread(bdnb_id, lon, lat))
 
 
 
@@ -1442,6 +1443,7 @@ def _assemble_building(bdnb_id, lon, lat, row, v):
     water_network, official_dpe = v["water_network"], v["official_dpe"]
     local_taxes, schools, rnb = v["local_taxes"], v["schools"], v["rnb"]
     commune_hist = v.get("commune")
+    dpe_spread = v.get("dpe_spread")
     sources = ["BDNB (CSTB) — Licence Ouverte v2.0", "Géorisques — Licence Ouverte"]
     if prices:
         sources.append("DVF (DGFiP) / Etalab — Licence Ouverte")
@@ -1482,6 +1484,7 @@ def _assemble_building(bdnb_id, lon, lat, row, v):
         "schools": schools,
         "prices": prices,
         "commune": commune_hist,
+        "dpe_spread": dpe_spread,
         "sources": sources,
     }
     return result
@@ -1544,7 +1547,7 @@ async def _building_events(bdnb_id, lon, lat, query_extra=None, extra_rows=()):
                           "buildings": done["buildings"] + list(extra_rows)}) + "\n"
         for name in ("area_risks", "groundwater", "solar_pv", "water_network",
                      "official_dpe", "local_taxes", "schools", "prices", "rnb",
-                     "commune"):
+                     "commune", "dpe_spread"):
             yield json.dumps({"type": "block", "name": name,
                               "value": done.get(name)}) + "\n"
         yield json.dumps({"type": "done", "sources": done["sources"],
@@ -1590,6 +1593,90 @@ async def _building_events(bdnb_id, lon, lat, query_extra=None, extra_rows=()):
                       "market_dia": result.get("market_dia"),
                       "sources": result["sources"]}) + "\n"
 
+
+
+
+# --- DPE par LOGEMENT, et non par bâtiment (#287) -----------------------------
+#
+# Retour d'une professionnelle de la promotion immobilière : « Tu raisonnes en
+# DPE par bâtiment. Mais il arrive que les apparts d'une même résidence aient
+# des DPE différents. » Elle a raison bien au-delà de son exemple — mesuré sur
+# 1 000 diagnostics d'appartements : dès qu'une adresse porte plusieurs DPE,
+# DEUX FOIS SUR TROIS les classes diffèrent. Un immeuble montpelliérain en
+# aligne douze, de C à G.
+#
+# Annoncer une classe unique, c'est donc se tromper pour presque tous les
+# logements de l'immeuble. Ce bloc dit l'éventail réel.
+ADEME_SPREAD_MAX = int(os.environ.get("ADEME_SPREAD_MAX", "3"))   # adresses sondées
+
+
+def _classe_min_max(classes):
+    """Bornes de l'éventail, dans l'ordre A..G et non alphabétique."""
+    ordre = "ABCDEFG"
+    connues = sorted({c for c in classes if c in ordre}, key=ordre.index)
+    return (connues[0], connues[-1]) if connues else (None, None)
+
+
+async def _dpe_spread(bdnb_id, lon, lat):
+    """Les DPE connus aux adresses du bâtiment, et leur dispersion.
+
+    None quand il n'y a rien à dire — zéro ou un seul diagnostic — pour que la
+    fiche reste inchangée là où elle a déjà raison, c'est-à-dire sur l'immense
+    majorité des maisons.
+
+    Ce qu'on ne prétend PAS : une adresse BAN n'est pas un bâtiment groupe, et
+    seuls les logements diagnostiqués figurent. L'éventail est un minimum
+    observé, jamais un inventaire — le libellé doit dire « à cette adresse ».
+    """
+    try:
+        rel = await _cached_get_json(
+            BDNB_REL_ADR_URL, {"batiment_groupe_id": f"eq.{bdnb_id}", "limit": "200"},
+            ttl=86400)
+        adresses = [r.get("cle_interop_adr") for r in (rel if isinstance(rel, list) else [])]
+        adresses = [a for a in dict.fromkeys(adresses) if a][:ADEME_SPREAD_MAX]
+        if not adresses:
+            return None
+
+        logements = []
+        for ban in adresses:
+            d = await _cached_get_json(
+                ADEME_DPE_URL,
+                {"identifiant_ban_eq": ban, "size": "100",
+                 "select": ",".join(("etiquette_dpe", "surface_habitable_logement",
+                                     "numero_etage_appartement", "type_batiment",
+                                     "type_installation_chauffage", "date_etablissement_dpe"))},
+                ttl=7 * 86400)
+            for r in (d.get("results") or []):
+                if r.get("etiquette_dpe"):
+                    logements.append({
+                        "classe": r["etiquette_dpe"],
+                        "surface_m2": r.get("surface_habitable_logement"),
+                        # L'étage n'est renseigné que dans 17 % des cas : on le
+                        # porte quand il existe, on n'en fait jamais un axe.
+                        "etage": r.get("numero_etage_appartement"),
+                        "type": r.get("type_batiment"),
+                        "chauffage": r.get("type_installation_chauffage"),
+                        "etabli_le": (r.get("date_etablissement_dpe") or "")[:10] or None,
+                    })
+        if len(logements) < 2:
+            return None
+
+        classes = [x["classe"] for x in logements]
+        basse, haute = _classe_min_max(classes)
+        logements.sort(key=lambda x: -(x.get("surface_m2") or 0))
+        return {
+            "diagnostics": len(logements),
+            "adresses_sondees": len(adresses),
+            "classe_min": basse,
+            "classe_max": haute,
+            "identiques": basse == haute,
+            "repartition": {c: classes.count(c) for c in sorted(set(classes))},
+            # Assez pour montrer l'éventail sans transformer la fiche en liste.
+            "logements": logements[:12],
+        }
+    except Exception as e:
+        log.info("DPE par logement (%s): %s", bdnb_id, e)
+        return None
 
 
 # --- Histoire de la commune (Confinia, #275) ---------------------------------

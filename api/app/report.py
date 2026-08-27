@@ -273,6 +273,32 @@ def _principal_address_note(shown_address: str, b: dict) -> str:
             f'adresse principale : {principal}</p>')
 
 
+def _dpe_spread_html(e: dict) -> str:
+    """L'éventail des DPE connus à l'adresse (#287).
+
+    Une classe unique par bâtiment se trompe pour presque tous les logements
+    dès qu'un immeuble en compte plusieurs — mesuré : deux fois sur trois les
+    classes diffèrent. La fiche remise à un acheteur ne peut pas porter cette
+    approximation sans la nommer.
+
+    Vide s'il n'y a qu'un diagnostic : la fiche a déjà raison dans ce cas.
+    """
+    if not e or not e.get("diagnostics"):
+        return ""
+    parts = " · ".join(f"{c} : {n}" for c, n in (e.get("repartition") or {}).items())
+    titre = (f"{e['diagnostics']} diagnostics connus à cette adresse, "
+             f"tous en {e['classe_min']}."
+             if e.get("identiques") else
+             f"{e['diagnostics']} diagnostics connus à cette adresse : "
+             f"de {e['classe_min']} à {e['classe_max']}.")
+    return f"""
+<div class="ban">{titre} La classe ci-dessus est celle du logement
+représentatif du bâtiment, pas celle de tous.</div>
+<p class="meta">Répartition — {parts}. Source : ADEME, observatoire DPE.
+Seuls les logements diagnostiqués figurent : c'est un minimum observé, pas un
+inventaire de l'immeuble.</p>"""
+
+
 def _local_taxes_html(t: dict) -> str:
     """Recurring local taxes (#193) — the other cost sheet buyers budget."""
     if not t:
@@ -429,6 +455,24 @@ def _report_html(data: dict, photos: list | None = None, map_img: str | None = N
     pv = data.get("solar_pv") or {}
     cls = (e.get("dpe_class") or "?").upper()
     color = DPE_COLORS.get(cls, "#999")
+    # Le badge dit l'EVENTAIL quand les logements de l'immeuble different
+    # (#287). Une lettre unique est l'element le plus visible du document, et
+    # elle a l'air categorique : mesure, elle est fausse deux fois sur trois
+    # des qu'un immeuble porte plusieurs diagnostics. Le degrade va de la
+    # couleur de la meilleure classe a celle de la pire.
+    spread = data.get("dpe_spread") or {}
+    eventail = bool(not spread.get("identiques")
+                    and spread.get("classe_min") and spread.get("classe_max"))
+    if eventail:
+        c1 = DPE_COLORS.get(spread["classe_min"], "#999")
+        c2 = DPE_COLORS.get(spread["classe_max"], "#999")
+        badge = ('<span class="dpe" style="background:linear-gradient(100deg,'
+                 + c1 + ' 0%,' + c2 + ' 100%);padding-left:10px;'
+                 'padding-right:10px">'
+                 + spread["classe_min"] + '&nbsp;-&nbsp;' + spread["classe_max"]
+                 + '</span>')
+    else:
+        badge = '<span class="dpe">' + cls + '</span>'
     now = datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M UTC")
     address = data.get("query", {}).get("address") or b.get("address") or "Adresse inconnue"
 
@@ -493,8 +537,9 @@ def _report_html(data: dict, photos: list | None = None, map_img: str | None = N
 <p class="meta">Identifiant BDNB : {b.get("bdnb_id") or "—"} · Générée le {now} · ecobuilding.confinia.io</p>
 
 <h2>Énergie (DPE)</h2>
-<p><span class="dpe">{cls}</span>&nbsp;&nbsp;{f"{round(conso)} kWh/m²/an" if conso else "Aucun DPE enregistré dans la BDNB pour ce bâtiment"}</p>
+<p>{badge}&nbsp;&nbsp;{f"{round(conso)} kWh/m²/an" if conso else "Aucun DPE enregistré dans la BDNB pour ce bâtiment"}</p>
 {ban_html}
+{_dpe_spread_html(data.get("dpe_spread") or {})}
 {('<table class="labels"><tr>'
   '<td><div class="lbl-title">Étiquette énergie <span>(kWh/m²/an, énergie primaire)</span></div>'
   + _scale(cls, DPE_COLORS, f"{round(conso)}" if conso else "") +
