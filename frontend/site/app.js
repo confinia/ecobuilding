@@ -1150,8 +1150,20 @@ function showQuotaPanel(p, signedIn, q) {
       ? `Votre compte gratuit couvre ${free ?? "vos"} fiches par mois.`
       : `Sans compte, ${anon ?? "quelques"} fiches par mois sont offertes.`}</p>
     <p>${signedIn
-      ? `<a class="report-link" href="/offres.html">Passer Pro : dès ${tierS?.eur ?? 9} €/mois (${tierS?.fiches_month ?? 30} fiches)</a>`
+      ? (window.ECO_PRO_ENABLED
+        ? `<a class="report-link" href="/offres.html">Passer Pro : dès ${tierS?.eur ?? 9} €/mois (${tierS?.fiches_month ?? 30} fiches)</a>`
+        // Les offres Pro ne sont pas encore ouvertes : proposer un bouton qui
+        // finit en « momentanément indisponible » est pire que ne rien
+        // proposer. Quelqu'un qui atteint le mur ET veut payer est le signal
+        // le plus fort qu'on puisse recevoir — on le recueille au lieu de le
+        // perdre dans une boîte d'alerte.
+        : `<a class="report-link" href="mailto:contact@confinia.io?subject=EcoBuilding%20-%20besoin%20de%20volume&body=${
+             encodeURIComponent("Bonjour,\n\nJ'ai atteint la limite mensuelle et j'ai besoin de plus de fiches.\n\nMon usage : ")
+           }">J'ai besoin de plus de fiches — écrivez-nous</a>`)
       : `<a class="report-link" href="/?login=1">Se connecter</a>`}</p>
+    ${signedIn && !window.ECO_PRO_ENABLED
+      ? `<p class="hint">Les offres payantes ne sont pas encore ouvertes. Dites-nous
+         votre volume : c'est ce qui décide de leur ouverture.</p>` : ""}
     ${signedIn ? "" : `<p><a href="/?signup=1">Pas encore de compte ? En créer un (30 s, sans carte)</a></p>
       <p class="hint">Le compte gratuit offre le même nombre de fiches, mais un
       quota qui vous suit d'un appareil à l'autre, et une clé API.</p>`}
