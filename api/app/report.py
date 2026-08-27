@@ -32,14 +32,27 @@ def _ges_class(value):
     return "G"
 
 
-def _scale(active_cls, colors, value_text, dark_text_classes=("A", "B", "C", "D")):
-    """Ad-style A→G arrow scale with the active class highlighted."""
+def _scale(active_cls, colors, value_text, dark_text_classes=("A", "B", "C", "D"),
+           counts=None):
+    """Ad-style A→G arrow scale with the active class highlighted.
+
+    `counts` — {classe: nombre de logements} quand l'adresse porte plusieurs
+    diagnostics (#307). L'échelle est l'image que tout le monde reconnaît du
+    DPE : marquer une seule classe sous des blocs qui en montrent trois
+    faisait mentir l'élément le plus officiel de la page. Chaque classe
+    présente est marquée avec son compte ; la valeur chiffrée reste sur la
+    classe du logement représentatif.
+    """
     rows = []
     for i, cls in enumerate("ABCDEFG"):
         width = 30 + i * 10
-        active = cls == active_cls
+        active = cls == active_cls or bool(counts and counts.get(cls))
         text_col = "#333" if (colors is GES_COLORS and cls in dark_text_classes) or cls == "D" else "#fff"
-        extra = (f'<span class="val">{value_text}</span>' if active and value_text else "")
+        extra = ""
+        if cls == active_cls and value_text:
+            extra = f'<span class="val">{value_text}</span>'
+        elif counts and counts.get(cls):
+            extra = f'<span class="val">×{counts[cls]}</span>'
         rows.append(
             f'<div class="bar{" active" if active else ""}" '
             f'style="width:{width}%;background:{colors[cls]};color:{text_col}">'
@@ -513,6 +526,19 @@ def _report_html(data: dict, photos: list | None = None, map_img: str | None = N
     spread = data.get("dpe_spread") or {}
     eventail = bool(not spread.get("identiques")
                     and spread.get("classe_min") and spread.get("classe_max"))
+    # Les échelles marquent CHAQUE classe présente à l'adresse (#307), pas
+    # seulement celle du logement représentatif — sinon l'élément le plus
+    # officiel de la page dément les blocs affichés juste au-dessus.
+    comptes_energie = dict(spread.get("repartition") or {}) if eventail else None
+    comptes_ges = None
+    if eventail:
+        comptes_ges = {}
+        for l in spread.get("logements") or []:
+            g = l.get("ges_kgco2_m2y")
+            if g is not None:
+                k = _ges_class(g)
+                comptes_ges[k] = comptes_ges.get(k, 0) + 1
+        comptes_ges = comptes_ges or None
     if eventail:
         c1 = DPE_COLORS.get(spread["classe_min"], "#999")
         c2 = DPE_COLORS.get(spread["classe_max"], "#999")
@@ -601,10 +627,16 @@ def _report_html(data: dict, photos: list | None = None, map_img: str | None = N
 {_dpe_spread_html(data.get("dpe_spread") or {}, (data.get("official_dpe") or {}).get("dpe_number"))}
 {('<table class="labels"><tr>'
   '<td><div class="lbl-title">Étiquette énergie <span>(kWh/m²/an, énergie primaire)</span></div>'
-  + _scale(cls, DPE_COLORS, f"{round(conso)}" if conso else "") +
+  + _scale(cls, DPE_COLORS, f"{round(conso)}" if conso else "",
+           counts=comptes_energie) +
   '</td><td><div class="lbl-title">Étiquette climat <span>(kgCO₂/m²/an)</span></div>'
-  + _scale(_ges_class(ges), GES_COLORS, f"{round(ges)}" if ges else "") +
-  '</td></tr></table>') if e.get("dpe_class") else ""}
+  + _scale(_ges_class(ges), GES_COLORS, f"{round(ges)}" if ges else "",
+           counts=comptes_ges) +
+  '</td></tr></table>'
+  + ('<p class="meta">Classes marquées : celles des '
+     + str(spread.get("diagnostics"))
+     + ' logements diagnostiqués à cette adresse. La valeur chiffrée est celle '
+     'du logement représentatif.</p>' if eventail else "")) if e.get("dpe_class") else ""}
 <table>
   {_row("Date du DPE", (e.get("dpe_date") or "")[:10] or None)}
   {_row("Émissions GES", round(ges) if ges else None, " kgCO₂/m²/an")}
