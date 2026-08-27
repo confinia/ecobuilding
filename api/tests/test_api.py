@@ -1302,3 +1302,19 @@ async def test_les_vues_ne_font_plus_la_queue_derriere_les_donnees(monkeypatch, 
     duree = _t.monotonic() - t0
     assert r.status_code == 200, r.text
     assert duree < 0.28, f"les travaux se sont enchaînés au lieu de se recouvrir : {duree:.2f}s"
+
+
+def test_l_echelle_marque_chaque_classe_presente_a_l_adresse():
+    """#307 : l'échelle officielle marquait une seule classe sous des blocs
+    qui en montrent trois — l'élément le plus reconnaissable de la page
+    démentait le reste. Chaque classe présente est marquée avec son compte ;
+    la valeur chiffrée reste sur le logement représentatif."""
+    from app.report import _scale, DPE_COLORS
+
+    html = _scale("E", DPE_COLORS, "253", counts={"E": 1, "G": 2, "F": 1})
+    # E porte la valeur, G et F sont actifs avec leur compte.
+    assert html.count('class="bar active"') == 3
+    assert "253" in html and "×2" in html and "×1" in html
+    # Sans compte : comportement historique, une seule classe active.
+    seul = _scale("D", DPE_COLORS, "180")
+    assert seul.count('class="bar active"') == 1
