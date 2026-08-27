@@ -316,10 +316,14 @@ def _dpe_spread_html(e: dict, dpe_representatif: str | None = None) -> str:
         ) if x)
         marque = ("seul logement de cette surface" if l.get("identifiable")
                   else f"{l.get('memes_surfaces')} logements de cette surface — indiscernables")
-        titre = (f"{m2} m²" if m2 is not None else "Logement")
+        # Nom distinct de `titre` : celui-ci porte la phrase d'introduction de
+        # la section, et la réutiliser dans la boucle l'écrasait — la fiche
+        # rendue affichait « 7.6 m² La classe ci-dessus est... » au lieu de
+        # « 3 diagnostics connus à cette adresse : de D à G. »
+        entete = (f"{m2} m²" if m2 is not None else "Logement")
         blocs.append(
             f'<div class="logement{" repr" if est_repr else ""}">'
-            f'<div class="logement-t"><strong>{titre} — classe {l.get("classe")}</strong>'
+            f'<div class="logement-t"><strong>{entete} — classe {l.get("classe")}</strong>'
             f'{" · classe affichée ci-dessus" if est_repr else ""}</div>'
             "<table>"
             + _row("Établi le", l.get("etabli_le"))

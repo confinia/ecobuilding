@@ -1078,3 +1078,34 @@ def test_un_appelant_identifie_est_toujours_decompte(monkeypatch, tmp_path):
     assert main._quota_gate(requete(), "report", subject="bdnb-bg-Z") == "user_free"
     utilise = (main._usage_load().get(main._month_key()) or {})
     assert sum(utilise.values()) == main.CREDIT_COST["report"], utilise
+
+
+def test_la_fiche_annonce_le_nombre_de_diagnostics_avant_de_les_lister():
+    """La phrase d'introduction disparaissait du PDF rendu.
+
+    La boucle des blocs réutilisait la variable `titre`, qui portait déjà cette
+    phrase : après la boucle elle valait « 7.6 m² », soit le dernier logement.
+    Le document imprimait « 7.6 m² La classe ci-dessus est... » au lieu de
+    « 3 diagnostics connus à cette adresse : de D à G. »
+
+    Aucun test unitaire ne l'avait vu : ils vérifiaient les données, pas le
+    document imprimé."""
+    from app.report import _dpe_spread_html
+
+    html = _dpe_spread_html({
+        "diagnostics": 3, "classe_min": "D", "classe_max": "G",
+        "identiques": False, "repartition": {"D": 2, "G": 1},
+        "logements_batiment": 20,
+        "logements": [
+            {"surface_m2": 25.2, "classe": "G", "numero_dpe": "A",
+             "identifiable": True, "memes_surfaces": 1},
+            {"surface_m2": 7.6, "classe": "D", "numero_dpe": "B",
+             "identifiable": True, "memes_surfaces": 1},
+        ],
+    }, "A")
+    assert "3 diagnostics connus à cette adresse : de D à G." in html
+    assert "L'immeuble compte 20 logements." in html
+    # Chaque logement garde son propre en-tête.
+    assert "25.2 m² — classe G" in html and "7.6 m² — classe D" in html
+    # Et celui dont la classe est affichée en tête est signalé.
+    assert html.index("classe affichée ci-dessus") < html.index("7.6 m²")
