@@ -360,10 +360,17 @@ async def _building_map_png(lon, lat, bdnb_id, bearing: float = -30.0):
                        .encode()).hexdigest()[:24] + ".png")
     import base64
 
+    def _uri(octets):
+        """L'URI de données suit le CONTENU, pas une extension supposée : le
+        renderer sert du JPEG depuis #280, et le cache peut encore contenir des
+        PNG d'avant — les deux doivent s'afficher."""
+        mime = "image/jpeg" if octets[:2] == b"\xff\xd8" else "image/png"
+        return f"data:{mime};base64," + base64.b64encode(octets).decode()
+
     en_cache = _tile_read(chemin, RENDER_CACHE_TTL)
     if en_cache:
         M_CACHE.add(1, {"result": "hit_render"})
-        return "data:image/png;base64," + base64.b64encode(en_cache).decode()
+        return _uri(en_cache)
     try:
         r = await _client.get(RENDER_URL, params={
             "lon": lon, "lat": lat, "zoom": 18, "pitch": 60,
@@ -377,7 +384,7 @@ async def _building_map_png(lon, lat, bdnb_id, bearing: float = -30.0):
         # resterait trente jours. Un PNG plausible fait au moins quelques Ko.
         if len(r.content) > 10_000:
             _tile_write(chemin, r.content)
-        return "data:image/png;base64," + base64.b64encode(r.content).decode()
+        return _uri(r.content)
     except Exception as e:
         log.warning("building map render failed for %s: %s", bdnb_id, e)
         return None
