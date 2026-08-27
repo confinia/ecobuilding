@@ -2731,9 +2731,22 @@ async def quota_preflight(request: Request):
     included = (PRO_TIERS[tier]["fiches"] if tier
                 else FREE_ACCOUNT_REPORTS if plan == "free"
                 else ANON_MONTHLY_REPORTS)
+    periode = "month"
+    if plan == "free":
+        # Le droit d'un compte gratuit est QUOTIDIEN, en documents distincts
+        # (#290). Ce pré-vol comptait encore au mois : l'en-tête disait « 10
+        # fiches restantes aujourd'hui » pendant que le mur, déclenché par ce
+        # même pré-vol, disait « limite atteinte ». Deux endpoints annonçaient
+        # deux mondes — la même dispersion que config/pricing, une heure plus
+        # tôt, sur une autre paire.
+        used = len(_daily_seen(bucket))
+        included = FREE_ACCOUNT_DAILY_REPORTS
+        periode = "day"
     return {"plan": plan, "tier": tier, "reports_used": used,
-            "reports_included": included,
-            "reports_left": None if included is None else max(0, included - used)}
+            "reports_included": included, "period": periode,
+            "reports_left": None if included is None else max(0, included - used),
+            # Bâtiments déjà obtenus aujourd'hui : les redemander est libre.
+            "free_again": _daily_seen(bucket) if plan == "free" else []}
 
 
 @app.get("/v1/config", tags=["meta"])
@@ -2752,7 +2765,13 @@ async def config():
             "pro_tiers": {k: {"eur": v["eur"], "fiches_month": v["fiches"],
                               "label": v["label"]} for k, v in PRO_TIERS.items()},
             "free_tiers": {"anonymous_reports_month": ANON_MONTHLY_REPORTS,
-                           "free_account_reports_month": FREE_ACCOUNT_REPORTS},
+                           "free_account_reports_month": FREE_ACCOUNT_REPORTS,
+                           # Le droit d'un compte gratuit est QUOTIDIEN (#290).
+                           # Ce champ était censé arriver avec #294 et a
+                           # atterri dans _usage_cost — un remplacement sur la
+                           # première occurrence, une fois de plus : les DEUX
+                           # blocs `free_tiers` sont identiques mot pour mot.
+                           "free_account_reports_day": FREE_ACCOUNT_DAILY_REPORTS},
             # Intégrations dont la présence dépend d'un secret, DÉCLARÉES ici.
             #
             # Le bloc commune disparaît quand Confinia est injoignable — c'est

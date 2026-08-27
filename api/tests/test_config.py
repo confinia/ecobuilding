@@ -371,3 +371,19 @@ def test_la_fiche_ne_se_dit_pas_normalisee():
     app = (ROOT / "frontend/site/app.js").read_text()
     bouton = app[app.index('id="report-btn"'):][:400]
     assert "normalis" not in bouton
+
+
+def test_les_deux_annonces_de_droits_disent_le_meme_droit_quotidien():
+    """`/v1/config` et `/v1/pricing` exposent chacun un bloc `free_tiers`,
+    identiques mot pour mot dans le code. Le champ quotidien de #294 a
+    atterri dans un seul des deux — remplacement sur la première occurrence —
+    et `/v1/config` a continué d'annoncer un monde mensuel."""
+    from fastapi.testclient import TestClient
+
+    import app.main as main
+
+    c = TestClient(main.app)
+    cfg = c.get("/v1/config").json()["free_tiers"]
+    pri = c.get("/v1/pricing").json()["free_tiers"]
+    assert cfg == pri, f"les deux annonces divergent :\n  config  {cfg}\n  pricing {pri}"
+    assert cfg["free_account_reports_day"] == main.FREE_ACCOUNT_DAILY_REPORTS
