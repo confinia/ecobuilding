@@ -34,7 +34,10 @@ html, body { margin: 0; height: 100%; font-family: system-ui, -apple-system, san
 #close { position: absolute; top: 6px; right: 10px; border: 0; background: none; font-size: 20px; cursor: pointer; color: #666; }
 #panel h2 { font-size: 15px; margin: 2px 0 10px; padding-right: 20px; }
 #panel h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: #777; margin: 14px 0 6px; }
-.kv { display: flex; justify-content: space-between; font-size: 13px; padding: 3px 0; border-bottom: 1px dashed #eee; }
+/* `gap` : sans lui, une valeur longue qui passe à la ligne se collait à son
+   étiquette — « Isolationenveloppe insuffisante », relevé en production. */
+.kv { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; padding: 3px 0; border-bottom: 1px dashed #eee; }
+.kv span:last-child { text-align: right; }
 .kv .k { color: #555; }
 .dpe-badge {
   display: inline-block; min-width: 34px; text-align: center; font-weight: 700;
