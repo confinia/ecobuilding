@@ -339,8 +339,9 @@ def _commune_html(c: dict) -> str:
 <h2>Commune</h2>
 <table>
   {_row("Commune", f"{c['nom']} ({c['code']})")}
-  {_row("Nom et limites inchangés depuis" if c.get("existe_encore")
-        else "A cessé d'exister le", c.get("depuis_fr"))}
+  {_row("Nom et limites inchangés depuis", c.get("depuis_fr"))
+    if c.get("existe_encore") else
+    _row("A cessé d'exister le", c.get("jusqu_au_fr"))}
   {avant}
   {_row("Données arrêtées au", c.get("arret_des_donnees_fr"))}
 </table>
