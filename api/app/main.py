@@ -2752,7 +2752,13 @@ async def config():
             "pro_tiers": {k: {"eur": v["eur"], "fiches_month": v["fiches"],
                               "label": v["label"]} for k, v in PRO_TIERS.items()},
             "free_tiers": {"anonymous_reports_month": ANON_MONTHLY_REPORTS,
-                           "free_account_reports_month": FREE_ACCOUNT_REPORTS},
+                           "free_account_reports_month": FREE_ACCOUNT_REPORTS,
+                           # Le droit d'un compte gratuit est QUOTIDIEN (#290).
+                           # Ce champ était censé arriver avec #294 et a
+                           # atterri dans _usage_cost — un remplacement sur la
+                           # première occurrence, une fois de plus : les DEUX
+                           # blocs `free_tiers` sont identiques mot pour mot.
+                           "free_account_reports_day": FREE_ACCOUNT_DAILY_REPORTS},
             # Intégrations dont la présence dépend d'un secret, DÉCLARÉES ici.
             #
             # Le bloc commune disparaît quand Confinia est injoignable — c'est
