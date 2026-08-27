@@ -97,7 +97,8 @@ async function ecoPricing() {
         if (new URLSearchParams(location.search).get("welcome") === "1") {
           track("signup_completed");
           ecoPricing().then((p) => {
-            const free = p.free_tiers?.free_account_reports_month;
+            const free = p.free_tiers?.free_account_reports_day
+                          ?? p.free_tiers?.free_account_reports_month;
             showPanel(`<h2>Bienvenue 🎉</h2>
               <p>Votre compte est actif : <strong>${free ?? "vos"} fiches PDF par mois</strong>,
               une clé API et le suivi de votre consommation.</p>
@@ -1003,6 +1004,15 @@ function renderPanel(s, data, opts) {
 
 // --- Account quota (#206): a signed-in user sees what is left of the free
 // monthly allowance, and subscribers see their plan instead of a limit.
+
+// « ce mois » ou « aujourd'hui » : l'API dit laquelle, on ne la devine pas.
+// Le droit d'un compte gratuit est devenu QUOTIDIEN (#290) ; l'écrire en dur
+// aurait laissé l'utilisateur croire à un plafond mensuel qu'il ne pouvait pas
+// dépasser, alors que son compteur repart le lendemain.
+function periodeQuota(u) {
+  return u?.period === "day" ? "aujourd'hui" : "ce mois";
+}
+
 async function refreshQuota() {
   const el = document.getElementById("userlabel");
   if (!el || !window.ecoToken) return;
@@ -1013,7 +1023,7 @@ async function refreshQuota() {
     window.ecoQuota = u;
     const badge = u.plan === "pro"
       ? "Pro"
-      : `${u.reports_left} fiche${u.reports_left > 1 ? "s" : ""} restante${u.reports_left > 1 ? "s" : ""} ce mois`;
+      : `${u.reports_left} fiche${u.reports_left > 1 ? "s" : ""} restante${u.reports_left > 1 ? "s" : ""} ${periodeQuota(u)}`;
     el.textContent = el.textContent.split(" · ")[0] + " · " + badge;
     // Upsell only when the plan is actually purchasable: ECO_PRO_ENABLED is
     // false in production until RULES.md #7 is met, and a visible button that
@@ -1047,8 +1057,8 @@ async function showAccount() {
       ? `<p>Offre <strong>${usage.tier_label || "Pro"}</strong> (${usage.cost_eur} €/mois) —
          ${usage.reports_included == null
            ? `${usage.reports_used} fiche${usage.reports_used > 1 ? "s" : ""} ce mois (illimité, usage raisonnable)`
-           : `<strong>${usage.reports_left}</strong> fiches restantes sur ${usage.reports_included} ce mois`}.</p>`
-      : `<p>Compte gratuit — <strong>${usage.reports_left}</strong> fiches restantes sur ${usage.reports_included} ce mois.</p>`;
+           : `<strong>${usage.reports_left}</strong> fiches restantes sur ${usage.reports_included} ${periodeQuota(usage)}`}.</p>`
+      : `<p>Compte gratuit — <strong>${usage.reports_left}</strong> fiches restantes sur ${usage.reports_included} ${periodeQuota(usage)}.</p>`;
     const p = await ecoPricing();
     const tiers = p?.tiers || {};
     const switchers = usage.plan === "pro"
@@ -1163,7 +1173,8 @@ function pdfStage(elapsedMs) {
 
 const NEXT_TIER = { s: "m", m: "l" };
 function showQuotaPanel(p, signedIn, q) {
-  const free = p?.free_tiers?.free_account_reports_month;
+  const free = p?.free_tiers?.free_account_reports_day
+    ?? p?.free_tiers?.free_account_reports_month;
   const anon = p?.free_tiers?.anonymous_reports_month;
   const tierS = p?.tiers?.s;
   // Un ABONNÉ qui atteint le quota de son palier n'est pas un compte gratuit :
@@ -1188,7 +1199,7 @@ function showQuotaPanel(p, signedIn, q) {
   }
   showPanel(`<h2>Limite atteinte</h2>
     <p>${signedIn
-      ? `Votre compte gratuit couvre ${free ?? "vos"} fiches par mois.`
+      ? `Votre compte gratuit couvre ${free ?? "vos"} fiches par jour. Le compteur repart demain.`
       : `Sans compte, ${anon ?? "quelques"} fiches par mois sont offertes.`}</p>
     <p>${signedIn
       ? (window.ECO_PRO_ENABLED

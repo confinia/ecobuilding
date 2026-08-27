@@ -2059,6 +2059,17 @@ def _load_keys() -> set:
 # compte gratuit, pas de redescendre l'anonyme.
 ANON_MONTHLY_REPORTS = int(os.environ.get("ANON_MONTHLY_REPORTS", "10"))
 FREE_ACCOUNT_REPORTS = int(os.environ.get("FREE_ACCOUNT_REPORTS", "10"))
+# Compte gratuit : un quota PAR JOUR, en fiches DISTINCTES — comme le mobile.
+#
+# En montant le plafond anonyme de 3 à 10 (#281), le compte gratuit s'est
+# retrouvé avec exactement le même volume : créer un compte n'apportait plus
+# rien. Reprendre l'anonyme aurait été reprendre ce qui a été donné ; on monte
+# donc le compte, comme annoncé à ce moment-là.
+#
+# Compter des fiches DISTINCTES plutôt que des requêtes règle au passage un
+# problème qui avait demandé un contournement : rouvrir le même document ne
+# consomme rien, parce qu'il est déjà dans la liste du jour.
+FREE_ACCOUNT_DAILY_REPORTS = int(os.environ.get("FREE_ACCOUNT_DAILY_REPORTS", "10"))
 # Pricing v4 (PRICING.md) — subscription tiers. The v3 metered grid
 # (0,49 €/fiche, plafond 99 €) died with the move to Creem as merchant of
 # record: Creem bills fixed recurring amounts only, no metering. Decision
@@ -2191,7 +2202,11 @@ def _usage_cost(fiches: int) -> dict:
         "tiers": {k: {"eur": v["eur"], "fiches_month": v["fiches"], "label": v["label"]}
                   for k, v in PRO_TIERS.items()},
         "free_tiers": {"anonymous_reports_month": ANON_MONTHLY_REPORTS,
-                       "free_account_reports_month": FREE_ACCOUNT_REPORTS},
+                       # Le droit d'un compte gratuit est QUOTIDIEN (#290).
+                       # L'ancien champ mensuel reste exposé : une application
+                       # déjà installée le lit, et le retirer la casserait.
+                       "free_account_reports_month": FREE_ACCOUNT_REPORTS,
+                       "free_account_reports_day": FREE_ACCOUNT_DAILY_REPORTS},
     }
 
 
@@ -2461,15 +2476,24 @@ def _quota_gate(request: Request, endpoint: str, subject: str | None = None):
                         pass
             return "user_pro"
         if endpoint == "report":
-            used = (_usage_load().get(_month_key()) or {}).get(uid, 0) // CREDIT_COST["report"]
-            if used >= FREE_ACCOUNT_REPORTS:
+            # Quota du JOUR, en fiches distinctes. Une fiche déjà obtenue
+            # aujourd'hui n'en consomme pas une seconde : c'est le même
+            # document, et le refuser passerait pour une panne.
+            vues = _daily_seen(uid)
+            deja_vue = bool(subject) and subject in vues
+            if not deja_vue and len(vues) >= FREE_ACCOUNT_DAILY_REPORTS:
                 raise HTTPException(
                     429,
-                    f"Compte gratuit : {FREE_ACCOUNT_REPORTS} fiches par mois atteintes. "
-                    f"Les offres Pro démarrent à {PRO_TIERS['s']['eur']:.0f} €/mois "
-                    f"({PRO_TIERS['s']['fiches']} fiches) : "
-                    f"https://ecobuilding.confinia.io/offres.html — une question ? {SUPPORT_EMAIL}")
-            _usage_add(uid, CREDIT_COST["report"])
+                    f"Compte gratuit : {FREE_ACCOUNT_DAILY_REPORTS} fiches par jour "
+                    f"atteintes. Le compteur repart demain — "
+                    f"une question ? {SUPPORT_EMAIL}")
+            if not deja_vue:
+                # Sans identifiant de bâtiment on ne peut pas dédoublonner :
+                # l'appel compte, faute de quoi ce chemin ne plafonnerait
+                # jamais. Le décompte mensuel reste tenu, il sert la facture.
+                if subject:
+                    _daily_add(uid, subject)
+                _usage_add(uid, CREDIT_COST["report"])
         return "user_free"
     ip = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip() or "?"
     if endpoint == "report":
@@ -2632,10 +2656,18 @@ async def usage(request: Request):
                  "reports_left": (None if quota is None
                                   else max(0, quota - used))}
     else:
-        # A free account owes nothing: show the allowance, not a bill.
-        body |= {"cost_eur": 0.0, "reports_used": used,
-                 "reports_included": FREE_ACCOUNT_REPORTS,
-                 "reports_left": max(0, FREE_ACCOUNT_REPORTS - used)}
+        # Un compte gratuit ne doit rien : on montre son droit, pas une facture.
+        #
+        # Et ce droit est QUOTIDIEN, en fiches distinctes : afficher un reste
+        # mensuel ferait croire à un plafond qui n'existe plus, et laisserait
+        # l'utilisateur bloqué sans comprendre que le compteur repart demain.
+        dujour = len(_daily_seen(bucket))
+        body |= {"cost_eur": 0.0,
+                 "reports_used": dujour,
+                 "reports_used_month": used,
+                 "reports_included": FREE_ACCOUNT_DAILY_REPORTS,
+                 "reports_left": max(0, FREE_ACCOUNT_DAILY_REPORTS - dujour),
+                 "period": "day"}
     return body
 
 
