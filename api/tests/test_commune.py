@@ -216,6 +216,59 @@ async def test_plusieurs_classes_donnent_l_eventail_et_sa_repartition(monkeypatc
 
 
 @pytest.mark.anyio
+async def test_les_blocs_sont_la_meme_liste_que_les_compteurs(monkeypatch):
+    """#312 : 23 diagnostics annoncés, 12 blocs montrés.
+
+    Le plafond [:12] faisait sortir compteurs et blocs de deux listes
+    différentes — même famille que les bugs de cohérence quota. On compare
+    les deux surfaces ENTRE ELLES, sur plus de douze diagnostics.
+    """
+    import app.main as main
+
+    async def faux(url, params, ttl=0, headers=None):
+        if "rel_batiment" in url:
+            return [{"cle_interop_adr": "75107_3013_00016"}]
+        return {"results": [
+            {"etiquette_dpe": "D", "surface_habitable_logement": 100 + i}
+            for i in range(23)]}
+
+    monkeypatch.setattr(main, "_cached_get_json", faux)
+    r = await main._dpe_spread("bdnb-bg-X", None, None)
+    assert r["diagnostics"] == 23
+    assert len(r["logements"]) == r["diagnostics"]
+    assert sum(r["repartition"].values()) == len(r["logements"])
+
+
+@pytest.mark.anyio
+async def test_un_dpe_remplace_par_un_autre_de_la_liste_est_ecarte(monkeypatch):
+    """Un DPE remplacé n'existe plus juridiquement.
+
+    L'ADEME les exclut déjà de dpe03existant (vérifié sur l'adresse de #312) ;
+    ceci pinne le filet si l'ancien et le nouveau étaient servis ensemble.
+    """
+    import app.main as main
+
+    async def faux(url, params, ttl=0, headers=None):
+        if "rel_batiment" in url:
+            return [{"cle_interop_adr": "x"}]
+        return {"results": [
+            {"numero_dpe": "OLD1", "etiquette_dpe": "G",
+             "surface_habitable_logement": 59},
+            {"numero_dpe": "NEW1", "numero_dpe_remplace": "OLD1",
+             "etiquette_dpe": "C", "surface_habitable_logement": 59},
+            {"numero_dpe": "AUTRE", "etiquette_dpe": "D",
+             "surface_habitable_logement": 80},
+        ]}
+
+    monkeypatch.setattr(main, "_cached_get_json", faux)
+    r = await main._dpe_spread("bdnb-bg-X", None, None)
+    assert r["diagnostics"] == 2
+    assert {x["numero_dpe"] for x in r["logements"]} == {"NEW1", "AUTRE"}
+    # Le G du DPE mort ne doit plus marquer l'échelle.
+    assert r["repartition"] == {"C": 1, "D": 1}
+
+
+@pytest.mark.anyio
 async def test_l_ademe_muette_ne_casse_pas_la_fiche(monkeypatch):
     import app.main as main
 

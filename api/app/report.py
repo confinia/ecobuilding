@@ -635,7 +635,9 @@ def _report_html(data: dict, photos: list | None = None, map_img: str | None = N
   '</td></tr></table>'
   + ('<p class="meta">Classes marquées : celles des '
      + str(spread.get("diagnostics"))
-     + ' logements diagnostiqués à cette adresse. La valeur chiffrée est celle '
+     # « diagnostics », pas « logements » : un logement est re-diagnostiqué à
+     # chaque vente, l'adresse de #312 en porte 23 pour 14 logements.
+     + ' diagnostics connus à cette adresse. La valeur chiffrée est celle '
      'du logement représentatif.</p>' if eventail else "")) if e.get("dpe_class") else ""}
 <table>
   {_row("Date du DPE", (e.get("dpe_date") or "")[:10] or None)}

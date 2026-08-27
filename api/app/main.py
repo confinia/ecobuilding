@@ -1683,6 +1683,7 @@ async def _dpe_spread(bdnb_id, lon, lat, logements_bdnb=None):
             return None
 
         logements = []
+        remplaces = set()   # numéros de DPE déclarés remplacés par un autre
         for ban in adresses:
             d = await _cached_get_json(
                 ADEME_DPE_URL,
@@ -1692,7 +1693,8 @@ async def _dpe_spread(bdnb_id, lon, lat, logements_bdnb=None):
                  # tableau de plusieurs logements puis les caractéristiques
                  # détaillées d'un seul, sans dire lequel — d'où la question
                  # « 3 DPE, une seule date ? ».
-                 "select": ",".join(("numero_dpe", "etiquette_dpe",
+                 "select": ",".join(("numero_dpe", "numero_dpe_remplace",
+                                     "etiquette_dpe",
                                      "surface_habitable_logement",
                                      "numero_etage_appartement", "type_batiment",
                                      "type_installation_chauffage",
@@ -1705,6 +1707,8 @@ async def _dpe_spread(bdnb_id, lon, lat, logements_bdnb=None):
                                      "description_installation_chauffage_n1"))},
                 ttl=7 * 86400)
             for r in (d.get("results") or []):
+                if r.get("numero_dpe_remplace"):
+                    remplaces.add(r["numero_dpe_remplace"])
                 if r.get("etiquette_dpe"):
                     logements.append({
                         # Le numéro de DPE est délivré par l'ADEME et
@@ -1727,6 +1731,10 @@ async def _dpe_spread(bdnb_id, lon, lat, logements_bdnb=None):
                         "chauffage": r.get("type_installation_chauffage"),
                         "etabli_le": (r.get("date_etablissement_dpe") or "")[:10] or None,
                     })
+        # Un DPE remplacé n'existe plus juridiquement. L'ADEME les exclut
+        # déjà de dpe03existant (vérifié sur #312) : ceci est le filet au cas
+        # où l'ancien et le nouveau seraient servis ensemble un jour.
+        logements = [x for x in logements if x["numero_dpe"] not in remplaces]
         if len(logements) < 2:
             return None
 
@@ -1760,8 +1768,12 @@ async def _dpe_spread(bdnb_id, lon, lat, logements_bdnb=None):
             # croire à un inventaire. La BDNB sait combien l'immeuble en
             # compte ; l'ADEME ne connaît que ceux qui ont été diagnostiqués.
             "logements_batiment": logements_bdnb,
-            # Assez pour montrer l'éventail sans transformer la fiche en liste.
-            "logements": logements[:12],
+            # TOUS. Un plafond à 12 faisait mentir la fiche : les compteurs
+            # (diagnostics, répartition, classes marquées) comptaient 23 quand
+            # les blocs n'en montraient que 12, sans un mot sur les onze
+            # autres (#312). Les blocs et les compteurs sortent désormais de
+            # la même liste — et #311 a besoin de chaque diagnostic.
+            "logements": logements,
         }
     except Exception as e:
         log.info("DPE par logement (%s): %s", bdnb_id, e)
