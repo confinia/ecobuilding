@@ -1285,7 +1285,12 @@ async def _official_dpe(bdnb_id: str):
             # Legal validity: 10 years (art. L126-26 CCH).
             "valid_until": (str(int(established[:4]) + 10) + established[4:])
             if established else None,
-            "surface_habitable_m2": r.get("surface_habitable_logement")
+            # Arrondie à la décimale À LA SOURCE : la BDNB livre des flottants
+            # du genre 57.2999992370605, et quinze décimales sur des mètres
+            # carrés est une faute de sérieux — vue en production (#309).
+            "surface_habitable_m2": (round(r["surface_habitable_logement"], 1)
+                                     if r.get("surface_habitable_logement") is not None
+                                     else None)
             or r.get("surface_habitable_immeuble"),
             "final_energy_kwh_m2y": r.get("conso_5_usages_ef_m2"),
         }

@@ -417,7 +417,10 @@ def test_official_dpe_chain(monkeypatch):
         if "dpe_representatif" in url:
             return [{"identifiant_dpe": "2678E0726918P",
                      "date_etablissement_dpe": "2026-03-12T23:00:00",
-                     "surface_habitable_logement": 106.17,
+                     # Flottant BDNB typique — vu en prod : 57.2999992370605 m²
+                     # affiché tel quel (#309). L'arrondi doit se faire ICI,
+                     # à la source, pour couvrir le web ET le PDF.
+                     "surface_habitable_logement": 106.16999992370605,
                      "conso_5_usages_ef_m2": 215.0}]
         if "data.ademe.fr" in url:
             assert params["qs"] == 'numero_dpe:"2678E0726918P"'
@@ -434,6 +437,7 @@ def test_official_dpe_chain(monkeypatch):
     assert od["annual_cost_eur"] == 2573.2
     assert od["insulation"]["enveloppe"] == "insuffisante"
     assert od["energies"] == ["Gaz naturel"]
+    assert od["surface_habitable_m2"] == 106.2   # arrondi à la source (#309)
 
 
 def test_official_dpe_absent_is_none(monkeypatch):

@@ -973,18 +973,21 @@ function renderPanel(s, data, opts) {
     <p>${dpeBadge} ${b.energy?.consumption_kwh_m2y ? `&nbsp;${Math.round(b.energy.consumption_kwh_m2y)} kWh/m²/an` : ""}</p>
     ${banHtml}
     ${sectionEventailDpe(data)}
-    ${/* Ces lignes décrivent UN logement — celui que la BDNB tient pour
-          représentatif — et non l'immeuble. Placées sous un tableau de
-          plusieurs logements, elles se lisaient comme un résumé du bâtiment,
-          alors qu'elles répètent une seule de ses lignes. On le titre. */""}
+    ${/* Ces lignes décrivent le logement représentatif. Quand les blocs par
+          logement sont affichés (#288), le bloc marqué « classe affichée
+          ci-dessus » porte déjà les cinq mêmes champs à l'identique : les
+          répéter dessous faisait une section entière de doublons (#309).
+          Sans blocs — diagnostic unique ou absent — elles restent : c'est
+          alors la seule information. */""}
+    ${data.dpe_spread?.logements?.length ? "" : `
     ${data.official_dpe?.dpe_number ? `<h4 class="sub">Le logement représentatif${
         data.official_dpe?.surface_habitable_m2
-          ? ` (${data.official_dpe.surface_habitable_m2} m²)` : ""}</h4>` : ""}
+          ? ` (${Math.round(data.official_dpe.surface_habitable_m2 * 10) / 10} m²)` : ""}</h4>` : ""}
     ${kv("Date du DPE", b.energy?.dpe_date ? String(b.energy.dpe_date).slice(0, 10) : null)}
     ${kv("GES", b.energy?.ghg_kgco2_m2y ? Math.round(b.energy.ghg_kgco2_m2y) + " kgCO₂/m²/an" : null)}
     ${kv("N° DPE officiel", data.official_dpe?.dpe_number)}
-    ${kv("Surface habitable", data.official_dpe?.surface_habitable_m2 ? data.official_dpe.surface_habitable_m2 + " m²" : null)}
-    ${kv("Coût annuel d'énergie", data.official_dpe?.annual_cost_eur ? Math.round(data.official_dpe.annual_cost_eur).toLocaleString("fr-FR") + " €/an (DPE)" : null)}
+    ${kv("Surface habitable", data.official_dpe?.surface_habitable_m2 ? Math.round(data.official_dpe.surface_habitable_m2 * 10) / 10 + " m²" : null)}
+    ${kv("Coût annuel d'énergie", data.official_dpe?.annual_cost_eur ? Math.round(data.official_dpe.annual_cost_eur).toLocaleString("fr-FR") + " €/an (DPE)" : null)}`}
     <h3>Bâtiment</h3>
     ${data.market_dia ? `
     <h3>Dynamique du marché (DIA)</h3>
