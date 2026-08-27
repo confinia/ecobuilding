@@ -2321,13 +2321,6 @@ def _quota_gate(request: Request, endpoint: str, subject: str | None = None):
     mobile = _mobile_gate(request, endpoint, subject)
     if mobile:
         return mobile
-    # Fiche DÉJÀ obtenue aujourd'hui : gratuite et non décomptée — exactement
-    # comme sur mobile (voir _mobile_gate). C'est le même document ; le
-    # facturer deux fois punit l'utilisateur qui rouvre son propre onglet, et
-    # empêchait le web de rediriger vers l'URL réelle de la fiche.
-    if subject and endpoint == "report" and subject in _daily_seen(_seau_ip(request)):
-        return "web_repeat"
-
     key = request.headers.get("x-api-key") or request.query_params.get("key")
     if key and key in _load_keys():
         plan = _key_plans().get(key, "free")
@@ -2388,6 +2381,18 @@ def _quota_gate(request: Request, endpoint: str, subject: str | None = None):
         return "user_free"
     ip = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip() or "?"
     if endpoint == "report":
+        # Fiche DÉJÀ servie à cette adresse aujourd'hui : gratuite et non
+        # décomptée — comme sur mobile (voir _mobile_gate).
+        #
+        # La règle ne vaut QUE pour un appel anonyme, et c'est délibéré. Le web
+        # télécharge la fiche avec son jeton puis fait naviguer l'onglet vers
+        # la même URL : cette seconde requête arrive sans autorisation, et
+        # c'est elle qu'il faut épargner. Un appelant IDENTIFIÉ, lui, est
+        # toujours décompté sur son propre compte — sinon l'activité d'un
+        # collègue derrière la même sortie internet offrirait des fiches à un
+        # autre, ce qu'un parcours e2e a montré en partageant l'IP de la VM.
+        if subject and subject in _daily_seen(_seau_ip(request)):
+            return "web_repeat"
         # Monthly, not daily: a daily cap of 20 was never reached, so nobody
         # ever created an account (#206).
         bucket = _seau_ip(request)

@@ -1049,3 +1049,32 @@ def test_la_seconde_requete_anonyme_ne_bloque_pas_un_abonne(monkeypatch, tmp_pat
     # 3. Un AUTRE document, lui, est bien décompté — la règle ne fait pas
     #    tomber le quota, elle ne couvre que le même document.
     assert main._quota_gate(requete(), "report", subject="bdnb-bg-B") != "web_repeat"
+
+
+def test_un_appelant_identifie_est_toujours_decompte(monkeypatch, tmp_path):
+    """L'exemption ne vaut que pour un appel ANONYME.
+
+    Un parcours e2e l'a montré : les tests partagent l'IP de la VM, et un
+    nouveau compte gratuit ne se voyait rien décompter parce qu'un test
+    précédent avait déjà servi ce bâtiment. Dans la vraie vie, c'est un bureau
+    derrière une même sortie internet : l'activité d'un collègue offrirait des
+    fiches à un autre."""
+    import app.main as main
+    from fastapi import Request
+
+    monkeypatch.setattr(main, "DAILY_PATH", str(tmp_path / "d.json"))
+    monkeypatch.setattr(main, "USAGE_PATH", str(tmp_path / "u.json"))
+    monkeypatch.setattr(main, "_bearer_sub", lambda r: "kc-utilisateur-1")
+    monkeypatch.setattr(main, "_pro_active", lambda sub: False)
+
+    def requete():
+        return Request({"type": "http", "headers": [(b"x-forwarded-for", b"203.0.113.9")],
+                        "method": "GET", "path": "/", "query_string": b""})
+
+    # Le document a déjà été servi à cette adresse — par quelqu'un d'autre.
+    main._daily_add(main._seau_ip(requete()), "bdnb-bg-Z")
+
+    # L'appelant identifié n'en profite PAS : il est décompté sur son compte.
+    assert main._quota_gate(requete(), "report", subject="bdnb-bg-Z") == "user_free"
+    utilise = (main._usage_load().get(main._month_key()) or {})
+    assert sum(utilise.values()) == main.CREDIT_COST["report"], utilise
