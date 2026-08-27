@@ -2831,7 +2831,11 @@ async def quota_preflight(request: Request):
             "reports_included": included, "period": periode,
             "reports_left": None if included is None else max(0, included - used),
             # Bâtiments déjà obtenus aujourd'hui : les redemander est libre.
-            "free_again": _daily_seen(bucket) if plan == "free" else []}
+            # Y compris pour un ANONYME : la barrière (_quota_gate) exempte
+            # « subject in _daily_seen(_seau_ip) », et ce pré-vol calcule le
+            # même seau — ne pas le dire ferait afficher un décompte au
+            # visiteur qui rouvre une fiche gratuite (#290).
+            "free_again": _daily_seen(bucket) if plan in ("free", "anonymous") else []}
 
 
 @app.get("/v1/config", tags=["meta"])

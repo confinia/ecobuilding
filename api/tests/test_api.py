@@ -1165,6 +1165,27 @@ def test_le_previsionnel_et_l_usage_annoncent_le_meme_droit(monkeypatch, tmp_pat
     assert quota["free_again"] == ["bdnb-a", "bdnb-b"]
 
 
+def test_le_previsionnel_anonyme_dit_ce_que_la_barriere_exempte(monkeypatch, tmp_path):
+    """#290, compteur près du bouton : la barrière laisse un anonyme ROUVRIR
+    un document déjà servi (subject in _daily_seen(_seau_ip)), mais le pré-vol
+    lui répondait free_again: [] — le compteur aurait annoncé un décompte que
+    la barrière n'appliquerait pas. Les deux doivent lire le même seau."""
+    import app.main as main
+
+    monkeypatch.setattr(main, "USAGE_PATH", str(tmp_path / "u.json"))
+    monkeypatch.setattr(main, "DAILY_PATH", str(tmp_path / "d.json"))
+    monkeypatch.setattr(main, "_load_keys", lambda: set())
+
+    import hashlib
+    ip = "203.0.113.7"
+    bucket = "ip:" + hashlib.sha256(ip.encode()).hexdigest()[:16]
+    main._daily_add(bucket, "bdnb-vu")
+
+    q = client.get("/v1/quota", headers={"x-forwarded-for": ip}).json()
+    assert q["plan"] == "anonymous"
+    assert q["free_again"] == ["bdnb-vu"]
+
+
 def test_le_chronometre_mesure_meme_l_echec():
     """#280 : un échec LENT est précisément ce qu'on veut voir. Un chronomètre
     qui ne mesure que les succès rendrait la panne invisible — le travers
