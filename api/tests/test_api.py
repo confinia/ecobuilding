@@ -990,3 +990,29 @@ def test_l_entete_transporte_les_accents_sans_casser_les_clients_anciens():
     assert "%C3%89glise" in d          # É encodé, donc préservé
     ascii_part = d.split('"')[1]
     assert ascii_part.isascii() and "  " not in ascii_part
+
+
+def test_l_interdiction_de_location_se_lit_en_francais():
+    """La ligne la plus alarmante de la fiche — celle qui annonce à quelqu'un
+    qu'il ne pourra plus louer son bien — disait « à partir du 2025-01-01 ».
+    Une date technique dans une phrase française, exactement le défaut signalé
+    à une source tierce le matin même.
+
+    ISO dans le CHAMP, français dans la PHRASE : un champ se compare et se
+    recopie, une phrase se lit."""
+    import re
+
+    import app.main as main
+
+    b = main._rental_ban("G")
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}", b["rental_ban_date"]), \
+        "le champ doit rester en ISO"
+    assert not re.search(r"\d{4}-\d{2}-\d{2}", b["note"]), \
+        "aucune date ISO ne doit traîner dans la phrase"
+    assert "janvier" in b["note"] or "1ᵉʳ" in b["note"]
+    assert b["note"].startswith("⚠") is False       # l'icône appartient à l'UI
+
+    # Une classe sans interdiction ne doit pas inventer de date.
+    a = main._rental_ban("A")
+    assert a["rental_ban_date"] is None
+    assert "interdiction" in a["note"] and "partir" not in a["note"]

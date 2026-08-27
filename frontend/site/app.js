@@ -891,7 +891,7 @@ function renderPanel(s, data, opts) {
        >${spread.classe_min}&nbsp;–&nbsp;${spread.classe_max}</span>`
     : `<span class="dpe-badge dpe-${cls || "unknown"}">${cls || "?"}</span>`;
   const banHtml = !cls ? "" : ban?.rental_ban_date
-    ? `<div class="ban-warning">⚠ Location interdite à partir du <strong>${ban.rental_ban_date.slice(0, 4)}</strong> (loi Climat &amp; Résilience)</div>`
+    ? `<div class="ban-warning">⚠ Location interdite à partir de <strong>${ban.rental_ban_date.slice(0, 4)}</strong> (loi Climat &amp; Résilience)</div>`
     : `<div class="ban-warning ban-ok">✓ Aucune interdiction de location prévue pour cette classe</div>`;
 
   const risksHtml = sectionRisques(data);

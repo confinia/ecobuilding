@@ -479,7 +479,7 @@ def _report_html(data: dict, photos: list | None = None, map_img: str | None = N
     ban_html = ""
     if e.get("dpe_class"):
         if ban.get("rental_ban_date"):
-            ban_html = (f'<div class="ban warn">⚠ Location interdite à partir du '
+            ban_html = (f'<div class="ban warn">⚠ Location interdite à partir de '
                         f'<strong>{ban["rental_ban_date"][:4]}</strong> (loi Climat &amp; Résilience)</div>')
         else:
             ban_html = '<div class="ban ok">Aucune interdiction de location prévue pour cette classe</div>'
