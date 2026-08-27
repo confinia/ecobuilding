@@ -816,7 +816,9 @@ function sectionCommune(data) {
   const reserves = (c.limites || []).concat((c.non_etablis || []).map((d) => d.texte));
   return `<h3>Commune</h3>
     ${kv("Commune", `${c.nom} (${c.code})`)}
-    ${kv(c.existe_encore ? "Nom et limites inchangés depuis" : "A cessé d'exister le", c.depuis_fr)}
+    ${c.existe_encore
+      ? kv("Nom et limites inchangés depuis", c.depuis_fr)
+      : kv("A cessé d'exister le", c.jusqu_au_fr)}
     ${avant}
     ${kv("Données arrêtées au", c.arret_des_donnees_fr)}
     ${reserves.length ? `<p class="hint">${reserves.map((r) => r).join(" ")}</p>` : ""}`;

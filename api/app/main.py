@@ -1425,7 +1425,7 @@ def _building_block_coros(bdnb_id, lon, lat, row):
             _click_address(bdnb_id, lon, lat),
             _water_network(commune), _official_dpe(bdnb_id),
             _local_taxes(commune), _nearby_schools(lon, lat),
-            _rnb_lookup(lon, lat), _commune_history(commune, lon, lat),
+            _rnb_lookup(lon, lat), _commune_history(commune, lon, lat, bdnb_id),
             _dpe_spread(bdnb_id, lon, lat))
 
 
@@ -1776,7 +1776,34 @@ async def _nom_d_avant(lon, lat, depuis, nom_actuel):
         return None
 
 
-async def _commune_history(commune, lon=None, lat=None):
+async def _commune_du_point(lon, lat):
+    """Le code de la commune VIVANTE sous ce point, à la date du jour.
+
+    Le code de la BDNB est celui de l'ARRONDISSEMENT à Paris, Lyon et
+    Marseille — et Confinia traite les arrondissements comme des unités
+    historiques : interroger `75101` rendait « Paris-01, 1870 → 1941 », donc
+    une commune présentée comme disparue sous un immeuble bien vivant.
+
+    `INTEGRATION.md` le dit d'ailleurs sans ambiguïté : « Confinia does not
+    geocode... pass the coordinates ». Je l'avais suivi pour le nom d'avant, et
+    pas pour la commune elle-même.
+    """
+    if lon is None or lat is None:
+        return None
+    try:
+        from datetime import date
+
+        d = await _cached_get_json(
+            f"{CONFINIA_BASE_URL}/communes",
+            {"lat": round(lat, 6), "lon": round(lon, 6), "at": date.today().isoformat()},
+            ttl=CONFINIA_TTL)
+        return ((d or {}).get("properties") or {}).get("code")
+    except Exception as e:
+        log.info("Confinia commune du point (%s,%s): %s", lon, lat, e)
+        return None
+
+
+async def _commune_history(commune, lon=None, lat=None, bdnb_id=None):
     """La commune au sens civil, ses noms passés, et ce qui borne ces faits.
 
     Rend None — donc pas de bloc — si la clé manque ou si Confinia se tait :
@@ -1788,7 +1815,22 @@ async def _commune_history(commune, lon=None, lat=None):
     établissable ici »), `limitations` (ce que les faits ne soutiennent pas) et
     `attribution` (la donnée est ouverte, pas anonyme).
     """
-    if not commune or not CONFINIA_API_KEY:
+    if not CONFINIA_API_KEY:
+        return None
+    # Le POINT prime sur le code : il désigne la commune vivante, là où le code
+    # de la BDNB peut désigner un arrondissement que Confinia tient pour éteint.
+    #
+    # Sans coordonnées — une fiche ouverte par identifiant seul — on les tire
+    # de l'emprise du bâtiment. Sans cela le correctif ne valait que pour le
+    # clic sur la carte, et Paris redevenait « éteinte » dès qu'on partageait
+    # un lien sans position.
+    if (lon is None or lat is None) and bdnb_id:
+        anneau = await _building_ring(bdnb_id)
+        if anneau:
+            lon = sum(c[0] for c in anneau) / len(anneau)
+            lat = sum(c[1] for c in anneau) / len(anneau)
+    commune = await _commune_du_point(lon, lat) or commune
+    if not commune:
         return None
     try:
         entetes = {"X-API-Key": CONFINIA_API_KEY}
@@ -1810,6 +1852,12 @@ async def _commune_history(commune, lon=None, lat=None):
             "depuis": unite.get("valid_from"),
             "depuis_fr": _date_fr(unite.get("valid_from")),
             "existe_encore": unite.get("valid_to") is None,
+            # La date de FIN, et non celle de début : la fiche annonçait
+            # « a cessé d'exister le 1ᵉʳ janvier 1870 » en affichant le
+            # commencement de la version. Une erreur affirmée avec assurance,
+            # exactement ce qu'on reproche à une source quand elle en commet.
+            "jusqu_au": unite.get("valid_to"),
+            "jusqu_au_fr": _date_fr(unite.get("valid_to")),
             "precedent": precedent,
             "arret_des_donnees": faits.get("as_known_on"),
             "arret_des_donnees_fr": _date_fr(faits.get("as_known_on")),
