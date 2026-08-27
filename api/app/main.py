@@ -2302,6 +2302,14 @@ def _mobile_gate(request: Request, endpoint: str, subject: str | None = None) ->
                         "les fiches déjà obtenues aujourd'hui restent accessibles.")
 
 
+def _seau_ip(request: Request) -> str:
+    """Seau de comptage d'une adresse IP. Nommé une fois : la règle du document
+    déjà servi et le décompte anonyme DOIVENT viser le même seau, sans quoi
+    l'une ne voit pas ce que l'autre a enregistré."""
+    ip = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip() or "?"
+    return "ip:" + hashlib.sha256(ip.encode()).hexdigest()[:16]
+
+
 def _quota_gate(request: Request, endpoint: str, subject: str | None = None):
     """Tiered access (#206), subscription-first ladder:
       anonymous      -> ANON_MONTHLY_REPORTS fiches/month per IP
@@ -2313,16 +2321,6 @@ def _quota_gate(request: Request, endpoint: str, subject: str | None = None):
     mobile = _mobile_gate(request, endpoint, subject)
     if mobile:
         return mobile
-    # Fiche DÉJÀ obtenue aujourd'hui : gratuite et non décomptée — exactement
-    # comme sur mobile (voir _mobile_gate). C'est le même document ; le
-    # facturer deux fois punit l'utilisateur qui rouvre son propre onglet, et
-    # empêchait le web de rediriger vers l'URL réelle de la fiche.
-    if subject and endpoint == "report":
-        ip_ = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip() or "?"
-        seau = ("ip:" + hashlib.sha256(ip_.encode()).hexdigest()[:16])
-        if subject in _daily_seen(seau):
-            return "web_repeat"
-
     key = request.headers.get("x-api-key") or request.query_params.get("key")
     if key and key in _load_keys():
         plan = _key_plans().get(key, "free")
@@ -2383,11 +2381,21 @@ def _quota_gate(request: Request, endpoint: str, subject: str | None = None):
         return "user_free"
     ip = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip() or "?"
     if endpoint == "report":
+        # Fiche DÉJÀ servie à cette adresse aujourd'hui : gratuite et non
+        # décomptée — comme sur mobile (voir _mobile_gate).
+        #
+        # La règle ne vaut QUE pour un appel anonyme, et c'est délibéré. Le web
+        # télécharge la fiche avec son jeton puis fait naviguer l'onglet vers
+        # la même URL : cette seconde requête arrive sans autorisation, et
+        # c'est elle qu'il faut épargner. Un appelant IDENTIFIÉ, lui, est
+        # toujours décompté sur son propre compte — sinon l'activité d'un
+        # collègue derrière la même sortie internet offrirait des fiches à un
+        # autre, ce qu'un parcours e2e a montré en partageant l'IP de la VM.
+        if subject and subject in _daily_seen(_seau_ip(request)):
+            return "web_repeat"
         # Monthly, not daily: a daily cap of 20 was never reached, so nobody
         # ever created an account (#206).
-        bucket = "ip:" + hashlib.sha256(ip.encode()).hexdigest()[:16]
-        if subject:
-            _daily_add(bucket, subject)
+        bucket = _seau_ip(request)
         used = _usage_add(bucket, CREDIT_COST["report"]) // CREDIT_COST["report"]
         if used > ANON_MONTHLY_REPORTS:
             raise HTTPException(
@@ -2422,14 +2430,18 @@ a.btn{{display:inline-block;margin:6px;padding:11px 18px;border-radius:8px;text-
 .help{{margin-top:26px;font-size:14px;color:#666}}</style></head><body>
 <h1>🏢 Limite gratuite atteinte</h1>
 <div class="c">{exc.detail}</div>
-<p><strong>Créez un compte gratuit</strong> (30 secondes, sans carte bancaire) :</p>
+<p><strong>Déjà un compte ?</strong> Cette page ne vous a pas reconnu :
+connectez-vous, votre quota est celui de votre offre.</p>
+<p><a class="btn p" href="https://ecobuilding.confinia.io/?login=1">Se connecter</a>
+<a class="btn s" href="https://ecobuilding.confinia.io/?signup=1">Créer un compte gratuit</a></p>
+<p>Sans compte comme avec un compte gratuit, {ANON_MONTHLY_REPORTS} fiches par
+mois sont offertes. Le compte ajoute :</p>
 <ul>
-  <li>{FREE_ACCOUNT_REPORTS} fiches PDF par mois au lieu de {ANON_MONTHLY_REPORTS}</li>
   <li>Une clé API pour vos propres outils</li>
-  <li>Le suivi de votre consommation en temps réel</li>
+  <li>Le suivi de votre consommation</li>
+  <li>Un quota qui vous suit, quel que soit l'appareil ou le réseau</li>
 </ul>
-<p><a class="btn p" href="https://ecobuilding.confinia.io/?signup=1">Créer un compte gratuit</a>
-<a class="btn s" href="https://ecobuilding.confinia.io/offres.html">Voir les offres</a></p>
+<p><a class="btn s" href="https://ecobuilding.confinia.io/offres.html">Voir les offres Pro</a></p>
 <p class="help">Un problème, une question ? Écrivez à
 <a href="mailto:{SUPPORT_EMAIL}?subject=EcoBuilding%20-%20aide">{SUPPORT_EMAIL}</a>, on répond.</p>
 </body></html>""")
@@ -3032,6 +3044,16 @@ async def report(
     from .report import build_report_pdf
 
     _quota_gate(request, "report", subject=bdnb_id)
+    # Le document servi est enregistré pour CETTE adresse, quel que soit le
+    # plan — sans quoi la seconde requête n'en profite pas.
+    #
+    # Le web télécharge la fiche avec son jeton, puis fait NAVIGUER l'onglet
+    # vers la même URL pour que le nom de fichier du serveur survive (#282) :
+    # une navigation ne porte aucun en-tête d'autorisation, donc cette seconde
+    # requête arrive anonyme. Un abonné se retrouvait bloqué par le quota des
+    # visiteurs sur sa propre fiche, et lisait « limite sans compte » alors
+    # qu'il paie.
+    _daily_add(_seau_ip(request), bdnb_id)
     # Cache 24 h de la fiche elle-même : redemander le MÊME document ne doit ni
     # relancer 15 à 45 s de rendu, ni consommer le quota amont. La clé inclut
     # l'adresse cherchée, qui TITRE la fiche (#146) — deux titres différents
