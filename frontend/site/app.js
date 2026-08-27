@@ -1209,7 +1209,7 @@ function showQuotaPanel(p, signedIn, q) {
         // proposer. Quelqu'un qui atteint le mur ET veut payer est le signal
         // le plus fort qu'on puisse recevoir — on le recueille au lieu de le
         // perdre dans une boîte d'alerte.
-        : `<a class="report-link" href="mailto:contact@confinia.io?subject=EcoBuilding%20-%20besoin%20de%20volume&body=${
+        : `<a class="report-link" onclick="fetch('${API}/events',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({event:'pro_interest'})})" href="mailto:contact@confinia.io?subject=EcoBuilding%20-%20besoin%20de%20volume&body=${
              encodeURIComponent("Bonjour,\n\nJ'ai atteint la limite mensuelle et j'ai besoin de plus de fiches.\n\nMon usage : ")
            }">J'ai besoin de plus de fiches — écrivez-nous</a>`)
       : `<a class="report-link" href="/?login=1">Se connecter</a>`}</p>
