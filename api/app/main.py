@@ -1653,12 +1653,22 @@ async def _dpe_spread(bdnb_id, lon, lat, logements_bdnb=None):
             d = await _cached_get_json(
                 ADEME_DPE_URL,
                 {"identifiant_ban_eq": ban, "size": "100",
+                 # Assez de champs pour donner à CHAQUE logement un bloc
+                 # complet, en un seul appel par adresse. La fiche montrait un
+                 # tableau de plusieurs logements puis les caractéristiques
+                 # détaillées d'un seul, sans dire lequel — d'où la question
+                 # « 3 DPE, une seule date ? ».
                  "select": ",".join(("numero_dpe", "etiquette_dpe",
                                      "surface_habitable_logement",
                                      "numero_etage_appartement", "type_batiment",
                                      "type_installation_chauffage",
                                      "date_etablissement_dpe",
-                                     "cout_total_5_usages"))},
+                                     "conso_5_usages_par_m2_ep",
+                                     "emission_ges_5_usages_par_m2",
+                                     "cout_total_5_usages",
+                                     "qualite_isolation_enveloppe",
+                                     "qualite_isolation_menuiseries",
+                                     "description_installation_chauffage_n1"))},
                 ttl=7 * 86400)
             for r in (d.get("results") or []):
                 if r.get("etiquette_dpe"):
@@ -1671,6 +1681,11 @@ async def _dpe_spread(bdnb_id, lon, lat, logements_bdnb=None):
                         "classe": r["etiquette_dpe"],
                         "surface_m2": r.get("surface_habitable_logement"),
                         "cout_annuel_eur": r.get("cout_total_5_usages"),
+                        "conso_kwh_m2y": r.get("conso_5_usages_par_m2_ep"),
+                        "ges_kgco2_m2y": r.get("emission_ges_5_usages_par_m2"),
+                        "isolation_enveloppe": r.get("qualite_isolation_enveloppe"),
+                        "isolation_menuiseries": r.get("qualite_isolation_menuiseries"),
+                        "chauffage_detail": r.get("description_installation_chauffage_n1"),
                         # L'étage n'est renseigné que dans 17 % des cas : on le
                         # porte quand il existe, on n'en fait jamais un axe.
                         "etage": r.get("numero_etage_appartement"),

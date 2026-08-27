@@ -845,29 +845,40 @@ function sectionEventailDpe(data) {
        à <strong>${e.classe_max}</strong>.`;
   const couv = e.logements_batiment
     ? ` L'immeuble compte ${e.logements_batiment} logements.` : "";
-  // La liste des logements, pour que le lecteur RECONNAISSE le sien.
+  // UN BLOC PAR DPE.
   //
-  // On ne prétend pas désigner son lot : on lui donne les deux clés qu'il
-  // possède — sa surface, lue sur l'annonce, et le numéro de DPE que le
-  // vendeur lui remet. Et on dit franchement quand la surface ne tranche pas.
-  const lignes = (e.logements || []).map((l) => `<tr>
-      <td>${l.surface_m2 != null ? l.surface_m2 + " m²" : "—"}</td>
-      <td><span class="dpe-badge dpe-${l.classe}">${l.classe}</span></td>
-      <td>${l.cout_annuel_eur ? Math.round(l.cout_annuel_eur).toLocaleString("fr-FR") + " €/an" : "—"}</td>
-      <td class="hint">${l.identifiable
-        ? "seul de cette surface"
-        : `⚠ ${l.memes_surfaces} logements de cette surface`}</td>
-      <td class="hint">${l.numero_dpe || ""}</td></tr>`).join("");
+  // Un tableau suivi des caractéristiques détaillées d'un seul logement se
+  // lisait comme « trois diagnostics, une seule date » — la question posée par
+  // l'opérateur en regardant sa fiche. Chaque diagnostic a sa date, sa
+  // consommation, son coût et son isolation : il lui faut son bloc.
+  const repr = data.official_dpe?.dpe_number;
+  const blocs = (e.logements || []).map((l) => {
+    const titre = `${l.surface_m2 != null ? l.surface_m2 + " m²" : "Logement"}`;
+    const marque = l.identifiable
+      ? "seul logement de cette surface"
+      : `⚠ ${l.memes_surfaces} logements de cette surface — indiscernables`;
+    const est = l.numero_dpe && l.numero_dpe === repr;
+    return `<div class="logement${est ? " repr" : ""}">
+      <div class="logement-t"><span class="dpe-badge dpe-${l.classe}">${l.classe}</span>
+        <strong>${titre}</strong>${est ? " · classe affichée ci-dessus" : ""}</div>
+      ${kv("Établi le", l.etabli_le)}
+      ${kv("Consommation", l.conso_kwh_m2y ? Math.round(l.conso_kwh_m2y) + " kWh/m²/an" : null)}
+      ${kv("GES", l.ges_kgco2_m2y ? Math.round(l.ges_kgco2_m2y) + " kgCO₂/m²/an" : null)}
+      ${kv("Coût annuel", l.cout_annuel_eur ? Math.round(l.cout_annuel_eur).toLocaleString("fr-FR") + " €/an" : null)}
+      ${kv("Isolation", [l.isolation_enveloppe && "enveloppe " + l.isolation_enveloppe,
+                         l.isolation_menuiseries && "menuiseries " + l.isolation_menuiseries]
+                        .filter(Boolean).join(" · ") || null)}
+      ${kv("N° DPE", l.numero_dpe)}
+      <p class="hint">${marque}</p></div>`;
+  }).join("");
   return `<div class="dpe-spread"><p class="hint">${titre}
       La classe ci-dessus est celle du logement représentatif du bâtiment,
       pas celle de tous.${couv}</p>
     <p>${parts}</p>
-    ${lignes ? `<table class="logements"><thead><tr>
-        <th>Surface</th><th>DPE</th><th>Coût</th><th>Identification</th><th>N° DPE</th>
-      </tr></thead><tbody>${lignes}</tbody></table>
-      <p class="hint">Seuls les logements diagnostiqués figurent : c'est un minimum
-      observé, pas un inventaire. Retrouvez le vôtre par sa surface, ou par le
-      numéro de DPE que le vendeur vous remet.</p>` : ""}</div>`;
+    ${blocs}
+    ${blocs ? `<p class="hint">Seuls les logements diagnostiqués figurent : c'est un
+      minimum observé, pas un inventaire. Retrouvez le vôtre par sa surface, ou par
+      le numéro de DPE que le vendeur vous remet.</p>` : ""}</div>`;
 }
 
 function renderPanel(s, data, opts) {
@@ -938,6 +949,13 @@ function renderPanel(s, data, opts) {
     <p>${dpeBadge} ${b.energy?.consumption_kwh_m2y ? `&nbsp;${Math.round(b.energy.consumption_kwh_m2y)} kWh/m²/an` : ""}</p>
     ${banHtml}
     ${sectionEventailDpe(data)}
+    ${/* Ces lignes décrivent UN logement — celui que la BDNB tient pour
+          représentatif — et non l'immeuble. Placées sous un tableau de
+          plusieurs logements, elles se lisaient comme un résumé du bâtiment,
+          alors qu'elles répètent une seule de ses lignes. On le titre. */""}
+    ${data.official_dpe?.dpe_number ? `<h4 class="sub">Le logement représentatif${
+        data.official_dpe?.surface_habitable_m2
+          ? ` (${data.official_dpe.surface_habitable_m2} m²)` : ""}</h4>` : ""}
     ${kv("Date du DPE", b.energy?.dpe_date ? String(b.energy.dpe_date).slice(0, 10) : null)}
     ${kv("GES", b.energy?.ghg_kgco2_m2y ? Math.round(b.energy.ghg_kgco2_m2y) + " kgCO₂/m²/an" : null)}
     ${kv("N° DPE officiel", data.official_dpe?.dpe_number)}

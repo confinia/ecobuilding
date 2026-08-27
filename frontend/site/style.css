@@ -160,7 +160,11 @@ ul.keys li { padding: 4px 0; border-bottom: 1px dashed #eee; }
 
 /* Liste des logements diagnostiqués d'un immeuble (#288). Compacte : elle
    s'insère dans la fiche sans la transformer en tableur. */
-table.logements { width: 100%; border-collapse: collapse; font-size: 12px; margin: 6px 0; }
-table.logements th { text-align: left; color: #555; font-weight: 600; padding: 3px 6px 3px 0; }
-table.logements td { padding: 3px 6px 3px 0; border-top: 1px solid #eee; vertical-align: middle; }
-table.logements .dpe-badge { font-size: 11px; padding: 1px 5px; min-width: 0; }
+.logement { border: 1px solid #e6e6e6; border-radius: 8px; padding: 8px 10px; margin: 8px 0; }
+.logement.repr { border-color: #2b7a4b; background: #f5faf7; }
+.logement-t { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; font-size: 13px; }
+.logement .dpe-badge { font-size: 12px; padding: 1px 6px; min-width: 0; }
+
+/* Le logement dont le détail suit : repéré pour que le tableau et la section
+   d'en dessous ne se lisent pas comme deux choses sans rapport (#288). */
+h4.sub { margin: 10px 0 2px; font-size: 13px; color: #2b7a4b; }
