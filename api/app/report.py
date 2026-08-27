@@ -560,7 +560,11 @@ def _report_html(data: dict, photos: list | None = None, map_img: str | None = N
 </style>
 <header>
   <div class="brand">EcoBuilding</div>
-  <div class="doctitle">Fiche bâtiment normalisée — données ouvertes</div>
+  <!-- « normalisée » promettait une norme qui n'existe pas : ce document est
+       assemblé à partir de données ouvertes, il ne se conforme à aucun
+       référentiel. Dire ce qu'il EST — formaté par nous, sourcé chez l'État —
+       vaut mieux que d'emprunter l'autorité d'une norme. -->
+  <div class="doctitle">Fiche bâtiment formatée et sourcée — données ouvertes</div>
 </header>
 <h1>{address}</h1>
 {_principal_address_note(address, b)}

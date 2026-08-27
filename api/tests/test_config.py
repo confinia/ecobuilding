@@ -346,3 +346,20 @@ def test_aucun_bouton_pro_quand_le_paiement_est_ferme():
     j = main_py.index("Limite gratuite atteinte — EcoBuilding")
     assert 'PAYMENT_PROVIDER != "none"' in main_py[j:j + 2500], \
         "la page 429 propose les offres même quand rien n'est achetable"
+
+
+def test_la_fiche_ne_se_dit_pas_normalisee():
+    """« Fiche bâtiment normalisée » promettait une norme qui n'existe pas.
+
+    Ce document est assemblé à partir de données ouvertes ; il ne se conforme
+    à aucun référentiel. Emprunter l'autorité d'une norme est le genre de
+    surenchère que ce produit passe son temps à retirer — et l'opérateur
+    l'avait déjà corrigé sur la fiche App Store sans que ce soit répercuté."""
+    report = (ROOT / "api/app/report.py").read_text()
+    entete = report[report.index('class="doctitle"'):][:160]
+    assert "normalis" not in entete, entete
+    assert "sourcée" in entete
+
+    app = (ROOT / "frontend/site/app.js").read_text()
+    bouton = app[app.index('id="report-btn"'):][:400]
+    assert "normalis" not in bouton

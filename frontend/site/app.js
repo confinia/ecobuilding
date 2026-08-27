@@ -973,7 +973,7 @@ function renderPanel(s, data, opts) {
     ${kv("Productible photovoltaïque", data.solar_pv?.yield_kwh_per_kwc_y ? Math.round(data.solar_pv.yield_kwh_per_kwc_y) + " kWh/an par kWc (PVGIS)" : null)}
     ${sectionPrix(data)}
     ${sectionCommune(data)}
-    <p><button id="report-btn" class="report-link" data-url="${API}/report/${encodeURIComponent(b.bdnb_id)}.pdf${reportParams.length ? "?" + reportParams.join("&") : ""}">📄 Fiche PDF normalisée</button></p>
+    <p><button id="report-btn" class="report-link" data-url="${API}/report/${encodeURIComponent(b.bdnb_id)}.pdf${reportParams.length ? "?" + reportParams.join("&") : ""}">📄 Obtenir la fiche PDF</button></p>
     <div id="streetview"></div>
     ${pendingHtml}
     <p class="hint">ID BDNB : ${b.bdnb_id}</p>
