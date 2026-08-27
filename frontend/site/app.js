@@ -1151,8 +1151,10 @@ function showQuotaPanel(p, signedIn, q) {
       : `Sans compte, ${anon ?? "quelques"} fiches par mois sont offertes.`}</p>
     <p>${signedIn
       ? `<a class="report-link" href="/offres.html">Passer Pro : dès ${tierS?.eur ?? 9} €/mois (${tierS?.fiches_month ?? 30} fiches)</a>`
-      : `<a class="report-link" href="/?signup=1">Créer un compte gratuit (${free ?? "plus de"} fiches/mois)</a>`}</p>
-    ${signedIn ? "" : `<p><a href="/?login=1">Déjà un compte ? Se connecter</a></p>`}
+      : `<a class="report-link" href="/?login=1">Se connecter</a>`}</p>
+    ${signedIn ? "" : `<p><a href="/?signup=1">Pas encore de compte ? En créer un (30 s, sans carte)</a></p>
+      <p class="hint">Le compte gratuit offre le même nombre de fiches, mais un
+      quota qui vous suit d'un appareil à l'autre, et une clé API.</p>`}
     <p class="hint">Une question ? <a href="mailto:contact@confinia.io?subject=EcoBuilding%20-%20aide">contact@confinia.io</a></p>`);
 }
 

@@ -1016,3 +1016,36 @@ def test_l_interdiction_de_location_se_lit_en_francais():
     a = main._rental_ban("A")
     assert a["rental_ban_date"] is None
     assert "interdiction" in a["note"] and "partir" not in a["note"]
+
+
+def test_la_seconde_requete_anonyme_ne_bloque_pas_un_abonne(monkeypatch, tmp_path):
+    """Régression introduite par #282.
+
+    Le web télécharge la fiche AVEC son jeton, puis fait naviguer l'onglet vers
+    la même URL pour que le nom de fichier du serveur survive. Une navigation
+    ne porte aucun en-tête d'autorisation : cette seconde requête arrive donc
+    anonyme, et un abonné se retrouvait bloqué par le quota des visiteurs sur
+    sa propre fiche — en lisant « limite sans compte » alors qu'il paie.
+
+    Le document servi est désormais enregistré pour l'adresse IP quel que soit
+    le plan, donc la seconde requête est reconnue comme la même."""
+    import app.main as main
+    from fastapi import Request
+
+    monkeypatch.setattr(main, "DAILY_PATH", str(tmp_path / "daily.json"))
+    monkeypatch.setattr(main, "USAGE_PATH", str(tmp_path / "usage.json"))
+    monkeypatch.setattr(main, "ANON_MONTHLY_REPORTS", 1)
+
+    def requete():
+        return Request({"type": "http", "headers": [(b"x-forwarded-for", b"203.0.113.7")],
+                        "method": "GET", "path": "/", "query_string": b""})
+
+    # 1. Un abonné obtient sa fiche : le document est enregistré pour l'IP.
+    main._daily_add(main._seau_ip(requete()), "bdnb-bg-A")
+
+    # 2. La navigation de l'onglet arrive ANONYME, sur le même document.
+    assert main._quota_gate(requete(), "report", subject="bdnb-bg-A") == "web_repeat"
+
+    # 3. Un AUTRE document, lui, est bien décompté — la règle ne fait pas
+    #    tomber le quota, elle ne couvre que le même document.
+    assert main._quota_gate(requete(), "report", subject="bdnb-bg-B") != "web_repeat"
