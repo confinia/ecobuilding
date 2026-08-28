@@ -1019,13 +1019,43 @@ function renderPanel(s, data, opts) {
     ${sectionPrix(data)}
     ${sectionCommune(data)}
     <p><button id="report-btn" class="report-link" data-url="${API}/report/${encodeURIComponent(b.bdnb_id)}.pdf${reportParams.length ? "?" + reportParams.join("&") : ""}">📄 Obtenir la fiche PDF</button></p>
+    <p class="hint" id="report-quota" hidden></p>
     <div id="streetview"></div>
     ${pendingHtml}
     <p class="hint">ID BDNB : ${b.bdnb_id}</p>
   `, opts);
   const pdfBtn = document.getElementById("report-btn");
   if (pdfBtn) pdfBtn.onclick = () => downloadReport(pdfBtn);
+  compteurFiches(b.bdnb_id);
   loadStreetview(data.query?.lon, data.query?.lat);
+}
+
+// --- Le compteur PRÈS DU BOUTON (#290, seconde moitié). L'en-tête porte déjà
+// le solde, mais c'est le bouton qu'on regarde au moment de décider — et
+// l'en-tête ne dit rien au visiteur sans compte. Même pré-vol (lecture seule)
+// que downloadReport : ce que le compteur annonce est ce que la barrière fera.
+async function compteurFiches(bdnbId) {
+  const el = document.getElementById("report-quota");
+  if (!el) return;
+  try {
+    const headers = window.ecoToken ? { Authorization: "Bearer " + window.ecoToken() } : {};
+    const q = await (await fetch(`${API}/quota`, { headers })).json();
+    if ((q.free_again || []).includes(bdnbId)) {
+      // Rouvrir un document déjà servi ne décompte rien : le dire évite de
+      // « garder » ses fiches par peur d'un compteur qui ne bougera pas.
+      el.textContent = "Fiche déjà obtenue — la rouvrir ne décompte rien.";
+    } else if (q.reports_left == null) {
+      return;                      // offre sans plafond : rien à annoncer
+    } else if (q.reports_left === 0) {
+      el.textContent = q.period === "day"
+        ? "Limite du jour atteinte — elle rouvre demain."
+        : "Limite du mois atteinte.";
+    } else {
+      const n = q.reports_left;
+      el.textContent = `${n} fiche${n > 1 ? "s" : ""} restante${n > 1 ? "s" : ""} ${periodeQuota(q)}${window.ecoToken ? "" : " (sans compte)"}`;
+    }
+    el.hidden = false;
+  } catch { /* cosmétique : jamais casser la fiche pour un compteur */ }
 }
 
 // --- Account quota (#206): a signed-in user sees what is left of the free
