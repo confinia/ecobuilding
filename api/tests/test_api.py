@@ -1165,6 +1165,51 @@ def test_le_previsionnel_et_l_usage_annoncent_le_meme_droit(monkeypatch, tmp_pat
     assert quota["free_again"] == ["bdnb-a", "bdnb-b"]
 
 
+def test_fiche_ciblee_parle_du_logement_choisi():
+    """#311 : ?dpe=N produit la fiche d'UN logement. Sa classe seule est
+    marquée, l'interdiction de location est la SIENNE, et le bloc marqué est
+    le sien — plus le représentatif."""
+    from app.report import _report_html
+
+    logements = [
+        {"numero_dpe": "AAA1", "classe": "C", "surface_m2": 80.0,
+         "conso_kwh_m2y": 120.0, "ges_kgco2_m2y": 8.0,
+         "memes_surfaces": 1, "identifiable": True},
+        {"numero_dpe": "GGG7", "classe": "G", "surface_m2": 31.5,
+         "conso_kwh_m2y": 480.0, "ges_kgco2_m2y": 95.0,
+         "memes_surfaces": 1, "identifiable": True},
+    ]
+    data = {
+        "buildings": [{"bdnb_id": "bdnb-bg-X", "address": "1 rue Test",
+                       "energy": {"dpe_class": "C", "consumption_kwh_m2y": 120.0,
+                                  "ghg_kgco2_m2y": 8.0, "rental_ban": {}}}],
+        "dpe_spread": {"diagnostics": 2, "classe_min": "C", "classe_max": "G",
+                       "identiques": False, "repartition": {"C": 1, "G": 1},
+                       "logements": logements},
+        "official_dpe": {"dpe_number": "AAA1"},
+        "query": {},
+        "dpe_cible": logements[1],
+    }
+    html = _report_html(data)
+    # Le titre de section et le badge portent le logement choisi.
+    assert "logement 31.5 m², classe G" in html
+    # Sa marque remplace celle du représentatif.
+    assert "le logement de cette fiche" in html
+    assert "classe affichée ci-dessus" not in html
+    # L'interdiction de location est recalculée pour SA classe : G -> 2025.
+    assert "Location interdite" in html and "2025" in html
+    assert "pour ce logement" in html
+    # La légende des échelles désigne le diagnostic choisi.
+    assert "Classe marquée : celle du logement choisi" in html
+    assert "GGG7" in html
+
+    # Sans cible, rien ne change : le représentatif garde sa marque.
+    del data["dpe_cible"]
+    html2 = _report_html(data)
+    assert "classe affichée ci-dessus" in html2
+    assert "le logement de cette fiche" not in html2
+
+
 def test_le_previsionnel_anonyme_dit_ce_que_la_barriere_exempte(monkeypatch, tmp_path):
     """#290, compteur près du bouton : la barrière laisse un anonyme ROUVRIR
     un document déjà servi (subject in _daily_seen(_seau_ip)), mais le pré-vol
