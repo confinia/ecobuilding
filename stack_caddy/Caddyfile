@@ -22,10 +22,11 @@
 		reverse_proxy api:8000
 	}
 
-	# SHARED Grafana (monitoring_stack project, host :13040) — same instance
-	# whichever stack serves prod, so dashboards survive promotes.
-	handle /grafana* {
-		reverse_proxy host.containers.internal:13040
+	# Grafana a déménagé sur son propre nom (grafana.ecobuilding.confinia.io,
+	# vhost plateforme) pour séparer ses identifiants de ceux de l'app. Les
+	# anciens liens /grafana/... suivent, chemin conservé.
+	handle_path /grafana* {
+		redir https://grafana.ecobuilding.confinia.io{uri} permanent
 	}
 
 	# MapLibre frontend. no-cache = browsers must revalidate (ETag), so every

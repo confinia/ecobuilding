@@ -30,6 +30,10 @@ services:
       KC_HTTP_RELATIVE_PATH: /auth
       KC_PROXY_HEADERS: xforwarded
       KC_HOSTNAME: https://ecobuilding.confinia.io/auth
+      # La console d'ADMINISTRATION sous son propre nom (vhost plateforme
+      # :13070) : mêmes raisons que Grafana — séparer les identifiants
+      # d'admin de ceux de l'app. L'émetteur public des jetons ne bouge pas.
+      KC_HOSTNAME_ADMIN: https://iam.ecobuilding.confinia.io/auth
       KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
     env_file:
