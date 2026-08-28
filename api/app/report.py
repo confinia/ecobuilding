@@ -286,7 +286,8 @@ def _principal_address_note(shown_address: str, b: dict) -> str:
             f'adresse principale : {principal}</p>')
 
 
-def _dpe_spread_html(e: dict, dpe_representatif: str | None = None) -> str:
+def _dpe_spread_html(e: dict, dpe_representatif: str | None = None,
+                     dpe_cible: str | None = None) -> str:
     """L'éventail des DPE connus à l'adresse (#287).
 
     Une classe unique par bâtiment se trompe pour presque tous les logements
@@ -322,7 +323,13 @@ def _dpe_spread_html(e: dict, dpe_representatif: str | None = None) -> str:
     blocs = []
     for l in (e.get("logements") or []):
         m2 = l.get("surface_m2")
-        est_repr = bool(dpe_representatif and l.get("numero_dpe") == dpe_representatif)
+        # Fiche CIBLÉE (#311) : le logement choisi prend la marque verte, et le
+        # représentatif redevient une ligne comme les autres — deux mises en
+        # avant se liraient comme deux vérités.
+        if dpe_cible:
+            est_repr = l.get("numero_dpe") == dpe_cible
+        else:
+            est_repr = bool(dpe_representatif and l.get("numero_dpe") == dpe_representatif)
         isolation = " · ".join(x for x in (
             f"enveloppe {l['isolation_enveloppe']}" if l.get("isolation_enveloppe") else "",
             f"menuiseries {l['isolation_menuiseries']}" if l.get("isolation_menuiseries") else "",
@@ -337,7 +344,7 @@ def _dpe_spread_html(e: dict, dpe_representatif: str | None = None) -> str:
         blocs.append(
             f'<div class="logement{" repr" if est_repr else ""}">'
             f'<div class="logement-t"><strong>{entete} — classe {l.get("classe")}</strong>'
-            f'{" · classe affichée ci-dessus" if est_repr else ""}</div>'
+            f'{(" · le logement de cette fiche" if dpe_cible else " · classe affichée ci-dessus") if est_repr else ""}</div>'
             "<table>"
             + _row("Établi le", l.get("etabli_le"))
             + _row("Consommation", l.get("conso_kwh_m2y") and round(l["conso_kwh_m2y"]), " kWh/m²/an")
@@ -353,9 +360,12 @@ def _dpe_spread_html(e: dict, dpe_representatif: str | None = None) -> str:
 <p class="meta">Retrouvez le logement concerné par sa surface, ou par le numéro
 de DPE que le vendeur remet obligatoirement — il est vérifiable sur
 l'observatoire de l'ADEME.</p>"""
+    phrase_classe = ("La classe ci-dessus est celle du logement choisi pour "
+                     "cette fiche." if dpe_cible else
+                     "La classe ci-dessus est celle du logement représentatif "
+                     "du bâtiment, pas celle de tous.")
     return f"""
-<div class="ban">{titre} La classe ci-dessus est celle du logement
-représentatif du bâtiment, pas celle de tous.{couv}</div>
+<div class="ban">{titre} {phrase_classe}{couv}</div>
 <p class="meta">Répartition — {parts}. Source : ADEME, observatoire DPE.
 Seuls les logements diagnostiqués figurent : c'est un minimum observé, pas un
 inventaire de l'immeuble.</p>{table}"""
@@ -524,8 +534,15 @@ def _report_html(data: dict, photos: list | None = None, map_img: str | None = N
     # des qu'un immeuble porte plusieurs diagnostics. Le degrade va de la
     # couleur de la meilleure classe a celle de la pire.
     spread = data.get("dpe_spread") or {}
-    eventail = bool(not spread.get("identiques")
+    # Fiche CIBLÉE (#311) : un logement précis a été choisi dans le panneau.
+    # Le document parle alors de LUI — badge, échelles, interdiction de
+    # location — et le bâtiment devient le contexte, plus l'inverse.
+    cible = data.get("dpe_cible") or None
+    eventail = bool(not cible and not spread.get("identiques")
                     and spread.get("classe_min") and spread.get("classe_max"))
+    if cible:
+        cls = (cible.get("classe") or "?").upper()
+        color = DPE_COLORS.get(cls, "#999")
     # Les échelles marquent CHAQUE classe présente à l'adresse (#307), pas
     # seulement celle du logement représentatif — sinon l'élément le plus
     # officiel de la page dément les blocs affichés juste au-dessus.
@@ -539,7 +556,9 @@ def _report_html(data: dict, photos: list | None = None, map_img: str | None = N
                 k = _ges_class(g)
                 comptes_ges[k] = comptes_ges.get(k, 0) + 1
         comptes_ges = comptes_ges or None
-    if eventail:
+    if cible:
+        badge = '<span class="dpe">' + cls + '</span>'
+    elif eventail:
         c1 = DPE_COLORS.get(spread["classe_min"], "#999")
         c2 = DPE_COLORS.get(spread["classe_max"], "#999")
         badge = ('<span class="dpe" style="background:linear-gradient(100deg,'
@@ -563,6 +582,20 @@ def _report_html(data: dict, photos: list | None = None, map_img: str | None = N
     zone_risks = ", ".join((risks.get("risques_naturels") or []) + (risks.get("risques_technologiques") or [])) or None
     conso = e.get("consumption_kwh_m2y")
     ges = e.get("ghg_kgco2_m2y")
+    if cible:
+        conso = cible.get("conso_kwh_m2y")
+        ges = cible.get("ges_kgco2_m2y")
+        # L'interdiction de location se recalcule pour SA classe (loi Climat &
+        # Résilience) : un G dans un immeuble « sans interdiction » est
+        # exactement l'écart qui intéresse un acheteur.
+        seuils = {"G": "2025", "F": "2028", "E": "2034"}
+        if cls in seuils:
+            ban_html = (f'<div class="ban warn">⚠ Location interdite à partir de '
+                        f'<strong>{seuils[cls]}</strong> (loi Climat &amp; Résilience) '
+                        f'pour ce logement</div>')
+        else:
+            ban_html = ('<div class="ban ok">Aucune interdiction de location '
+                        'prévue pour la classe de ce logement</div>')
 
     html = f"""
 <style>
@@ -621,10 +654,11 @@ def _report_html(data: dict, photos: list | None = None, map_img: str | None = N
 {_principal_address_note(address, b)}
 <p class="meta">Identifiant BDNB : {b.get("bdnb_id") or "—"} · Générée le {now} · ecobuilding.confinia.io</p>
 
-<h2>Énergie (DPE)</h2>
+<h2>Énergie (DPE){f' — logement {cible.get("surface_m2")} m², classe {cls}' if cible else ""}</h2>
 <p>{badge}&nbsp;&nbsp;{f"{round(conso)} kWh/m²/an" if conso else "Aucun DPE enregistré dans la BDNB pour ce bâtiment"}</p>
 {ban_html}
-{_dpe_spread_html(data.get("dpe_spread") or {}, (data.get("official_dpe") or {}).get("dpe_number"))}
+{_dpe_spread_html(data.get("dpe_spread") or {}, (data.get("official_dpe") or {}).get("dpe_number"),
+                  dpe_cible=(cible or {}).get("numero_dpe"))}
 {('<table class="labels"><tr>'
   '<td><div class="lbl-title">Étiquette énergie <span>(kWh/m²/an, énergie primaire)</span></div>'
   + _scale(cls, DPE_COLORS, f"{round(conso)}" if conso else "",
@@ -638,7 +672,9 @@ def _report_html(data: dict, photos: list | None = None, map_img: str | None = N
      # « diagnostics », pas « logements » : un logement est re-diagnostiqué à
      # chaque vente, l'adresse de #312 en porte 23 pour 14 logements.
      + ' diagnostics connus à cette adresse. La valeur chiffrée est celle '
-     'du logement représentatif.</p>' if eventail else "")) if e.get("dpe_class") else ""}
+     'du logement représentatif.</p>' if eventail else
+     ('<p class="meta">Classe marquée : celle du logement choisi '
+      '(N° DPE ' + str(cible.get("numero_dpe")) + ').</p>' if cible else ""))) if (e.get("dpe_class") or cible) else ""}
 <table>
   {_row("Date du DPE", (e.get("dpe_date") or "")[:10] or None)}
   {_row("Émissions GES", round(ges) if ges else None, " kgCO₂/m²/an")}

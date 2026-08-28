@@ -3268,6 +3268,11 @@ async def report(
         "The address the user actually searched. A BDNB 'bâtiment groupe' can "
         "span several streets: without this, the fiche titles with the group's "
         "principal address (#146), which reads as the wrong building.")),
+    dpe: str | None = Query(None, max_length=20, pattern="^[0-9A-Za-z-]+$",
+                            description=(
+        "Numéro de DPE d'un logement précis (#311) : la fiche cible alors CE "
+        "diagnostic — sa classe seule sur les échelles, son interdiction de "
+        "location — et le bâtiment devient le contexte.")),
 ):
     """Normalized one-page PDF fiche of a building (free during beta).
 
@@ -3279,7 +3284,11 @@ async def report(
 
     from .report import build_report_pdf
 
-    _quota_gate(request, "report", subject=bdnb_id)
+    # Une fiche ciblée est un AUTRE document que la fiche bâtiment : deux
+    # sujets de quota distincts, sinon ouvrir la fiche d'un logement rendrait
+    # gratuites celles de tous les autres (#311).
+    sujet = f"{bdnb_id}#{dpe}" if dpe else bdnb_id
+    _quota_gate(request, "report", subject=sujet)
     # Le document servi est enregistré pour CETTE adresse, quel que soit le
     # plan — sans quoi la seconde requête n'en profite pas.
     #
@@ -3289,14 +3298,14 @@ async def report(
     # requête arrive anonyme. Un abonné se retrouvait bloqué par le quota des
     # visiteurs sur sa propre fiche, et lisait « limite sans compte » alors
     # qu'il paie.
-    _daily_add(_seau_ip(request), bdnb_id)
+    _daily_add(_seau_ip(request), sujet)
     # Cache 24 h de la fiche elle-même : redemander le MÊME document ne doit ni
     # relancer 15 à 45 s de rendu, ni consommer le quota amont. La clé inclut
     # l'adresse cherchée, qui TITRE la fiche (#146) — deux titres différents
     # sont deux documents différents.
     pdf_key = hashlib.sha256(
         f"{bdnb_id}|{address or ''}|{round(lon, 4) if lon else ''}|"
-        f"{round(lat, 4) if lat else ''}".encode()).hexdigest()[:24]
+        f"{round(lat, 4) if lat else ''}|{dpe or ''}".encode()).hexdigest()[:24]
     pdf_path = os.path.join(PDF_CACHE_DIR, pdf_key + ".pdf")
     cached = _tile_read(pdf_path, PDF_CACHE_TTL)
     if cached:
@@ -3357,6 +3366,14 @@ async def report(
         map_img, aerial = await asyncio.gather(
             _chronometre("render_3d", _building_map_png(q.get("lon"), q.get("lat"), bdnb_id)),
             _chronometre("aerial", _aerial_view(bdnb_id, q.get("lon"), q.get("lat"))))
+    if dpe:
+        rangs = ((data.get("dpe_spread") or {}).get("logements")) or []
+        cible = next((l for l in rangs if l.get("numero_dpe") == dpe), None)
+        if cible is None:
+            # Un numéro inconnu ne doit pas servir en silence la fiche
+            # générique : le lecteur croirait tenir la fiche de SON logement.
+            raise HTTPException(404, f"DPE {dpe} inconnu à cette adresse")
+        data["dpe_cible"] = cible
     with _chrono("compose"):
         pdf = build_report_pdf(data, photos=photos, map_img=map_img,
                                aerial_img=aerial.get("image"),
@@ -3366,6 +3383,13 @@ async def report(
         _tile_write(pdf_path, pdf)      # même écriture atomique que les tuiles
     nom = _nom_de_fiche(q.get("address") or (data["buildings"][0] or {}).get("address"),
                         bdnb_id)
+    if dpe:
+        # Le fichier d'un logement porte son logement dans le nom : deux
+        # fiches du même immeuble ne doivent pas s'écraser dans un dossier.
+        c = data["dpe_cible"]
+        nom = nom[:-len(".pdf")] + (
+            f" — logement {c['surface_m2']} m² (DPE {dpe}).pdf"
+            if c.get("surface_m2") else f" — logement DPE {dpe}.pdf")
     _tile_write(pdf_path + ".nom", nom.encode())
     M_REPORTS.add(1, {"has_dpe": str(bool((data["buildings"][0].get("energy") or {}).get("dpe_class"))).lower()})
     return Response(

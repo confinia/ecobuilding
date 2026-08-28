@@ -893,7 +893,8 @@ function sectionEventailDpe(data) {
                          l.isolation_menuiseries && "menuiseries " + l.isolation_menuiseries]
                         .filter(Boolean).join(" · ") || null)}
       ${kv("N° DPE", l.numero_dpe)}
-      <p class="hint">${marque}</p></div>`;
+      <p class="hint">${marque}</p>
+      ${l.numero_dpe ? `<button class="report-link fiche-logement" data-dpe="${l.numero_dpe}">📄 Fiche de ce logement</button>` : ""}</div>`;
   }).join("");
   return `<div class="dpe-spread"><p class="hint">${titre}
       La classe ci-dessus est celle du logement représentatif du bâtiment,
@@ -1026,6 +1027,16 @@ function renderPanel(s, data, opts) {
   `, opts);
   const pdfBtn = document.getElementById("report-btn");
   if (pdfBtn) pdfBtn.onclick = () => downloadReport(pdfBtn);
+  // Fiche PAR LOGEMENT (#311) : chaque bloc porte son bouton, qui réutilise
+  // l'URL du bouton principal avec le numéro de DPE en plus. Même parcours,
+  // même pré-vol, même quota — seul le document change.
+  document.querySelectorAll(".fiche-logement").forEach((f) => {
+    if (!pdfBtn) return;
+    const base = pdfBtn.dataset.url;
+    f.dataset.url = base + (base.includes("?") ? "&" : "?")
+      + "dpe=" + encodeURIComponent(f.dataset.dpe);
+    f.onclick = () => downloadReport(f);
+  });
   compteurFiches(b.bdnb_id);
   loadStreetview(data.query?.lon, data.query?.lat);
 }
