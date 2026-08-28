@@ -360,7 +360,10 @@ def test_la_fiche_ne_se_dit_pas_normalisee():
     l'avait déjà corrigé sur la fiche App Store sans que ce soit répercuté."""
     report = (ROOT / "api/app/report.py").read_text()
     assert "Fiche bâtiment normalisée" not in report
-    assert "Fiche bâtiment formatée et sourcée" in report
+    # Depuis #322 le titre se décline (« Fiche bâtiment » / « Fiche LOGEMENT »)
+    # mais la promesse honnête — formatée et sourcée — reste littérale.
+    assert "formatée et sourcée — données ouvertes" in report
+    assert "Fiche bâtiment" in report and "Fiche LOGEMENT" in report
     # Aucun titre de document ne doit revendiquer une norme — il y en a deux,
     # la fiche et son annexe de traçabilité, et mon premier test ne visait que
     # la première trouvée, qui se trouvait être l'annexe.
