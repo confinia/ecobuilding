@@ -1,5 +1,5 @@
 {
-  "title": "EcoBuilding \u2014 Internal \u00b7 FinOps & revenue funnel",
+  "title": "EcoBuilding — Internal · FinOps & revenue funnel",
   "uid": "ecobuilding-finops",
   "tags": [
     "internal"
@@ -23,7 +23,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "**Pre-revenue funnel is live.** Revenue panels (active pro subscriptions, MRR) populate once Polar (#35) is wired \u2014 they read `ecobuilding_pro_subscriptions` / `ecobuilding_mrr_eur`, not yet emitted. Nothing here is faked."
+        "content": "**Pre-revenue funnel is live.** Revenue panels (active pro subscriptions, MRR) populate once Polar (#35) is wired — they read `ecobuilding_pro_subscriptions` / `ecobuilding_mrr_eur`, not yet emitted. Nothing here is faked."
       }
     },
     {
@@ -80,7 +80,7 @@
     {
       "id": 4,
       "type": "stat",
-      "title": "Anonymous cap hits (429, 7d) \u2014 pent-up demand",
+      "title": "Anonymous cap hits (429, 7d) — pent-up demand",
       "gridPos": {
         "h": 5,
         "w": 6,
@@ -114,7 +114,7 @@
     {
       "id": 6,
       "type": "stat",
-      "title": "MRR (\u20ac, Polar)",
+      "title": "MRR (€, Polar)",
       "gridPos": {
         "h": 5,
         "w": 6,
@@ -181,6 +181,108 @@
         {
           "expr": "sum by (endpoint) (increase(ecobuilding_keyed_calls_total[1d]))",
           "legendFormat": "{{endpoint}}"
+        }
+      ]
+    },
+    {
+      "id": 101,
+      "type": "stat",
+      "title": "Blocages préflight (7j)",
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 6,
+        "h": 5
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(ecobuilding_frontend_events_total{event=\"report_blocked_preflight\"}[7d]))",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "id": 102,
+      "type": "stat",
+      "title": "Clics fiche (7j)",
+      "gridPos": {
+        "x": 6,
+        "y": 24,
+        "w": 6,
+        "h": 5
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(ecobuilding_frontend_events_total{event=\"report_click\"}[7d]))",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "id": 103,
+      "type": "stat",
+      "title": "Inscriptions abouties (7j)",
+      "gridPos": {
+        "x": 12,
+        "y": 24,
+        "w": 6,
+        "h": 5
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(ecobuilding_frontend_events_total{event=\"signup_completed\"}[7d]))",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "id": 104,
+      "type": "stat",
+      "title": "Intérêt Pro (7j)",
+      "gridPos": {
+        "x": 18,
+        "y": 24,
+        "w": 6,
+        "h": 5
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(ecobuilding_frontend_events_total{event=\"pro_interest\"}[7d]))",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "id": 105,
+      "type": "timeseries",
+      "title": "Entonnoir / jour",
+      "gridPos": {
+        "x": 0,
+        "y": 29,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "sum by (event) (increase(ecobuilding_frontend_events_total{event=~\"report_click|report_blocked_preflight|signup_autostart|signup_completed|pro_interest\"}[1d]))",
+          "legendFormat": "{{event}}"
+        }
+      ]
+    },
+    {
+      "id": 106,
+      "type": "timeseries",
+      "title": "Murs de quota / jour (serveur, 429)",
+      "gridPos": {
+        "x": 12,
+        "y": 29,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "sum by (plan, period) (increase(ecobuilding_quota_walls_total[1d]))",
+          "legendFormat": "{{plan}} · {{period}}"
         }
       ]
     }
