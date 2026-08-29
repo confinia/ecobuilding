@@ -1,0 +1,10 @@
+# EcoBuilding — données ouvertes de chaque bâtiment français.
+# Tout le monde peut nous lire, robots d'IA compris : un produit de données
+# ouvertes gagne à être cité. L'API et l'authentification ne se crawlent pas.
+
+User-agent: *
+Disallow: /api/
+Disallow: /auth/
+Allow: /
+
+Sitemap: https://ecobuilding.confinia.io/sitemap.xml
