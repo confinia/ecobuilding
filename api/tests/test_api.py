@@ -438,6 +438,11 @@ def test_official_dpe_chain(monkeypatch):
     assert od["insulation"]["enveloppe"] == "insuffisante"
     assert od["energies"] == ["Gaz naturel"]
     assert od["surface_habitable_m2"] == 106.2   # arrondi à la source (#309)
+    # Une valeur ronde perd sa décimale morte (#329) : 2500.0 -> 2500.
+    from app.main import _m2_propre
+    assert _m2_propre(2500.0) == 2500 and isinstance(_m2_propre(2500.0), int)
+    assert _m2_propre(57.2999992370605) == 57.3
+    assert _m2_propre(None) is None
 
 
 def test_official_dpe_absent_is_none(monkeypatch):
@@ -1206,6 +1211,10 @@ def test_fiche_ciblee_parle_du_logement_choisi():
     # La fiche du logement n'imprime QUE son bloc (#322) : l'autre
     # diagnostic disparaît au profit d'un renvoi vers la fiche bâtiment.
     assert "80.0 m²" not in html
+    # Et AUCUNE trace du représentatif (#329) : sa section « DPE officiel »
+    # affichait 2 500 m² sur la fiche d'un 186 m², deux paragraphes après
+    # la promesse que le document ne parlait que d'un logement.
+    assert "représentatif" not in html.lower()
     assert "figure sur la fiche bâtiment" in html
     assert "Fiche LOGEMENT" in html and "Fiche d'un logement" in html
 
