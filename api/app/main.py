@@ -223,10 +223,16 @@ HTTPXClientInstrumentor().instrument()
 @app.middleware("http")
 async def count_requests(request, call_next):
     response = await call_next(request)
+    # Le GABARIT de route, jamais le chemin brut (#327) : chaque bâtiment
+    # consulté créait sa propre série Prometheus (/v1/buildings/bdnb-bg-…),
+    # et les sondes de scanners ajoutaient les leurs — une cardinalité sans
+    # borne qui rendait le panneau des routes illisible. Le gabarit vient du
+    # routeur ; ce qu'il n'a pas résolu est regroupé sous une seule valeur.
+    gabarit = getattr(request.scope.get("route"), "path", None)
     M_REQUESTS.add(
         1,
         {
-            "route": request.url.path,
+            "route": gabarit or "(hors gabarit)",
             "method": request.method,
             "status": str(response.status_code),
         },
