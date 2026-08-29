@@ -1203,11 +1203,43 @@ def test_fiche_ciblee_parle_du_logement_choisi():
     assert "Classe marquée : celle du logement choisi" in html
     assert "GGG7" in html
 
+    # La fiche du logement n'imprime QUE son bloc (#322) : l'autre
+    # diagnostic disparaît au profit d'un renvoi vers la fiche bâtiment.
+    assert "80.0 m²" not in html
+    assert "figure sur la fiche bâtiment" in html
+    assert "Fiche LOGEMENT" in html and "Fiche d'un logement" in html
+
     # Sans cible, rien ne change : le représentatif garde sa marque.
     del data["dpe_cible"]
     html2 = _report_html(data)
     assert "classe affichée ci-dessus" in html2
     assert "le logement de cette fiche" not in html2
+    assert "80.0 m²" in html2          # tous les blocs sur la fiche bâtiment
+
+
+def test_vente_groupee_dvf_porte_son_prix_une_seule_fois():
+    """#323 : une mutation à plusieurs lots répète sa valeur foncière sur
+    chaque ligne. « 4 565 000 € » lisible deux fois passait pour le prix de
+    chaque lot — voire, sur la fiche d'un 15,6 m², pour le sien."""
+    from app.report import _prices_html
+
+    html = _prices_html({"available": True, "commune_eur_m2": {}, "sales": [
+        {"date": "2022-06-08", "type_local": "Appartement",
+         "surface_m2": 177.0, "valeur_fonciere": 4565000},
+        {"date": "2022-06-08", "type_local": "Dépendance",
+         "valeur_fonciere": 4565000},
+        {"date": "2023-01-10", "type_local": "Appartement",
+         "surface_m2": 40.0, "valeur_fonciere": 500000, "eur_m2": 12500},
+    ]})
+    assert html.count("4 565 000") == 1
+    assert "Vente groupée : appartement 177 m² + dépendance" in html
+    assert "prix de\nl'ensemble" in html or "prix de l'ensemble" in html.replace("\n", " ")
+    # Une vente simple garde sa ligne ordinaire.
+    assert "500 000" in html and "12 500 €/m²" in html
+    # Sur la fiche d'un logement, la section dit qu'elle parle de la parcelle.
+    html_logement = _prices_html({"available": True, "commune_eur_m2": {},
+                                  "sales": []}, fiche_logement=True)
+    assert "parcelle" in html_logement.lower()
 
 
 def test_le_previsionnel_anonyme_dit_ce_que_la_barriere_exempte(monkeypatch, tmp_path):

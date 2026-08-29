@@ -97,7 +97,7 @@ Montpellier Méditerranée Métropole (Open Data).</p>
 """
 
 
-def _prices_html(p: dict | None) -> str:
+def _prices_html(p: dict | None, fiche_logement: bool = False) -> str:
     """DVF home-price section (recent parcelle sales + commune median €/m²).
     Honest about the DVF coverage gap (Alsace-Moselle, Mayotte)."""
     if not p:
@@ -107,16 +107,38 @@ def _prices_html(p: dict | None) -> str:
                 "ce secteur : la base DVF ne couvre pas l'Alsace-Moselle ni Mayotte.</p>")
     med = {t: v for t, v in (p.get("commune_eur_m2") or {}).items() if v.get("median")}
     med_txt = " · ".join(f"{t} {_eur(v['median'])} €/m² (n={v['n']})" for t, v in med.items()) or "—"
+    # Une MUTATION groupée (appartement + cave + parking vendus ensemble)
+    # répète sa valeur foncière sur CHAQUE ligne de lot : affiché tel quel,
+    # « 4 565 000 € » apparaissait deux fois et se lisait comme le prix de
+    # chaque lot (#323). On regroupe par (date, valeur) et on nomme la chose.
+    groupes = {}
+    for s in (p.get("sales") or []):
+        groupes.setdefault(((s.get("date") or "")[:10], s.get("valeur_fonciere")),
+                           []).append(s)
     rows = ""
-    for s in (p.get("sales") or [])[:6]:
-        surf = f"{round(s['surface_m2'])} m²" if s.get("surface_m2") else "—"
-        em = f"{_eur(s['eur_m2'])} €/m²" if s.get("eur_m2") else "—"
-        rows += (f'<tr><td>{(s.get("date") or "")[:10]}</td><td>{s.get("type_local") or "—"}</td>'
-                 f'<td>{surf}</td><td>{_eur(s.get("valeur_fonciere"))} €</td><td>{em}</td></tr>')
+    for (date, valeur), lots in list(groupes.items())[:6]:
+        if len(lots) == 1:
+            s = lots[0]
+            surf = f"{round(s['surface_m2'])} m²" if s.get("surface_m2") else "—"
+            em = f"{_eur(s['eur_m2'])} €/m²" if s.get("eur_m2") else "—"
+            rows += (f'<tr><td>{date}</td><td>{s.get("type_local") or "—"}</td>'
+                     f'<td>{surf}</td><td>{_eur(valeur)} €</td><td>{em}</td></tr>')
+        else:
+            desc = " + ".join(
+                (s.get("type_local") or "lot").lower()
+                + (f" {round(s['surface_m2'])} m²" if s.get("surface_m2") else "")
+                for s in lots)
+            rows += (f'<tr><td>{date}</td><td>Vente groupée : {desc}</td>'
+                     f'<td>—</td><td>{_eur(valeur)} € <span class="meta">(prix de '
+                     f"l'ensemble)</span></td><td>—</td></tr>")
     sales_tbl = (f'<table class="sales"><tr><td class="k">Date</td><td class="k">Type</td><td class="k">Surface</td>'
                  f'<td class="k">Montant</td><td class="k">€/m²</td></tr>{rows}</table>'
                  if rows else '<p class="meta">Aucune vente récente enregistrée sur la parcelle.</p>')
-    return (f'<h2>Prix de vente (DVF)</h2>'
+    note_logement = ('<p class="meta">Ventes enregistrées sur la PARCELLE — pas '
+                     'nécessairement celles du logement de cette fiche.</p>'
+                     if fiche_logement else "")
+    return (f'<h2>Prix de vente (DVF){" — parcelle" if fiche_logement else ""}</h2>'
+            f'{note_logement}'
             f'<p>Prix médian dans la commune : <strong>{med_txt}</strong></p>{sales_tbl}'
             f'<p class="meta">€/m² indicatif, calculé sur les ventes d\'un seul local. '
             f'Transactions réelles enregistrées par la DGFiP.</p>')
@@ -321,7 +343,16 @@ def _dpe_spread_html(e: dict, dpe_representatif: str | None = None,
     # sa date, sa consommation, son coût et son isolation : il lui faut son
     # bloc.
     blocs = []
-    for l in (e.get("logements") or []):
+    # Fiche d'un LOGEMENT (#322) : n'imprimer QUE son bloc. La marque verte au
+    # milieu de vingt blocs ne suffisait pas — l'opérateur a lu « la fiche de
+    # tout l'immeuble ». Les autres diagnostics deviennent une ligne.
+    rangs = e.get("logements") or []
+    autres = 0
+    if dpe_cible:
+        gardes = [l for l in rangs if l.get("numero_dpe") == dpe_cible]
+        autres = len(rangs) - len(gardes)
+        rangs = gardes
+    for l in rangs:
         m2 = l.get("surface_m2")
         # Fiche CIBLÉE (#311) : le logement choisi prend la marque verte, et le
         # représentatif redevient une ligne comme les autres — deux mises en
@@ -356,10 +387,15 @@ def _dpe_spread_html(e: dict, dpe_representatif: str | None = None,
             + f'<p class="meta">{marque}</p></div>')
     table = ""
     if blocs:
-        table = "".join(blocs) + """
+        renvoi = ((f'<p class="meta">Les {autres} autres diagnostics de '
+                   "l'immeuble figurent sur la fiche bâtiment.</p>" if autres > 1
+                   else '<p class="meta">L\'autre diagnostic de l\'immeuble '
+                        "figure sur la fiche bâtiment.</p>")
+                  if autres else """
 <p class="meta">Retrouvez le logement concerné par sa surface, ou par le numéro
 de DPE que le vendeur remet obligatoirement — il est vérifiable sur
-l'observatoire de l'ADEME.</p>"""
+l'observatoire de l'ADEME.</p>""")
+        table = "".join(blocs) + renvoi
     phrase_classe = ("La classe ci-dessus est celle du logement choisi pour "
                      "cette fiche." if dpe_cible else
                      "La classe ci-dessus est celle du logement représentatif "
@@ -648,9 +684,12 @@ def _report_html(data: dict, photos: list | None = None, map_img: str | None = N
        assemblé à partir de données ouvertes, il ne se conforme à aucun
        référentiel. Dire ce qu'il EST — formaté par nous, sourcé chez l'État —
        vaut mieux que d'emprunter l'autorité d'une norme. -->
-  <div class="doctitle">Fiche bâtiment formatée et sourcée — données ouvertes</div>
+  <div class="doctitle">{"Fiche LOGEMENT" if cible else "Fiche bâtiment"} formatée et sourcée — données ouvertes</div>
 </header>
 <h1>{address}</h1>
+{f'<div class="ban" style="background:#e8f5e9;color:#2b7a4b"><strong>Fiche d\'un logement</strong> : '
+ f'{cible.get("surface_m2")} m² · classe {cls} · N° DPE {cible.get("numero_dpe")}. '
+ f'Les autres logements de l\'immeuble ne sont pas l\'objet de ce document.</div>' if cible else ""}
 {_principal_address_note(address, b)}
 <p class="meta">Identifiant BDNB : {b.get("bdnb_id") or "—"} · Générée le {now} · ecobuilding.confinia.io</p>
 
@@ -711,7 +750,7 @@ def _report_html(data: dict, photos: list | None = None, map_img: str | None = N
 </table>
 {f'<p class="meta">{pv["assumptions"]}</p>' if pv.get("assumptions") else ""}
 
-{_prices_html(data.get("prices"))}
+{_prices_html(data.get("prices"), fiche_logement=bool(cible))}
 {_local_taxes_html(data.get("local_taxes") or {})}
 {_schools_html(data.get("schools") or {})}
 {_commune_html(data.get("commune") or {})}
