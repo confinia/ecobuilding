@@ -214,14 +214,19 @@ def _traceability_annex(data: dict, photos: list | None) -> str:
                 "DVF (DGFiP / Etalab)", f"Fenêtre {DVF_WINDOW} · Licence Ouverte 2.0",
                 "indisponible : l'Alsace-Moselle et Mayotte ne sont pas couvertes par la DVF",
                 "—", dvf_url)))
+    # Fiche CIBLÉE (#329) : l'annexe trace le diagnostic CHOISI, pas le
+    # représentatif — la provenance doit désigner ce que le document montre.
+    cible = data.get("dpe_cible") or {}
     od = data.get("official_dpe") or {}
-    if od.get("dpe_number"):
+    num_dpe = cible.get("numero_dpe") or od.get("dpe_number")
+    if num_dpe:
         cards.append(("DPE officiel", _prov(
             "Observatoire DPE (ADEME)", "Licence Ouverte",
-            f"numero_dpe = {od['dpe_number']} (logement représentatif BDNB)",
-            od.get("established_on") or "—",
+            f"numero_dpe = {num_dpe} "
+            + ("(logement choisi)" if cible else "(logement représentatif BDNB)"),
+            (cible.get("etabli_le") if cible else od.get("established_on")) or "—",
             "https://data.ademe.fr/data-fair/api/v1/datasets/dpe03existant/lines"
-            f"?qs=numero_dpe:%22{od['dpe_number']}%22")))
+            f"?qs=numero_dpe:%22{num_dpe}%22")))
     lt = data.get("local_taxes") or {}
     if lt.get("property_tax_built_pct") is not None:
         cards.append(("Fiscalité locale", _prov(
@@ -718,7 +723,7 @@ def _report_html(data: dict, photos: list | None = None, map_img: str | None = N
   {_row("Date du DPE", (e.get("dpe_date") or "")[:10] or None)}
   {_row("Émissions GES", round(ges) if ges else None, " kgCO₂/m²/an")}
 </table>
-{_official_dpe_html(data.get("official_dpe") or {})}
+{"" if cible else _official_dpe_html(data.get("official_dpe") or {})}
 
 <h2>Bâtiment</h2>
 <table>

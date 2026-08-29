@@ -1263,6 +1263,14 @@ async def _noop():
     return None
 
 
+def _m2_propre(v):
+    """57.2999992370605 -> 57.3 ; 2500.0 -> 2500 ; None -> None."""
+    if v is None:
+        return None
+    v = round(float(v), 1)
+    return int(v) if v == int(v) else v
+
+
 async def _official_dpe(bdnb_id: str):
     """Official-DPE block (#189): BDNB's representative dwelling gives the real
     ADEME DPE number, surface and final energy; the ADEME observatoire adds the
@@ -1288,9 +1296,9 @@ async def _official_dpe(bdnb_id: str):
             # Arrondie à la décimale À LA SOURCE : la BDNB livre des flottants
             # du genre 57.2999992370605, et quinze décimales sur des mètres
             # carrés est une faute de sérieux — vue en production (#309).
-            "surface_habitable_m2": (round(r["surface_habitable_logement"], 1)
-                                     if r.get("surface_habitable_logement") is not None
-                                     else None)
+            # Et une valeur RONDE perd sa décimale morte : « 2500.0 m² » sur
+            # une fiche se lisait comme une coquille (#329).
+            "surface_habitable_m2": _m2_propre(r.get("surface_habitable_logement"))
             or r.get("surface_habitable_immeuble"),
             "final_energy_kwh_m2y": r.get("conso_5_usages_ef_m2"),
         }
