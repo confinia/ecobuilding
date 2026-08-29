@@ -19,6 +19,24 @@ http://sandbox.ecobuilding.confinia.io {
 		format json
 	}
 
+	# Sondes de scanners (#327) : 404 sec AU BORD, avant le front. Le repli
+	# SPA leur répondait 200 avec index.html — un scanner qui lit des 200
+	# insiste. Rien de légitime ne ressemble à ces chemins : extensions de
+	# technologies qu'on n'exécute pas, fichiers cachés, consoles d'admin
+	# d'autres logiciels. /.well-known reste ouvert (security.txt, un jour).
+	@sondes {
+		path *.php *.asp *.aspx *.jsp *.axd *.action *.cgi *.bak *.backup
+		path /.git/* /.env* /.aws/* /.ssh/* /.vscode/* /.docker* /.DS_Store
+		path /wp-login* /wp-admin* /wp-content/* /xmlrpc.php /cgi-bin/*
+		path /actuator/* /telescope/* /server-status /console /console/*
+		path /debug/* /ecp/* /jsonrpc /graphql /graphql/* /@vite/*
+		path /secrets.json /keys.json /config.json /config /settings
+		path /login.action /mcp /mcp/* /__proxy_subdomain_* /telescope
+	}
+	handle @sondes {
+		respond 404
+	}
+
 	handle /auth/* {
 		reverse_proxy sandbox-keycloak:8080
 	}
