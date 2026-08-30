@@ -47,3 +47,6 @@ mobile/
 # Captures réseau de mise au point : volumineuses, et porteuses de jetons de
 # session. Jamais versionnées.
 **/*.har
+
+# Captures HAR : cookies de session — jamais versionnées
+*.har
