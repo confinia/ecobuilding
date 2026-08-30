@@ -1408,11 +1408,28 @@ async def test_les_vues_ne_font_plus_la_queue_derriere_les_donnees(monkeypatch, 
     import app.report as report
     monkeypatch.setattr(report, "build_report_pdf", lambda *a, **k: b"%PDF-1.4 fake")
 
+    # MEASURED AGAINST ITSELF, never against a stopwatch (#339). The absolute
+    # bound (< 0.28 s, with 0.30 s as the sequential cost) left twenty
+    # milliseconds of margin: the hermetic container shares the VM with
+    # production, the render stack and the rest, and the test went red on a
+    # change that touched no code. What matters is the SHAPE — overlapping
+    # work costs about one job, not two — so the same two jobs are also run
+    # back to back here, and the request must be clearly faster than that.
     t0 = _t.monotonic()
     r = TestClient(main.app).get("/v1/report/bdnb-bg-PAR.pdf?lon=3.87&lat=43.61")
     duree = _t.monotonic() - t0
+
+    async def _sequentiel():
+        await lent_building("bdnb-bg-PAR", 3.87, 43.61)
+        await lent_render(3.87, 43.61, "bdnb-bg-PAR")
+
+    t1 = _t.monotonic()
+    await _sequentiel()               # le test est déjà asynchrone (anyio)
+    sequentiel = _t.monotonic() - t1
     assert r.status_code == 200, r.text
-    assert duree < 0.28, f"les travaux se sont enchaînés au lieu de se recouvrir : {duree:.2f}s"
+    assert duree < 0.75 * sequentiel, (
+        "les travaux se sont enchaînés au lieu de se recouvrir : "
+        f"{duree:.2f}s pour la requête, {sequentiel:.2f}s en séquentiel")
 
 
 def test_l_echelle_marque_chaque_classe_presente_a_l_adresse():
