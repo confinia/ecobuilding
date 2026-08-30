@@ -13,7 +13,14 @@ scrape_configs:
       - targets: ["127.0.0.1:13061"]
         labels: { stack: green }
 
+  # The podman exporter walks every container on the VM (about twenty), and
+  # could not answer within the 10 s default timeout while containers churned:
+  # Prometheus hung up mid-write ("broken pipe"), the target read as down, and
+  # a cosmetic exporter paged the operator as a critical incident (#343).
+  # Container stats need no 15 s granularity.
   - job_name: podman
+    scrape_interval: 60s
+    scrape_timeout: 30s
     static_configs:
       - targets: ["127.0.0.1:13081"]
 

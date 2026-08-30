@@ -30,16 +30,20 @@ groups:
     folder: Ops
     interval: 1m
     rules:
-      # Any scrape target down for 5 min (api/otel collectors, prometheus
-      # itself via `up`): the broadest cheap "something is wrong" signal.
+      # A target that CARRIES THE PRODUCT down for 5 min (api/otel collectors,
+      # prometheus itself via `up`): the broadest cheap "something is wrong"
+      # signal. The podman exporter is deliberately excluded — it only feeds
+      # container charts, and its slowness used to page as a critical
+      # incident on a Sunday evening (#343). It has its own warning below.
       - uid: target-down
         title: Scrape target down (ecobuilding VM)
         condition: C
         for: 5m
         annotations:
           summary: >-
-            At least one Prometheus scrape target is down on the ecobuilding VM
-            (min(up) < 1). Check Grafana -> Explore -> `up` to see which.
+            At least one product scrape target is down on the ecobuilding VM
+            (min(up{job!="podman"}) < 1). Check Grafana -> Explore -> `up` to
+            see which.
           # Alert emails render these as "Go to dashboard/panel" buttons with
           # the alert's time range — service detail + history in one click.
           __dashboardUid__: ecobuilding-main
@@ -51,7 +55,41 @@ groups:
             relativeTimeRange: { from: 300, to: 0 }
             datasourceUid: prometheus
             model:
-              expr: min(up)
+              expr: min(up{job!="podman"})
+              instant: true
+              refId: A
+          - refId: C
+            relativeTimeRange: { from: 0, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              refId: C
+              expression: A
+              conditions:
+                - evaluator: { type: lt, params: [1] }
+
+      # The container-metrics exporter, separately and as a WARNING: losing it
+      # costs charts, never service. Fifteen minutes of pending time so a slow
+      # scrape or a restart stays silent; a real death still shows up (#343).
+      - uid: podman-exporter-down
+        title: Container metrics exporter down (ecobuilding VM)
+        condition: C
+        for: 15m
+        annotations:
+          summary: >-
+            The podman exporter (:13081) has not answered for 15 minutes.
+            Container CPU/memory charts are blind; the product is unaffected.
+            Check `podman logs ecobuilding-monitoring_podman-exporter_1`.
+          __dashboardUid__: ecobuilding-main
+          __panelId__: "6"
+        labels:
+          severity: warning
+        data:
+          - refId: A
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: min(up{job="podman"})
               instant: true
               refId: A
           - refId: C
