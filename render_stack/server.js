@@ -63,4 +63,28 @@ app.get('/shot', async (req, res) => {
   } finally { if (page) await page.close().catch(() => {}); }
 });
 
-app.listen(8040, () => console.log('render service on :8040'));
+// GARDIEN DE CHALEUR (#337). Le premier cliché après une période calme
+// coûtait ~48 s (mesuré : p95 render_3d à 48,8 s un dimanche à minuit,
+// toutes les autres étapes à ~5 s) — le navigateur, ses tuiles de fond et
+// le style se réchauffent à la première demande, et c'est un VRAI
+// utilisateur qui payait. Un cliché factice au démarrage puis toutes les dix
+// minutes garde tout tiède ; toujours la même vue, donc coût marginal.
+const CHAUFFE_MS = 10 * 60 * 1000;
+let chauffeEnCours = false;
+async function chauffe() {
+  if (chauffeEnCours) return;
+  chauffeEnCours = true;
+  const t0 = Date.now();
+  try {
+    const r = await fetch('http://127.0.0.1:8040/shot?lon=2.3488&lat=48.8534&zoom=18&pitch=60&bearing=-30');
+    console.log(`chauffe: ${r.status} en ${Date.now() - t0} ms`);
+  } catch (e) {
+    console.error('chauffe échouée:', e.message);
+  } finally { chauffeEnCours = false; }
+}
+
+app.listen(8040, () => {
+  console.log('render service on :8040');
+  setTimeout(chauffe, 2000);            // dès le démarrage
+  setInterval(chauffe, CHAUFFE_MS);
+});
