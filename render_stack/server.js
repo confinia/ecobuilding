@@ -28,6 +28,16 @@ function browser() {
     // adding --use-gl=angle here actually breaks context creation (probed).
     args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage',
            '--enable-unsafe-swiftshader'],
+    // Le premier lancement de Chromium sur un conteneur frais dépasse les
+    // 30 s par défaut (mesuré : 33 s), et c'est ce que le gardien de
+    // chaleur (#337) déclenche à coup sûr au démarrage.
+    timeout: 120000,
+  }).catch((e) => {
+    // Un lancement raté ne doit JAMAIS rester mémorisé : la promesse rejetée
+    // servait un 500 instantané à TOUS les clichés suivants jusqu'au
+    // redémarrage — vu en production le 30/08, après un seul dépassement.
+    browserP = null;
+    throw e;
   });
   return browserP;
 }
