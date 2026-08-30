@@ -7,6 +7,9 @@
 set -eu
 cd "$(dirname "$0")/.."
 API_BASE="${API_BASE:-https://sandbox.ecobuilding.confinia.io}"
+# Ne rien affirmer tant que la pile ne répond pas (#345).
+. deploy/wait-ready.sh
+attendre_pret "$API_BASE"
 REALM="${REALM:-sandbox-ecobuilding}"
 KC="${KC_CONTAINER:-ecobuilding-sandbox_sandbox-keycloak_1}"
 . sandbox_stack/secrets.env
