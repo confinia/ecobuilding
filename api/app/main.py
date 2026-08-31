@@ -43,6 +43,10 @@ BDNB_REL_ADR_URL = os.environ.get(
 # self-hosted stack is live; when set, building records carry a `prices` block
 # (recent parcelle sales + commune median €/m²).
 DVF_RPC_URL = os.environ.get("DVF_RPC_URL", "")
+# Journal des bâtiments CONSULTÉS, que lit la carte Grafana (#349). Ni IP ni
+# identifiant d'utilisateur : la coordonnée d'un bâtiment est publique, qui la
+# regarde ne l'est pas. Vide = rien n'est écrit (bacs à sable, tests).
+VUES_URL = os.environ.get("VUES_URL", "")
 # Headless DPE-3D map render for the PDF context page (#88). Empty in prod until
 # the render service is wired; when set, the report shows the rendered building.
 RENDER_URL = os.environ.get("RENDER_URL", "")
@@ -1418,6 +1422,29 @@ async def _click_address(bdnb_id: str, lon, lat):
     return None
 
 
+def _noter_la_vue(bdnb_id, lon, lat, request):
+    """Consigner un bâtiment consulté, SANS JAMAIS retarder la réponse (#349).
+
+    Le trafic ne se lisait qu'en fouillant les journaux à la main : c'est ainsi
+    qu'on a découvert un visiteur de Nantes explorant un quartier entier. Une
+    écriture par vue, en tâche de fond, dont l'échec est ignoré — une carte
+    d'observation ne doit jamais peser sur ce qu'elle observe.
+    """
+    if not VUES_URL or lon is None or lat is None:
+        return
+    ligne = {"bdnb_id": bdnb_id, "lon": lon, "lat": lat,
+             "pays": _client_country(request)}
+
+    async def _ecrire():
+        try:
+            await _client.post(VUES_URL, json=ligne, timeout=3.0,
+                               headers={"Prefer": "return=minimal"})
+        except Exception:
+            pass                      # cosmétique : jamais au prix d'une réponse
+
+    asyncio.ensure_future(_ecrire())
+
+
 @app.get("/v1/buildings/{bdnb_id}", tags=["buildings"])
 async def building(
     bdnb_id: str,
@@ -1428,6 +1455,7 @@ async def building(
     """Full record of one building by its BDNB id (e.g. from a map click)."""
     if request is not None:
         _meter_if_keyed(request, "buildings")
+        _noter_la_vue(bdnb_id, lon, lat, request)
     # Cache de l'AGRÉGAT (demande opérateur) : chaque affichage refaisait
     # l'orchestration complète (BDNB, Géorisques, Hub'Eau, DVF, ADEME,
     # fiscalité, écoles, PVGIS…) même quand chaque source était en cache.
