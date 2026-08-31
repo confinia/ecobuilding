@@ -3673,6 +3673,23 @@ async def create_lead(lead: Lead):
     return None
 
 
+# The beacon is ANONYMOUS AND PUBLIC: every value it sends becomes a
+# Prometheus label, so a stranger could mint one time series per request until
+# the metric is unusable (#347, the same failure #327 fixed for routes, except
+# here somebody else holds the pen). Only names this frontend actually emits
+# are recorded; anything else lands under "other" and is still counted.
+EVENEMENTS_CONNUS = frozenset((
+    "page_view", "heartbeat", "geolocate", "search", "lookup",
+    "showcase_default", "building_click", "report_click",
+    "report_blocked_preflight", "account_open", "signed_in_view",
+    "signin_click", "signup_click", "signup_autostart", "signup_completed",
+    "login_autostart", "session_expired_shown", "api_key_created",
+    "gopro_click", "gopro_paid_embed", "tier_switch", "pro_interest",
+))
+# Two values, so the label stays cheap: whose document was asked for.
+PORTEES_CONNUES = frozenset(("building", "dwelling"))
+
+
 class FrontendEvent(BaseModel):
     event: str
     meta: str | None = None
@@ -3685,5 +3702,8 @@ async def track(ev: FrontendEvent, request: Request):
     No cookies, no IP stored: the IP is only mapped in-memory to a country
     code (dbip-country-lite) used as a metric label.
     """
-    M_FRONTEND.add(1, {"event": ev.event[:40], "country": _client_country(request)})
+    evenement = ev.event if ev.event in EVENEMENTS_CONNUS else "other"
+    portee = ev.meta if ev.meta in PORTEES_CONNUES else "none"
+    M_FRONTEND.add(1, {"event": evenement, "scope": portee,
+                       "country": _client_country(request)})
     return None
