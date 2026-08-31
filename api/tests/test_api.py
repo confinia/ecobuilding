@@ -1316,6 +1316,21 @@ def test_la_provenance_est_bornee():
     assert _origine("x" * 500) == "autre"
 
 
+def test_le_profil_de_visite_reste_grossier():
+    """#356 : familles de système et de navigateur, jamais la version exacte.
+
+    Connaître « Android · Chrome » change le produit ; connaître la version
+    précise ne change rien et rapproche d'une empreinte d'appareil."""
+    from app.main import _systeme_et_navigateur as f
+
+    assert f("Mozilla/5.0 (Linux; Android 10; K) Chrome/152.0.0.0") == ("Android", "Chrome")
+    assert f("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0) Version/17 Safari/605") == ("iOS", "Safari")
+    assert f("Mozilla/5.0 (Windows NT 10.0; Win64) Chrome/152 Edg/152") == ("Windows", "Edge")
+    assert f("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Safari/605") == ("macOS", "Safari")
+    assert f("curl/8.13.0") == ("autre", "autre")
+    assert f("") == ("autre", "autre")
+
+
 def test_le_chronometre_mesure_meme_l_echec():
     """#280 : un échec LENT est précisément ce qu'on veut voir. Un chronomètre
     qui ne mesure que les succès rendrait la panne invisible — le travers

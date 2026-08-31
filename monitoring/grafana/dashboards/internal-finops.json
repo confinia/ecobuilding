@@ -443,6 +443,62 @@
         },
         "overrides": []
       }
+    },
+    {
+      "id": 108,
+      "type": "table",
+      "title": "Profils de visite (une ligne = un passage, personne n'est identifié)",
+      "description": "Chaque ligne résume UNE visite : sa durée, combien de bâtiments, sur quel appareil, venue d'où. L'identifiant de visite naît en mémoire au chargement de la page et meurt avec l'onglet : deux passages d'une même personne ne peuvent pas être rapprochés (#356).",
+      "datasource": {
+        "type": "postgres",
+        "uid": "vues"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 49,
+        "w": 16,
+        "h": 10
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  min(ts)                                   AS \"début\",\n  round(extract(epoch FROM max(ts) - min(ts)) / 60.0, 1) AS \"minutes\",\n  count(*)                                  AS \"bâtiments\",\n  count(DISTINCT round(lat::numeric, 2))    AS \"zones\",\n  max(systeme)                              AS \"système\",\n  max(navigateur)                           AS \"navigateur\",\n  max(coalesce(source, 'direct'))           AS \"provenance\",\n  max(pays)                                 AS \"pays\"\nFROM vues.vue_batiment\nWHERE $__timeFilter(ts) AND visite IS NOT NULL\nGROUP BY visite\nORDER BY min(ts) DESC\nLIMIT 200",
+          "datasource": {
+            "type": "postgres",
+            "uid": "vues"
+          }
+        }
+      ]
+    },
+    {
+      "id": 109,
+      "type": "table",
+      "title": "Appareils",
+      "description": "Familles de système et de navigateur, jamais la chaîne brute.",
+      "datasource": {
+        "type": "postgres",
+        "uid": "vues"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 49,
+        "w": 8,
+        "h": 10
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT coalesce(systeme, 'inconnu') || ' · ' || coalesce(navigateur, 'inconnu') AS \"appareil\",\n       count(DISTINCT coalesce(visite, id::text)) AS \"visites\",\n       count(*) AS \"bâtiments vus\"\nFROM vues.vue_batiment\nWHERE $__timeFilter(ts)\nGROUP BY 1 ORDER BY 2 DESC, 3 DESC LIMIT 20",
+          "datasource": {
+            "type": "postgres",
+            "uid": "vues"
+          }
+        }
+      ]
     }
   ]
 }

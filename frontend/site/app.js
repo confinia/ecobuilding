@@ -15,6 +15,15 @@ track("page_view");
 // est là), en mémoire, le temps de la session. Ni cookie, ni stockage, ni
 // identifiant : la carte doit pouvoir distinguer LinkedIn d'un lien direct
 // sans jamais distinguer deux visiteurs.
+// Identifiant de VISITE (#356) : engendré en mémoire au chargement, il vit le
+// temps de l'onglet et disparaît avec lui. Rien n'est écrit sur l'appareil,
+// et deux visites d'une même personne ne peuvent pas être rapprochées — c'est
+// ce qui distingue un profil type d'un suivi individuel.
+const VISITE = (() => {
+  try { return crypto.randomUUID().slice(0, 12); }
+  catch { return Math.random().toString(36).slice(2, 14); }
+})();
+
 const ORIGINE = (() => {
   try {
     // AUCUN identifiant de personne, et rien d'écrit sur l'appareil : la
@@ -681,7 +690,7 @@ async function openBuildingById(id, lon, lat) {
   showLoadingPanel('Chargement des données du bâtiment…');
   try {
     const r = await fetch(`${API}/buildings/${encodeURIComponent(id)}/stream?lon=${lon}&lat=${lat}`
-                          + `&src=${encodeURIComponent(ORIGINE)}`);
+                          + `&src=${encodeURIComponent(ORIGINE)}&v=${VISITE}`);
     // 404 = vraie absence de fiche ; tout le reste (réseau, 5xx, redéploiement
     // en cours) est PASSAGER et mérite un « Réessayer » — l'ancien message
     // unique faisait croire à un trou de données définitif (vécu : un clic
