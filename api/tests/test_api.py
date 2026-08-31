@@ -1272,6 +1272,34 @@ def test_le_previsionnel_anonyme_dit_ce_que_la_barriere_exempte(monkeypatch, tmp
     assert q["free_again"] == ["bdnb-vu"]
 
 
+def test_la_balise_publique_ne_prend_que_des_etiquettes_connues(monkeypatch):
+    """#347 : /v1/events est anonyme et public, et ses valeurs deviennent des
+    étiquettes Prometheus. Un inconnu pouvait donc créer une série par requête.
+    Et les deux fiches (bâtiment, logement) émettaient le même événement, ce
+    qui rendait la fonctionnalité #311 invisible dans les mesures."""
+    import app.main as main
+
+    vus = []
+    monkeypatch.setattr(main.M_FRONTEND, "add",
+                        lambda n, attrs: vus.append(attrs))
+
+    assert client.post("/v1/events", json={"event": "report_click",
+                                           "meta": "dwelling"}).status_code == 204
+    assert client.post("/v1/events", json={"event": "report_click",
+                                           "meta": "building"}).status_code == 204
+    # Un nom inventé est COMPTÉ, mais sous une seule étiquette.
+    assert client.post("/v1/events", json={"event": "x" * 200}).status_code == 204
+    assert client.post("/v1/events", json={"event": "report_click",
+                                           "meta": "n'importe quoi"}).status_code == 204
+
+    assert [(a["event"], a["scope"]) for a in vus] == [
+        ("report_click", "dwelling"),
+        ("report_click", "building"),
+        ("other", "none"),
+        ("report_click", "none"),
+    ]
+
+
 def test_le_chronometre_mesure_meme_l_echec():
     """#280 : un échec LENT est précisément ce qu'on veut voir. Un chronomètre
     qui ne mesure que les succès rendrait la panne invisible — le travers

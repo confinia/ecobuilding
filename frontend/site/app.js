@@ -1291,6 +1291,11 @@ function showQuotaPanel(p, signedIn, q) {
 
 async function downloadReport(btn) {
   const url = btn.dataset.url;
+  // De QUI la fiche parle-t-elle ? Le bouton d'un logement porte ?dpe= dans
+  // son URL. Sans cette distinction, la fiche par logement (#311) était
+  // invisible dans les mesures : un seul « report_click » pour les deux
+  // gestes, impossible de savoir si la fonctionnalité sert (#347).
+  const portee = url.includes("dpe=") ? "dwelling" : "building";
   const original = btn.textContent;
   // Open the tab synchronously (inside the user gesture) so popup blockers
   // allow it; it navigates to the PDF blob once ready.
@@ -1306,7 +1311,7 @@ async function downloadReport(btn) {
     if (q.reports_left === 0) {
       if (tab) tab.close();
       showQuotaPanel(await ecoPricing(), !!window.ecoToken, q);
-      track("report_blocked_preflight");
+      track("report_blocked_preflight", portee);
       return;
     }
   } catch { /* pré-vol indisponible : le serveur reste la barrière (429) */ }
@@ -1333,7 +1338,7 @@ async function downloadReport(btn) {
       }
     } catch (e) { /* tab closed or navigated: ignore */ }
   }, 500);
-  track("report_click");
+  track("report_click", portee);
   try {
     // Signed-in users get their account allowance (#206); anonymous visitors
     // keep the 10/month IP tier.
