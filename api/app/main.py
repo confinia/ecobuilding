@@ -458,6 +458,15 @@ async def _dvf_prices(bdnb_id: str):
 RENDER_CACHE_TTL = float(os.environ.get("RENDER_CACHE_TTL", str(30 * 86400)))
 
 
+def _uri_image(octets):
+    """L'URI de données suit le CONTENU, pas une extension supposée : le
+    renderer sert du JPEG depuis #280, et le cache peut encore contenir des
+    PNG d'avant — les deux doivent s'afficher."""
+    import base64
+    mime = "image/jpeg" if octets[:2] == b"\xff\xd8" else "image/png"
+    return f"data:{mime};base64," + base64.b64encode(octets).decode()
+
+
 async def _building_map_png(lon, lat, bdnb_id, bearing: float = -30.0):
     """Rendered DPE-3D map (PNG data URI) centered on the building, via the
     headless render service (#88). None when not wired or on error, so the
@@ -468,19 +477,10 @@ async def _building_map_png(lon, lat, bdnb_id, bearing: float = -30.0):
         TILES_DIR, "render",
         hashlib.sha256(f"{round(lon, 5)}|{round(lat, 5)}|{bdnb_id}|{bearing}"
                        .encode()).hexdigest()[:24] + ".png")
-    import base64
-
-    def _uri(octets):
-        """L'URI de données suit le CONTENU, pas une extension supposée : le
-        renderer sert du JPEG depuis #280, et le cache peut encore contenir des
-        PNG d'avant — les deux doivent s'afficher."""
-        mime = "image/jpeg" if octets[:2] == b"\xff\xd8" else "image/png"
-        return f"data:{mime};base64," + base64.b64encode(octets).decode()
-
     en_cache = _tile_read(chemin, RENDER_CACHE_TTL)
     if en_cache:
         M_CACHE.add(1, {"result": "hit_render"})
-        return _uri(en_cache)
+        return _uri_image(en_cache)
     try:
         r = await _client.get(RENDER_URL, params={
             "lon": lon, "lat": lat, "zoom": 18, "pitch": 60,
@@ -494,9 +494,47 @@ async def _building_map_png(lon, lat, bdnb_id, bearing: float = -30.0):
         # resterait trente jours. Un PNG plausible fait au moins quelques Ko.
         if len(r.content) > 10_000:
             _tile_write(chemin, r.content)
-        return _uri(r.content)
+        return _uri_image(r.content)
     except Exception as e:
         log.warning("building map render failed for %s: %s", bdnb_id, e)
+        return None
+
+
+async def _quartier_map_png(lon, lat, bdnb_id, schools):
+    """Vignette du QUARTIER (#324) : le bâtiment épinglé et les écoles
+    étiquetées, vue à plat. La liste de distances disait « 40 écoles < 2 km » ;
+    une carte dit lesquelles, et où. None sur tout échec : la fiche sort."""
+    if not RENDER_URL or lon is None or lat is None:
+        return None
+    lieux = [{"lon": s2.get("lon"), "lat": s2.get("lat"),
+              "label": (s2.get("name") or "")[:44]}
+             for s2 in (schools or {}).get("nearest", [])
+             if s2.get("lon") is not None][:8]
+    if not lieux:
+        return None
+    import json as _json
+    points = _json.dumps(lieux, ensure_ascii=False)
+    empreinte = hashlib.sha256(points.encode()).hexdigest()[:10]
+    chemin = os.path.join(
+        TILES_DIR, "render",
+        hashlib.sha256(f"quartier|{round(lon, 5)}|{round(lat, 5)}|{bdnb_id}|{empreinte}"
+                       .encode()).hexdigest()[:24] + ".png")
+    en_cache = _tile_read(chemin, RENDER_CACHE_TTL)
+    if en_cache:
+        M_CACHE.add(1, {"result": "hit_render"})
+        return _uri_image(en_cache)
+    try:
+        r = await _client.get(RENDER_URL, params={
+            "lon": lon, "lat": lat, "zoom": 15.1, "pitch": 0, "bearing": 0,
+            "bdnb_id": bdnb_id, "points": points,
+            "tiles": f"{PUBLIC_BASE_URL}/api/v1/tiles/batiment_groupe/"
+                     "{z}/{x}/{y}.pbf"}, timeout=45.0)
+        r.raise_for_status()
+        if len(r.content) > 10_000:
+            _tile_write(chemin, r.content)
+        return _uri_image(r.content)
+    except Exception as e:
+        log.warning("quartier map render failed for %s: %s", bdnb_id, e)
         return None
 
 
@@ -1359,6 +1397,10 @@ async def _nearby_schools(lon, lat, radius_km: float = 2.0):
                 "type": r.get("type_etablissement"),
                 "statut": r.get("statut_public_prive"),
                 "distance_m": round(_haversine_m(lon, lat, pos["lon"], pos["lat"])),
+                # La POSITION, gardée (#324) : l'annuaire nous la donne et on la
+                # jetait — impossible alors de dessiner la moindre carte des
+                # écoles. Une école est un lieu public : sa coordonnée l'est.
+                "lon": pos["lon"], "lat": pos["lat"],
             })
         if not out:
             return {"within_2km": 0, "nearest": []}
@@ -3510,6 +3552,8 @@ async def report(
             _chronometre("photos", _photos_sures(lon, lat)),
             _chronometre("render_3d", _building_map_png(lon, lat, bdnb_id)),
             _chronometre("aerial", _aerial_view(bdnb_id, lon, lat)))
+        quartier = await _chronometre("quartier", _quartier_map_png(
+            lon, lat, bdnb_id, data.get("schools")))
         q = data.get("query", {})
         if address:
             q["address"] = address  # title with the searched address (#146)
@@ -3538,9 +3582,11 @@ async def report(
         if q.get("lon") is not None and q.get("lat") is not None:
             with _chrono("photos"):
                 photos = await _photos_sures(q["lon"], q["lat"])
-        map_img, aerial = await asyncio.gather(
+        map_img, aerial, quartier = await asyncio.gather(
             _chronometre("render_3d", _building_map_png(q.get("lon"), q.get("lat"), bdnb_id)),
-            _chronometre("aerial", _aerial_view(bdnb_id, q.get("lon"), q.get("lat"))))
+            _chronometre("aerial", _aerial_view(bdnb_id, q.get("lon"), q.get("lat"))),
+            _chronometre("quartier", _quartier_map_png(
+                q.get("lon"), q.get("lat"), bdnb_id, data.get("schools"))))
     if dpe:
         rangs = ((data.get("dpe_spread") or {}).get("logements")) or []
         cible = next((l for l in rangs if l.get("numero_dpe") == dpe), None)
@@ -3553,7 +3599,8 @@ async def report(
         pdf = build_report_pdf(data, photos=photos, map_img=map_img,
                                aerial_img=aerial.get("image"),
                                aerial_parcels=aerial.get("parcels"),
-                               aerial_outline=aerial.get("outline"))
+                               aerial_outline=aerial.get("outline"),
+                               quartier_img=quartier)
     with _chrono("cache_write"):
         _tile_write(pdf_path, pdf)      # même écriture atomique que les tuiles
     nom = _nom_de_fiche(q.get("address") or (data["buildings"][0] or {}).get("address"),

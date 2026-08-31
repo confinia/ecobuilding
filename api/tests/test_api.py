@@ -503,6 +503,17 @@ def test_taxes_and_schools_html():
     assert _schools_html({}) == ""
 
 
+def test_report_quartier_map_vignette():
+    """#324: the schools LIST says how many; the neighbourhood MAP says which
+    ones and where. The vignette renders only when the image exists — a render
+    failure must never leave a broken <img> in the fiche."""
+    from app.report import _report_html
+    uri = "data:image/png;base64,QUARTIER"
+    html = _report_html(BUILDING_FIXTURE, quartier_img=uri)
+    assert uri in html and "Carte du quartier" in html
+    assert "data:image/png;base64,QUARTIER" not in _report_html(BUILDING_FIXTURE)
+
+
 def test_report_titles_with_searched_address_and_keeps_principal():
     """#146: a bâtiment groupe can span several streets. The fiche titles with
     the searched address and keeps BDNB's principal address visible."""
