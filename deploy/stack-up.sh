@@ -72,6 +72,13 @@ for p in 13040 13050; do
     || echo "   WARN: no host listener on :$p (monitoring degraded — recreate via ssh)"
 done
 
+# Retention on the building-view log (#349/#354): twelve months, as the privacy
+# policy states. Done here rather than by a timer of its own — deploys are
+# frequent, the table is small, and a promise nobody enforces is not a promise.
+podman exec ecobuilding-bdnb_bdnb-db_1 psql -U bdnb -d bdnb -qc \
+  "DELETE FROM vues.vue_batiment WHERE ts < now() - interval '12 months';" 2>/dev/null \
+  || echo "   (view-log retention skipped: bdnb database not up)"
+
 # Remove per-stack monitoring leftovers from the pre-shared-monitoring layout.
 for c in grafana prometheus podman-exporter; do
   podman rm -f "ecobuilding-blue_${c}_1" "ecobuilding-green_${c}_1" 2>/dev/null || true

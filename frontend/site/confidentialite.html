@@ -67,10 +67,23 @@
         <strong>L'adresse IP n'est ni enregistrée ni journalisée</strong> : seul le code pays est
         conservé, sous forme de compteur agrégé.</td></tr>
       <tr><td>Adresses recherchées et bâtiments consultés</td>
-        <td>Composer les fiches demandées.</td></tr>
+        <td>Composer les fiches demandées. Les <strong>bâtiments consultés</strong> sont en outre
+        enregistrés — la position du bâtiment, la date, le pays et la provenance du lien
+        (moteur de recherche, réseau social, lien direct) — pour savoir quelles régions et
+        quels canaux amènent des visiteurs. <strong>Ni adresse IP, ni cookie, ni identifiant
+        d'appareil ou de session</strong> : ces enregistrements ne se rattachent à personne et
+        ne permettent pas de relier deux visites.</td></tr>
       <tr><td>Statistiques d'usage anonymes (page vue, fiche téléchargée…)</td>
         <td>Comprendre ce qui sert et ce qui ne sert pas. Ce sont de simples compteurs, sans
         cookie et sans identifiant individuel.</td></tr>
+      <tr><td>Type d'appareil (famille de système et de navigateur) et
+        <strong>identifiant de visite</strong></td>
+        <td>Savoir si l'on nous consulte depuis un téléphone devant un immeuble ou depuis un
+        poste de bureau, et combien de bâtiments sont regardés en un passage. L'identifiant de
+        visite est <strong>engendré en mémoire au chargement de la page</strong> : il n'est
+        écrit ni dans un cookie ni sur votre appareil, il disparaît avec l'onglet, et il ne
+        permet jamais de rapprocher deux visites. La chaîne complète du navigateur n'est pas
+        conservée.</td></tr>
       <tr><td><strong>Si vous créez un compte</strong> : adresse e-mail, et le cas échéant votre
         organisation</td>
         <td>Vous authentifier, appliquer votre quota, vous fournir une clé d'API.</td></tr>
@@ -95,6 +108,8 @@
       <li><strong>Adresses recherchées</strong> : utilisées le temps de composer la fiche, mises
         en cache quelques heures pour éviter de réinterroger les sources publiques, puis
         oubliées. Elles ne sont associées à aucun profil.</li>
+      <li><strong>Bâtiments consultés</strong> : douze mois, puis effacés automatiquement. Ils
+        décrivent des bâtiments, pas des personnes.</li>
     </ul>
 
     <h2>À qui les données sont transmises</h2>

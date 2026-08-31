@@ -289,8 +289,8 @@
     {
       "id": 107,
       "type": "geomap",
-      "title": "Où l'on regarde (bâtiments consultés)",
-      "description": "Un point par bâtiment consulté. Aucune IP, aucun identifiant d'utilisateur : la coordonnée d'un bâtiment est publique, qui la regarde ne l'est pas (#349).",
+      "title": "Où l'on regarde, et combien (bâtiments consultés)",
+      "description": "Un point par bâtiment consulté. Aucune IP, aucun identifiant d'utilisateur : la coordonnée d'un bâtiment est publique, qui la regarde ne l'est pas (#349). Couleur = d'où vient la visite (référent d'atterrissage), jamais qui la fait.",
       "datasource": {
         "type": "postgres",
         "uid": "vues"
@@ -306,7 +306,7 @@
           "refId": "A",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT ts AS time, lat, lon, bdnb_id\nFROM vues.vue_batiment\nWHERE $__timeFilter(ts)\n  AND bdnb_id <> 'bdnb-bg-RPKN-5A8C-L5QV'\nORDER BY ts DESC\nLIMIT 5000",
+          "rawSql": "SELECT max(ts) AS time, lat, lon, bdnb_id,\n       count(*)::int AS vues,\n       mode() WITHIN GROUP (ORDER BY coalesce(source, 'direct')) AS source,\n       -- Le lien est construit ICI, en pleine précision : un lien Grafana\n       -- interpole la valeur AFFICHÉE, donc arrondie, et le marqueur\n       -- tombait à un kilomètre du bâtiment, sur une route.\n       'https://ecobuilding.confinia.io/?b=' || bdnb_id || '#18/'\n         || lat::text || '/' || lon::text || '/-30/60' AS url\nFROM vues.vue_batiment\nWHERE $__timeFilter(ts)\n  AND bdnb_id <> 'bdnb-bg-RPKN-5A8C-L5QV'\nGROUP BY lat, lon, bdnb_id\nORDER BY vues DESC\nLIMIT 5000",
           "datasource": {
             "type": "postgres",
             "uid": "vues"
@@ -340,11 +340,26 @@
             "config": {
               "style": {
                 "color": {
+                  "field": "source",
                   "fixed": "orange"
                 },
-                "opacity": 0.6,
+                "opacity": 0.75,
                 "size": {
-                  "fixed": 6
+                  "field": "vues",
+                  "fixed": 6,
+                  "min": 6,
+                  "max": 26
+                },
+                "text": {
+                  "field": "vues",
+                  "fixed": ""
+                },
+                "textConfig": {
+                  "fontSize": 12,
+                  "offsetX": 0,
+                  "offsetY": -1,
+                  "textAlign": "center",
+                  "textBaseline": "middle"
                 }
               }
             },
@@ -357,6 +372,11 @@
         },
         "tooltip": {
           "mode": "details"
+        },
+        "legend": {
+          "show": true,
+          "displayMode": "list",
+          "placement": "bottom"
         }
       },
       "links": [],
@@ -365,13 +385,120 @@
           "links": [
             {
               "title": "Ouvrir ce bâtiment dans EcoBuilding",
-              "url": "https://ecobuilding.confinia.io/?b=${__data.fields.bdnb_id}#18/${__data.fields.lat}/${__data.fields.lon}/-30/60",
+              "url": "${__data.fields.url}",
               "targetBlank": true
+            }
+          ],
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "direct": {
+                  "color": "orange",
+                  "index": 0
+                },
+                "linkedin": {
+                  "color": "blue",
+                  "index": 1
+                },
+                "teamopendata": {
+                  "color": "purple",
+                  "index": 2
+                },
+                "geocommuns": {
+                  "color": "purple",
+                  "index": 3
+                },
+                "reddit": {
+                  "color": "red",
+                  "index": 4
+                },
+                "data.gouv": {
+                  "color": "green",
+                  "index": 5
+                },
+                "google": {
+                  "color": "yellow",
+                  "index": 6
+                },
+                "whatsapp": {
+                  "color": "light-green",
+                  "index": 7
+                },
+                "email": {
+                  "color": "light-blue",
+                  "index": 8
+                },
+                "georezo": {
+                  "color": "semi-dark-purple",
+                  "index": 9
+                },
+                "autre": {
+                  "color": "text",
+                  "index": 10
+                }
+              }
             }
           ]
         },
         "overrides": []
       }
+    },
+    {
+      "id": 108,
+      "type": "table",
+      "title": "Profils de visite (une ligne = un passage, personne n'est identifié)",
+      "description": "Chaque ligne résume UNE visite : sa durée, combien de bâtiments, sur quel appareil, venue d'où. L'identifiant de visite naît en mémoire au chargement de la page et meurt avec l'onglet : deux passages d'une même personne ne peuvent pas être rapprochés (#356).",
+      "datasource": {
+        "type": "postgres",
+        "uid": "vues"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 49,
+        "w": 16,
+        "h": 10
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  min(ts)                                   AS \"début\",\n  round(extract(epoch FROM max(ts) - min(ts)) / 60.0, 1) AS \"minutes\",\n  count(*)                                  AS \"bâtiments\",\n  count(DISTINCT round(lat::numeric, 2))    AS \"zones\",\n  max(systeme)                              AS \"système\",\n  max(navigateur)                           AS \"navigateur\",\n  max(coalesce(source, 'direct'))           AS \"provenance\",\n  max(pays)                                 AS \"pays\"\nFROM vues.vue_batiment\nWHERE $__timeFilter(ts) AND visite IS NOT NULL\nGROUP BY visite\nORDER BY min(ts) DESC\nLIMIT 200",
+          "datasource": {
+            "type": "postgres",
+            "uid": "vues"
+          }
+        }
+      ]
+    },
+    {
+      "id": 109,
+      "type": "table",
+      "title": "Appareils",
+      "description": "Familles de système et de navigateur, jamais la chaîne brute.",
+      "datasource": {
+        "type": "postgres",
+        "uid": "vues"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 49,
+        "w": 8,
+        "h": 10
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT coalesce(systeme, 'inconnu') || ' · ' || coalesce(navigateur, 'inconnu') AS \"appareil\",\n       count(DISTINCT coalesce(visite, id::text)) AS \"visites\",\n       count(*) AS \"bâtiments vus\"\nFROM vues.vue_batiment\nWHERE $__timeFilter(ts)\nGROUP BY 1 ORDER BY 2 DESC, 3 DESC LIMIT 20",
+          "datasource": {
+            "type": "postgres",
+            "uid": "vues"
+          }
+        }
+      ]
     }
   ]
 }

@@ -10,6 +10,35 @@ function track(event, meta) {
 }
 track("page_view");
 
+// D'OÙ VIENT CETTE VISITE (#354) — la provenance appartient au LIEN, pas à la
+// personne : on retient l'hôte du référent au chargement (et utm_source s'il
+// est là), en mémoire, le temps de la session. Ni cookie, ni stockage, ni
+// identifiant : la carte doit pouvoir distinguer LinkedIn d'un lien direct
+// sans jamais distinguer deux visiteurs.
+// Identifiant de VISITE (#356) : engendré en mémoire au chargement, il vit le
+// temps de l'onglet et disparaît avec lui. Rien n'est écrit sur l'appareil,
+// et deux visites d'une même personne ne peuvent pas être rapprochées — c'est
+// ce qui distingue un profil type d'un suivi individuel.
+const VISITE = (() => {
+  try { return crypto.randomUUID().slice(0, 12); }
+  catch { return Math.random().toString(36).slice(2, 14); }
+})();
+
+const ORIGINE = (() => {
+  try {
+    // AUCUN identifiant de personne, et rien d'écrit sur l'appareil : la
+    // politique de confidentialité promet « sans cookie et sans identifiant
+    // individuel », et une étiquette nominative gardée en localStorage
+    // trahissait cette phrase. On ne retient que la PROVENANCE du lien.
+    const q = new URLSearchParams(location.search);
+    const utm = q.get("utm_source");
+    if (utm) return utm.slice(0, 30);
+    if (!document.referrer) return "direct";
+    const h = new URL(document.referrer).hostname.replace(/^www\./, "");
+    return h === location.hostname ? "direct" : h.slice(0, 60);
+  } catch { return "direct"; }
+})();
+
 // Payment-mode banner (#221): when the backend is wired to a SANDBOX payment
 // provider, say so loudly — a test checkout must never look like a real one.
 fetch(`${API}/config`).then((r) => r.ok && r.json()).then((c) => {
@@ -660,7 +689,8 @@ async function openBuildingById(id, lon, lat) {
   window.ecoStartLoadingFx?.(id, lon, lat);
   showLoadingPanel('Chargement des données du bâtiment…');
   try {
-    const r = await fetch(`${API}/buildings/${encodeURIComponent(id)}/stream?lon=${lon}&lat=${lat}`);
+    const r = await fetch(`${API}/buildings/${encodeURIComponent(id)}/stream?lon=${lon}&lat=${lat}`
+                          + `&src=${encodeURIComponent(ORIGINE)}&v=${VISITE}`);
     // 404 = vraie absence de fiche ; tout le reste (réseau, 5xx, redéploiement
     // en cours) est PASSAGER et mérite un « Réessayer » — l'ancien message
     // unique faisait croire à un trou de données définitif (vécu : un clic
