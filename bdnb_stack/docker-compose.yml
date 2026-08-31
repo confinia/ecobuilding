@@ -23,6 +23,11 @@ services:
               "-c", "full_page_writes=off", "-c", "autovacuum=off"]
     volumes:
       - bdnb_pgdata:/var/lib/postgresql/data
+    # Loopback port so Grafana — which runs on the HOST network — can query the
+    # view log directly (#349). 13030 = product 3, shared tier, service 3 (db)
+    # in the platform numbering. Never exposed beyond 127.0.0.1.
+    ports:
+      - "127.0.0.1:13030:5432"
     restart: unless-stopped
 
   # PostgREST mirrors the BDNB REST interface. db-schema is set after restore
@@ -37,7 +42,10 @@ services:
       - ../deploy/secrets.env    # PGRST_DB_URI=postgres://bdnb:<pwd>@bdnb-db:5432/bdnb
     environment:
       PGRST_DB_ANON_ROLE: bdnb_anon
-      PGRST_DB_SCHEMAS: dvf
+      # "vues" carries the building-view log the Grafana map reads (#349):
+      # its own schema rather than a telemetry table dropped into dvf, so what
+      # is data and what is usage stay visibly separate.
+      PGRST_DB_SCHEMAS: dvf,vues
       PGRST_DB_POOL: "20"
       PGRST_SERVER_PORT: "3005"
     ports:

@@ -285,6 +285,76 @@
           "legendFormat": "{{plan}} · {{period}}"
         }
       ]
+    },
+    {
+      "id": 107,
+      "type": "geomap",
+      "title": "Où l'on regarde (bâtiments consultés)",
+      "description": "Un point par bâtiment consulté. Aucune IP, aucun identifiant d'utilisateur : la coordonnée d'un bâtiment est publique, qui la regarde ne l'est pas (#349).",
+      "datasource": {
+        "type": "postgres",
+        "uid": "vues"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 37,
+        "w": 24,
+        "h": 12
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT ts AS time, lat, lon, bdnb_id\nFROM vues.vue_batiment\nWHERE $__timeFilter(ts)\nORDER BY ts DESC\nLIMIT 5000",
+          "datasource": {
+            "type": "postgres",
+            "uid": "vues"
+          }
+        }
+      ],
+      "options": {
+        "view": {
+          "id": "coords",
+          "lat": 46.6,
+          "lon": 2.5,
+          "zoom": 5
+        },
+        "basemap": {
+          "type": "default",
+          "name": "Fond"
+        },
+        "layers": [
+          {
+            "type": "markers",
+            "name": "Vues",
+            "location": {
+              "mode": "coords",
+              "latitude": "lat",
+              "longitude": "lon"
+            },
+            "config": {
+              "style": {
+                "color": {
+                  "fixed": "orange"
+                },
+                "opacity": 0.6,
+                "size": {
+                  "fixed": 6
+                }
+              }
+            },
+            "tooltip": true
+          }
+        ],
+        "controls": {
+          "showZoom": true,
+          "showAttribution": true
+        },
+        "tooltip": {
+          "mode": "details"
+        }
+      }
     }
   ]
 }

@@ -68,6 +68,8 @@ services:
       OIDC_REALM: sandbox-ecobuilding
       # Shared services via ecobuilding-internal DNS aliases (#173).
       DVF_RPC_URL: http://bdnb-rest:3005/rpc/prices_for_building
+      # Journal des vues, lu par la carte Grafana (#349).
+      VUES_URL: http://bdnb-rest:3005/vue_batiment
       # DPE-3D map render for the PDF (#88) via the shared render service (alias).
       RENDER_URL: http://render:8040/shot
       # Polar SANDBOX (token/org/product/webhook secret live in ./secrets.env).
