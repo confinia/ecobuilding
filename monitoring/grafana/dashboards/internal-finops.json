@@ -534,7 +534,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 49,
+        "y": 52,
         "w": 16,
         "h": 10
       },
@@ -549,7 +549,86 @@
             "uid": "vues"
           }
         }
-      ]
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "direct": {
+                  "color": "orange",
+                  "index": 0
+                },
+                "linkedin": {
+                  "color": "blue",
+                  "index": 1
+                },
+                "teamopendata": {
+                  "color": "purple",
+                  "index": 2
+                },
+                "geocommuns": {
+                  "color": "purple",
+                  "index": 3
+                },
+                "reddit": {
+                  "color": "red",
+                  "index": 4
+                },
+                "data.gouv": {
+                  "color": "green",
+                  "index": 5
+                },
+                "google": {
+                  "color": "yellow",
+                  "index": 6
+                },
+                "whatsapp": {
+                  "color": "light-green",
+                  "index": 7
+                },
+                "email": {
+                  "color": "light-blue",
+                  "index": 8
+                },
+                "georezo": {
+                  "color": "semi-dark-purple",
+                  "index": 9
+                },
+                "autre": {
+                  "color": "text",
+                  "index": 10
+                },
+                "interne": {
+                  "color": "text",
+                  "index": 11
+                }
+              }
+            }
+          ]
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "provenance"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "custom.align",
+                "value": "left"
+              }
+            ]
+          }
+        ]
+      }
     },
     {
       "id": 109,
@@ -562,7 +641,7 @@
       },
       "gridPos": {
         "x": 16,
-        "y": 49,
+        "y": 52,
         "w": 8,
         "h": 10
       },
@@ -590,7 +669,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 59,
+        "y": 62,
         "w": 24,
         "h": 11
       },
@@ -607,7 +686,63 @@
         }
       ],
       "fieldConfig": {
-        "defaults": {},
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "direct": {
+                  "color": "orange",
+                  "index": 0
+                },
+                "linkedin": {
+                  "color": "blue",
+                  "index": 1
+                },
+                "teamopendata": {
+                  "color": "purple",
+                  "index": 2
+                },
+                "geocommuns": {
+                  "color": "purple",
+                  "index": 3
+                },
+                "reddit": {
+                  "color": "red",
+                  "index": 4
+                },
+                "data.gouv": {
+                  "color": "green",
+                  "index": 5
+                },
+                "google": {
+                  "color": "yellow",
+                  "index": 6
+                },
+                "whatsapp": {
+                  "color": "light-green",
+                  "index": 7
+                },
+                "email": {
+                  "color": "light-blue",
+                  "index": 8
+                },
+                "georezo": {
+                  "color": "semi-dark-purple",
+                  "index": 9
+                },
+                "autre": {
+                  "color": "text",
+                  "index": 10
+                },
+                "interne": {
+                  "color": "text",
+                  "index": 11
+                }
+              }
+            }
+          ]
+        },
         "overrides": [
           {
             "matcher": {
@@ -638,6 +773,24 @@
                 "value": true
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "provenance"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "custom.align",
+                "value": "left"
+              }
+            ]
           }
         ]
       },
@@ -649,6 +802,22 @@
             "desc": true
           }
         ]
+      }
+    },
+    {
+      "id": 111,
+      "type": "text",
+      "title": "",
+      "transparent": true,
+      "gridPos": {
+        "x": 0,
+        "y": 49,
+        "w": 24,
+        "h": 3
+      },
+      "options": {
+        "mode": "html",
+        "content": "<div style=\"font-size:12px;line-height:1.6;padding:2px 4px\"><strong style=\"margin-right:12px\">D'où viennent les visites</strong><span style=\"display:inline-block;margin:0 14px 6px 0;white-space:nowrap\"><span style=\"display:inline-block;width:11px;height:11px;border-radius:50%;background:#FF9830;margin-right:6px;vertical-align:middle\"></span>lien direct</span><span style=\"display:inline-block;margin:0 14px 6px 0;white-space:nowrap\"><span style=\"display:inline-block;width:11px;height:11px;border-radius:50%;background:#3274D9;margin-right:6px;vertical-align:middle\"></span>LinkedIn</span><span style=\"display:inline-block;margin:0 14px 6px 0;white-space:nowrap\"><span style=\"display:inline-block;width:11px;height:11px;border-radius:50%;background:#A352CC;margin-right:6px;vertical-align:middle\"></span>TeamOpenData</span><span style=\"display:inline-block;margin:0 14px 6px 0;white-space:nowrap\"><span style=\"display:inline-block;width:11px;height:11px;border-radius:50%;background:#A352CC;margin-right:6px;vertical-align:middle\"></span>GéoCommuns</span><span style=\"display:inline-block;margin:0 14px 6px 0;white-space:nowrap\"><span style=\"display:inline-block;width:11px;height:11px;border-radius:50%;background:#F2495C;margin-right:6px;vertical-align:middle\"></span>Reddit</span><span style=\"display:inline-block;margin:0 14px 6px 0;white-space:nowrap\"><span style=\"display:inline-block;width:11px;height:11px;border-radius:50%;background:#73BF69;margin-right:6px;vertical-align:middle\"></span>data.gouv.fr</span><span style=\"display:inline-block;margin:0 14px 6px 0;white-space:nowrap\"><span style=\"display:inline-block;width:11px;height:11px;border-radius:50%;background:#FADE2A;margin-right:6px;vertical-align:middle\"></span>Google</span><span style=\"display:inline-block;margin:0 14px 6px 0;white-space:nowrap\"><span style=\"display:inline-block;width:11px;height:11px;border-radius:50%;background:#96D98D;margin-right:6px;vertical-align:middle\"></span>WhatsApp</span><span style=\"display:inline-block;margin:0 14px 6px 0;white-space:nowrap\"><span style=\"display:inline-block;width:11px;height:11px;border-radius:50%;background:#8AB8FF;margin-right:6px;vertical-align:middle\"></span>e-mail</span><span style=\"display:inline-block;margin:0 14px 6px 0;white-space:nowrap\"><span style=\"display:inline-block;width:11px;height:11px;border-radius:50%;background:#8F3BB8;margin-right:6px;vertical-align:middle\"></span>GeoRezo</span><span style=\"display:inline-block;margin:0 14px 6px 0;white-space:nowrap\"><span style=\"display:inline-block;width:11px;height:11px;border-radius:50%;background:#CCCCDC;margin-right:6px;vertical-align:middle\"></span>provenance inconnue</span><span style=\"display:inline-block;margin:0 14px 6px 0;white-space:nowrap\"><span style=\"display:inline-block;width:11px;height:11px;border-radius:50%;background:#CCCCDC;margin-right:6px;vertical-align:middle\"></span>nos écrans</span><div style=\"opacity:.6;margin-top:4px\">La couleur dit par quel lien la visite est arrivée, jamais qui l'a faite.</div></div>"
       }
     }
   ]
