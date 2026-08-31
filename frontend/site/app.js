@@ -1075,11 +1075,26 @@ function renderPanel(s, data, opts) {
 // le solde, mais c'est le bouton qu'on regarde au moment de décider — et
 // l'en-tête ne dit rien au visiteur sans compte. Même pré-vol (lecture seule)
 // que downloadReport : ce que le compteur annonce est ce que la barrière fera.
+// L'en-tête d'authentification, ou RIEN. Trois endroits construisaient
+// « Bearer  + ecoToken() » en testant l'existence de la FONCTION : un jeton
+// expiré (ecoToken() rend null, #305) donnait « Bearer null », que l'API
+// traite en anonyme — et le compteur du bouton annonçait le mur MENSUEL des
+// visiteurs à un compte connecté dont l'en-tête disait « 9 aujourd'hui » (#364).
+function enTeteAuth() {
+  const jeton = window.ecoToken && window.ecoToken();
+  return jeton ? { Authorization: "Bearer " + jeton } : {};
+}
+
+// Le bâtiment affiché, pour re-rendre son compteur quand l'état d'AUTH change :
+// rendu une seule fois, le compteur gardait une réponse anonyme pour toujours.
+let DERNIER_BATIMENT = null;
+
 async function compteurFiches(bdnbId) {
   const el = document.getElementById("report-quota");
   if (!el) return;
+  DERNIER_BATIMENT = bdnbId;
   try {
-    const headers = window.ecoToken ? { Authorization: "Bearer " + window.ecoToken() } : {};
+    const headers = enTeteAuth();
     const q = await (await fetch(`${API}/quota`, { headers })).json();
     if ((q.free_again || []).includes(bdnbId)) {
       // Rouvrir un document déjà servi ne décompte rien : le dire évite de
@@ -1114,7 +1129,7 @@ async function refreshQuota() {
   const el = document.getElementById("userlabel");
   if (!el || !window.ecoToken) return;
   try {
-    const r = await fetch(`${API}/usage`, { headers: { Authorization: "Bearer " + window.ecoToken() } });
+    const r = await fetch(`${API}/usage`, { headers: enTeteAuth() });
     if (!r.ok) return;
     const u = await r.json();
     window.ecoQuota = u;
@@ -1122,6 +1137,9 @@ async function refreshQuota() {
       ? "Pro"
       : `${u.reports_left} fiche${u.reports_left > 1 ? "s" : ""} restante${u.reports_left > 1 ? "s" : ""} ${periodeQuota(u)}`;
     el.textContent = el.textContent.split(" · ")[0] + " · " + badge;
+    // Les deux surfaces lisent le même monde, au même moment (#364) : chaque
+    // rafraîchissement du badge re-rend aussi le compteur du bouton.
+    if (DERNIER_BATIMENT) compteurFiches(DERNIER_BATIMENT);
     // Upsell only when the plan is actually purchasable: ECO_PRO_ENABLED is
     // false in production until RULES.md #7 is met, and a visible button that
     // 503s would be worse than no button at all.
@@ -1336,7 +1354,7 @@ async function downloadReport(btn) {
   // rester dans le geste, avant tout await) ; si le quota est épuisé, elle
   // se referme aussitôt et le panneau s'affiche immédiatement.
   try {
-    const headers = window.ecoToken ? { Authorization: "Bearer " + window.ecoToken() } : {};
+    const headers = enTeteAuth();
     const q = await (await fetch(`${API}/quota`, { headers })).json();
     if (q.reports_left === 0) {
       if (tab) tab.close();
@@ -1372,7 +1390,7 @@ async function downloadReport(btn) {
   try {
     // Signed-in users get their account allowance (#206); anonymous visitors
     // keep the 10/month IP tier.
-    const headers = window.ecoToken ? { Authorization: "Bearer " + window.ecoToken() } : {};
+    const headers = enTeteAuth();
     const r = await fetch(url, { headers });
     if (r.status === 429) {
       // Self-service: the app itself says what to do next (#212).
