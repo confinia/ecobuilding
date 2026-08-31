@@ -290,7 +290,7 @@
       "id": 107,
       "type": "geomap",
       "title": "Où l'on regarde (bâtiments consultés)",
-      "description": "Un point par bâtiment consulté. Aucune IP, aucun identifiant d'utilisateur : la coordonnée d'un bâtiment est publique, qui la regarde ne l'est pas (#349).",
+      "description": "Un point par bâtiment consulté. Aucune IP, aucun identifiant d'utilisateur : la coordonnée d'un bâtiment est publique, qui la regarde ne l'est pas (#349). Couleur = d'où vient la visite (référent d'atterrissage), jamais qui la fait.",
       "datasource": {
         "type": "postgres",
         "uid": "vues"
@@ -306,7 +306,7 @@
           "refId": "A",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT ts AS time, lat, lon, bdnb_id\nFROM vues.vue_batiment\nWHERE $__timeFilter(ts)\n  AND bdnb_id <> 'bdnb-bg-RPKN-5A8C-L5QV'\nORDER BY ts DESC\nLIMIT 5000",
+          "rawSql": "SELECT ts AS time, lat, lon, bdnb_id, coalesce(source, 'direct') AS source\nFROM vues.vue_batiment\nWHERE $__timeFilter(ts)\n  AND bdnb_id <> 'bdnb-bg-RPKN-5A8C-L5QV'\nORDER BY ts DESC\nLIMIT 5000",
           "datasource": {
             "type": "postgres",
             "uid": "vues"
@@ -340,6 +340,7 @@
             "config": {
               "style": {
                 "color": {
+                  "field": "source",
                   "fixed": "orange"
                 },
                 "opacity": 0.6,
@@ -357,6 +358,11 @@
         },
         "tooltip": {
           "mode": "details"
+        },
+        "legend": {
+          "show": true,
+          "displayMode": "list",
+          "placement": "bottom"
         }
       },
       "links": [],
@@ -367,6 +373,57 @@
               "title": "Ouvrir ce bâtiment dans EcoBuilding",
               "url": "https://ecobuilding.confinia.io/?b=${__data.fields.bdnb_id}#18/${__data.fields.lat}/${__data.fields.lon}/-30/60",
               "targetBlank": true
+            }
+          ],
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "direct": {
+                  "color": "orange",
+                  "index": 0
+                },
+                "linkedin": {
+                  "color": "blue",
+                  "index": 1
+                },
+                "teamopendata": {
+                  "color": "purple",
+                  "index": 2
+                },
+                "geocommuns": {
+                  "color": "purple",
+                  "index": 3
+                },
+                "reddit": {
+                  "color": "red",
+                  "index": 4
+                },
+                "data.gouv": {
+                  "color": "green",
+                  "index": 5
+                },
+                "google": {
+                  "color": "yellow",
+                  "index": 6
+                },
+                "whatsapp": {
+                  "color": "light-green",
+                  "index": 7
+                },
+                "email": {
+                  "color": "light-blue",
+                  "index": 8
+                },
+                "georezo": {
+                  "color": "semi-dark-purple",
+                  "index": 9
+                },
+                "autre": {
+                  "color": "text",
+                  "index": 10
+                }
+              }
             }
           ]
         },

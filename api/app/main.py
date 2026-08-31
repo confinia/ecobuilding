@@ -47,6 +47,27 @@ DVF_RPC_URL = os.environ.get("DVF_RPC_URL", "")
 # identifiant d'utilisateur : la coordonnée d'un bâtiment est publique, qui la
 # regarde ne l'est pas. Vide = rien n'est écrit (bacs à sable, tests).
 VUES_URL = os.environ.get("VUES_URL", "")
+# D'où vient la visite (#354). Bornée, comme les étiquettes de #347 : une
+# provenance vient du navigateur, donc de l'extérieur. Tout le reste devient
+# « autre » — on compte sans laisser un inconnu inventer des catégories.
+ORIGINES_CONNUES = {
+    "direct": "direct",
+    "linkedin.com": "linkedin", "lnkd.in": "linkedin", "linkedin": "linkedin",
+    "teamopendata.org": "teamopendata",
+    "forum.geocommuns.fr": "geocommuns",
+    "reddit.com": "reddit", "out.reddit.com": "reddit",
+    "data.gouv.fr": "data.gouv", "www.data.gouv.fr": "data.gouv",
+    "google.com": "google", "google.fr": "google", "bing.com": "bing",
+    "web.whatsapp.com": "whatsapp", "whatsapp": "whatsapp",
+    "mail.google.com": "email", "outlook.com": "email",
+    "georezo.net": "georezo", "ecobuilding.confinia.io": "direct",
+}
+
+
+def _origine(brute: str | None) -> str:
+    if not brute:
+        return "direct"
+    return ORIGINES_CONNUES.get(brute.strip().lower()[:60], "autre")
 # Headless DPE-3D map render for the PDF context page (#88). Empty in prod until
 # the render service is wired; when set, the report shows the rendered building.
 RENDER_URL = os.environ.get("RENDER_URL", "")
@@ -1422,7 +1443,7 @@ async def _click_address(bdnb_id: str, lon, lat):
     return None
 
 
-def _noter_la_vue(bdnb_id, lon, lat, request):
+def _noter_la_vue(bdnb_id, lon, lat, request, src=None):
     """Consigner un bâtiment consulté, SANS JAMAIS retarder la réponse (#349).
 
     Le trafic ne se lisait qu'en fouillant les journaux à la main : c'est ainsi
@@ -1441,7 +1462,7 @@ def _noter_la_vue(bdnb_id, lon, lat, request):
     if "Mozilla" not in agent:
         return
     ligne = {"bdnb_id": bdnb_id, "lon": lon, "lat": lat,
-             "pays": _client_country(request)}
+             "pays": _client_country(request), "source": _origine(src)}
 
     async def _ecrire():
         try:
@@ -1462,12 +1483,13 @@ async def building(
     bdnb_id: str,
     lon: float | None = Query(None, description="Longitude (adds the Géorisques area report)"),
     lat: float | None = Query(None, description="Latitude (idem)"),
+    src: str | None = Query(None, max_length=60, description="Voir /stream (#354)"),
     request: Request = None,   # None when called internally by the report route
 ):
     """Full record of one building by its BDNB id (e.g. from a map click)."""
     if request is not None:
         _meter_if_keyed(request, "buildings")
-        _noter_la_vue(bdnb_id, lon, lat, request)
+        _noter_la_vue(bdnb_id, lon, lat, request, src)
     # Cache de l'AGRÉGAT (demande opérateur) : chaque affichage refaisait
     # l'orchestration complète (BDNB, Géorisques, Hub'Eau, DVF, ADEME,
     # fiscalité, écoles, PVGIS…) même quand chaque source était en cache.
@@ -1603,6 +1625,9 @@ async def building_stream(
     bdnb_id: str,
     lon: float | None = Query(None),
     lat: float | None = Query(None),
+    src: str | None = Query(None, max_length=60, description=(
+        "D'où vient la visite (hôte du référent d'atterrissage), pour la carte "
+        "d'usage (#354). Normalisé côté serveur, jamais stocké tel quel.")),
     request: Request = None,
 ):
     """Même agrégat que `/v1/buildings/{id}`, mais **au fil de l'eau** (NDJSON).
@@ -1624,7 +1649,7 @@ async def building_stream(
         # C'est CE chemin que l'application web emprunte : ne consigner que
         # /v1/buildings laissait la carte aveugle à ses vrais utilisateurs —
         # le visiteur de Nantes n'y figurait pas, mes propres curl si (#349).
-        _noter_la_vue(bdnb_id, lon, lat, request)
+        _noter_la_vue(bdnb_id, lon, lat, request, src)
     return StreamingResponse(_building_events(bdnb_id, lon, lat),
                              media_type="application/x-ndjson",
                              headers={"Cache-Control": "no-store",

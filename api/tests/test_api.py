@@ -1300,6 +1300,22 @@ def test_la_balise_publique_ne_prend_que_des_etiquettes_connues(monkeypatch):
     ]
 
 
+def test_la_provenance_est_bornee():
+    """#354 : la provenance vient du navigateur, donc de l'extérieur. Elle est
+    ramenée à une liste connue — sinon un inconnu inventerait des catégories,
+    et la carte compterait ses propres inventions (même discipline que #347)."""
+    from app.main import _origine
+
+    assert _origine("linkedin.com") == "linkedin"
+    assert _origine("www.data.gouv.fr") == "data.gouv"
+    assert _origine("TeamOpenData.org") == "teamopendata"
+    assert _origine("ecobuilding.confinia.io") == "direct"   # navigation interne
+    assert _origine(None) == "direct"
+    assert _origine("") == "direct"
+    assert _origine("site-inconnu.example") == "autre"
+    assert _origine("x" * 500) == "autre"
+
+
 def test_le_chronometre_mesure_meme_l_echec():
     """#280 : un échec LENT est précisément ce qu'on veut voir. Un chronomètre
     qui ne mesure que les succès rendrait la panne invisible — le travers

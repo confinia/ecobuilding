@@ -10,6 +10,21 @@ function track(event, meta) {
 }
 track("page_view");
 
+// D'OÙ VIENT CETTE VISITE (#354) — la provenance appartient au LIEN, pas à la
+// personne : on retient l'hôte du référent au chargement (et utm_source s'il
+// est là), en mémoire, le temps de la session. Ni cookie, ni stockage, ni
+// identifiant : la carte doit pouvoir distinguer LinkedIn d'un lien direct
+// sans jamais distinguer deux visiteurs.
+const ORIGINE = (() => {
+  try {
+    const utm = new URLSearchParams(location.search).get("utm_source");
+    if (utm) return utm.slice(0, 30);
+    if (!document.referrer) return "direct";
+    const h = new URL(document.referrer).hostname.replace(/^www\./, "");
+    return h === location.hostname ? "direct" : h.slice(0, 60);
+  } catch { return "direct"; }
+})();
+
 // Payment-mode banner (#221): when the backend is wired to a SANDBOX payment
 // provider, say so loudly — a test checkout must never look like a real one.
 fetch(`${API}/config`).then((r) => r.ok && r.json()).then((c) => {
@@ -660,7 +675,8 @@ async function openBuildingById(id, lon, lat) {
   window.ecoStartLoadingFx?.(id, lon, lat);
   showLoadingPanel('Chargement des données du bâtiment…');
   try {
-    const r = await fetch(`${API}/buildings/${encodeURIComponent(id)}/stream?lon=${lon}&lat=${lat}`);
+    const r = await fetch(`${API}/buildings/${encodeURIComponent(id)}/stream?lon=${lon}&lat=${lat}`
+                          + `&src=${encodeURIComponent(ORIGINE)}`);
     // 404 = vraie absence de fiche ; tout le reste (réseau, 5xx, redéploiement
     // en cours) est PASSAGER et mérite un « Réessayer » — l'ancien message
     // unique faisait croire à un trou de données définitif (vécu : un clic
