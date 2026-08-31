@@ -9,12 +9,17 @@ datasources:
     type: postgres
     access: proxy
     url: 127.0.0.1:13030
-    user: bdnb
+    # A READ-ONLY role, not the database owner: a dashboard needs to select
+    # from one table and nothing else. Created on the VM with SELECT on
+    # vues.vue_batiment only; its password lives in deploy/secrets.env as
+    # GRAFANA_DB_PASSWORD (and BDNB_DB_PASSWORD, which the first version of
+    # this file used, is not the bdnb role's password at all — hence the
+    # « password authentication failed » the panel showed).
+    user: grafana_ro
     database: bdnb
     isDefault: false
     secureJsonData:
-      # From deploy/secrets.env, injected by the compose env_file.
-      password: ${BDNB_DB_PASSWORD}
+      password: ${GRAFANA_DB_PASSWORD}
     jsonData:
       sslmode: disable
       postgresVersion: 1600

@@ -1432,6 +1432,14 @@ def _noter_la_vue(bdnb_id, lon, lat, request):
     """
     if not VUES_URL or lon is None or lat is None:
         return
+    # SEULEMENT les navigateurs. La carte a d'abord montré, mélangés, un vrai
+    # visiteur, le bâtiment d'essai de la CI et mes propres appels curl de
+    # diagnostic — une carte qui compte ses propres outils ne dit plus rien de
+    # ses utilisateurs. La sonde de fumée, les scripts e2e et curl s'annoncent
+    # honnêtement ; ils ne sont donc pas comptés.
+    agent = request.headers.get("user-agent") or ""
+    if "Mozilla" not in agent:
+        return
     ligne = {"bdnb_id": bdnb_id, "lon": lon, "lat": lat,
              "pays": _client_country(request)}
 
@@ -1613,6 +1621,10 @@ async def building_stream(
 
     if request is not None:
         _meter_if_keyed(request, "buildings")
+        # C'est CE chemin que l'application web emprunte : ne consigner que
+        # /v1/buildings laissait la carte aveugle à ses vrais utilisateurs —
+        # le visiteur de Nantes n'y figurait pas, mes propres curl si (#349).
+        _noter_la_vue(bdnb_id, lon, lat, request)
     return StreamingResponse(_building_events(bdnb_id, lon, lat),
                              media_type="application/x-ndjson",
                              headers={"Cache-Control": "no-store",
