@@ -31,6 +31,13 @@ Quickstart: `docker compose up --build` → frontend on :8011, API docs on
 logiciel accessible par le réseau doit en publier les sources. Cohérent avec un
 produit entièrement bâti sur des données publiques ouvertes.
 
+**L'AGPL ne convient pas à votre usage ?** Pour intégrer EcoBuilding à un
+produit propriétaire, le livrer à vos clients, ou exploiter une version modifiée
+en service sans publier vos modifications, une **licence commerciale** est
+disponible : les droits étant détenus en un seul endroit, des conditions autres
+que l'AGPL peuvent être accordées. Voir [NOTICE](NOTICE), puis écrire à
+clement@igonet.fr.
+
 ## Dépôts liés
 
 - [confinia/ecobuilding-mobile](https://github.com/confinia/ecobuilding-mobile) —
