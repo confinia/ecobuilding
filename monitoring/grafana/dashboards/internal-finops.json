@@ -306,7 +306,7 @@
           "refId": "A",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT max(ts) AS time, lat, lon, bdnb_id,\n       count(*)::int AS vues,\n       mode() WITHIN GROUP (ORDER BY coalesce(source, 'direct')) AS source\nFROM vues.vue_batiment\nWHERE $__timeFilter(ts)\n  AND bdnb_id <> 'bdnb-bg-RPKN-5A8C-L5QV'\nGROUP BY lat, lon, bdnb_id\nORDER BY vues DESC\nLIMIT 5000",
+          "rawSql": "SELECT max(ts) AS time, lat, lon, bdnb_id,\n       count(*)::int AS vues,\n       mode() WITHIN GROUP (ORDER BY coalesce(source, 'direct')) AS source,\n       -- Le lien est construit ICI, en pleine précision : un lien Grafana\n       -- interpole la valeur AFFICHÉE, donc arrondie, et le marqueur\n       -- tombait à un kilomètre du bâtiment, sur une route.\n       'https://ecobuilding.confinia.io/?b=' || bdnb_id || '#18/'\n         || lat::text || '/' || lon::text || '/-30/60' AS url\nFROM vues.vue_batiment\nWHERE $__timeFilter(ts)\n  AND bdnb_id <> 'bdnb-bg-RPKN-5A8C-L5QV'\nGROUP BY lat, lon, bdnb_id\nORDER BY vues DESC\nLIMIT 5000",
           "datasource": {
             "type": "postgres",
             "uid": "vues"
@@ -385,7 +385,7 @@
           "links": [
             {
               "title": "Ouvrir ce bâtiment dans EcoBuilding",
-              "url": "https://ecobuilding.confinia.io/?b=${__data.fields.bdnb_id}#18/${__data.fields.lat}/${__data.fields.lon}/-30/60",
+              "url": "${__data.fields.url}",
               "targetBlank": true
             }
           ],
@@ -436,26 +436,6 @@
                 "autre": {
                   "color": "text",
                   "index": 10
-                },
-                "alice": {
-                  "color": "green",
-                  "index": 11
-                },
-                "marc": {
-                  "color": "blue",
-                  "index": 12
-                },
-                "valerie": {
-                  "color": "purple",
-                  "index": 13
-                },
-                "clement": {
-                  "color": "dark-red",
-                  "index": 14
-                },
-                "yann": {
-                  "color": "light-orange",
-                  "index": 15
                 }
               }
             }

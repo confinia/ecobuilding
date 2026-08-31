@@ -17,18 +17,11 @@ track("page_view");
 // sans jamais distinguer deux visiteurs.
 const ORIGINE = (() => {
   try {
-    // Un lien PERSONNEL (?t=alice) prime et se retient : les testeurs nommés
-    // reviennent, souvent sans repasser par leur lien. Ils savent que leur
-    // lien est personnel — c'est la condition pour que ce soit honnête.
+    // AUCUN identifiant de personne, et rien d'écrit sur l'appareil : la
+    // politique de confidentialité promet « sans cookie et sans identifiant
+    // individuel », et une étiquette nominative gardée en localStorage
+    // trahissait cette phrase. On ne retient que la PROVENANCE du lien.
     const q = new URLSearchParams(location.search);
-    const perso = q.get("t");
-    if (perso) {
-      try { localStorage.setItem("eco_src", perso.slice(0, 30)); } catch {}
-      return perso.slice(0, 30);
-    }
-    let garde = null;
-    try { garde = localStorage.getItem("eco_src"); } catch {}
-    if (garde) return garde;
     const utm = q.get("utm_source");
     if (utm) return utm.slice(0, 30);
     if (!document.referrer) return "direct";

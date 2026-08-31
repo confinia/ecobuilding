@@ -61,12 +61,6 @@ ORIGINES_CONNUES = {
     "web.whatsapp.com": "whatsapp", "whatsapp": "whatsapp",
     "mail.google.com": "email", "outlook.com": "email",
     "georezo.net": "georezo", "ecobuilding.confinia.io": "direct",
-    # Testeurs NOMMÉS, qui reçoivent chacun un lien personnel (?t=…) et le
-    # savent. C'est la seule identification que ce produit pratique : pas
-    # d'adresse IP, pas d'empreinte d'appareil, rien qui rapproche deux
-    # visiteurs qui ne se seraient pas annoncés.
-    "alice": "alice", "marc": "marc", "valerie": "valerie",
-    "clement": "clement", "yann": "yann",
 }
 
 
