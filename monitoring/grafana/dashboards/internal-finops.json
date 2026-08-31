@@ -289,7 +289,7 @@
     {
       "id": 107,
       "type": "geomap",
-      "title": "Où l'on regarde (bâtiments consultés)",
+      "title": "Où l'on regarde, et combien (bâtiments consultés)",
       "description": "Un point par bâtiment consulté. Aucune IP, aucun identifiant d'utilisateur : la coordonnée d'un bâtiment est publique, qui la regarde ne l'est pas (#349). Couleur = d'où vient la visite (référent d'atterrissage), jamais qui la fait.",
       "datasource": {
         "type": "postgres",
@@ -306,7 +306,7 @@
           "refId": "A",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT ts AS time, lat, lon, bdnb_id, coalesce(source, 'direct') AS source\nFROM vues.vue_batiment\nWHERE $__timeFilter(ts)\n  AND bdnb_id <> 'bdnb-bg-RPKN-5A8C-L5QV'\nORDER BY ts DESC\nLIMIT 5000",
+          "rawSql": "SELECT max(ts) AS time, lat, lon, bdnb_id,\n       count(*)::int AS vues,\n       mode() WITHIN GROUP (ORDER BY coalesce(source, 'direct')) AS source\nFROM vues.vue_batiment\nWHERE $__timeFilter(ts)\n  AND bdnb_id <> 'bdnb-bg-RPKN-5A8C-L5QV'\nGROUP BY lat, lon, bdnb_id\nORDER BY vues DESC\nLIMIT 5000",
           "datasource": {
             "type": "postgres",
             "uid": "vues"
@@ -343,9 +343,23 @@
                   "field": "source",
                   "fixed": "orange"
                 },
-                "opacity": 0.6,
+                "opacity": 0.75,
                 "size": {
-                  "fixed": 6
+                  "field": "vues",
+                  "fixed": 6,
+                  "min": 6,
+                  "max": 26
+                },
+                "text": {
+                  "field": "vues",
+                  "fixed": ""
+                },
+                "textConfig": {
+                  "fontSize": 12,
+                  "offsetX": 0,
+                  "offsetY": -1,
+                  "textAlign": "center",
+                  "textBaseline": "middle"
                 }
               }
             },
@@ -422,6 +436,26 @@
                 "autre": {
                   "color": "text",
                   "index": 10
+                },
+                "alice": {
+                  "color": "green",
+                  "index": 11
+                },
+                "marc": {
+                  "color": "blue",
+                  "index": 12
+                },
+                "valerie": {
+                  "color": "purple",
+                  "index": 13
+                },
+                "clement": {
+                  "color": "dark-red",
+                  "index": 14
+                },
+                "yann": {
+                  "color": "light-orange",
+                  "index": 15
                 }
               }
             }
