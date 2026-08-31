@@ -38,7 +38,7 @@
       },
       "targets": [
         {
-          "expr": "sum(ecobuilding_leads_total{kind=\"enterprise\"})",
+          "expr": "sum(ecobuilding_leads_total{kind=\"enterprise\"}) or vector(0)",
           "instant": true
         }
       ]
@@ -55,7 +55,7 @@
       },
       "targets": [
         {
-          "expr": "sum(ecobuilding_leads_total{kind=\"waitlist\"})",
+          "expr": "sum(ecobuilding_leads_total{kind=\"waitlist\"}) or vector(0)",
           "instant": true
         }
       ]
@@ -72,7 +72,7 @@
       },
       "targets": [
         {
-          "expr": "sum(ecobuilding_reports_total)",
+          "expr": "sum(ecobuilding_reports_total) or vector(0)",
           "instant": true
         }
       ]
@@ -321,8 +321,12 @@
           "zoom": 5
         },
         "basemap": {
-          "type": "default",
-          "name": "Fond"
+          "type": "xyz",
+          "name": "OpenStreetMap",
+          "config": {
+            "url": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+            "attribution": "© OpenStreetMap"
+          }
         },
         "layers": [
           {
