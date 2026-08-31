@@ -97,10 +97,23 @@ def _systeme_et_navigateur(agent: str) -> tuple[str, str]:
     return systeme, navigateur, type_appareil
 
 
+# Campagnes de diffusion, sous forme de JETONS OPAQUES (#354). Le lien qu'on
+# transmet ne doit pas s'annoncer : « ?utm_source=reseau-promoteur » dit à qui
+# le reçoit qu'il est classé quelque part. La correspondance jeton -> libellé
+# vit dans deploy/secrets.env (CAMPAGNES="e61830=reseau-promoteur,…"), jamais
+# ici : ce dépôt est PUBLIC, et une correspondance publiée n'est plus opaque.
+CAMPAGNES = {}
+for _paire in (os.environ.get("CAMPAGNES", "").split(",")):
+    if "=" in _paire:
+        _jeton, _libelle = _paire.split("=", 1)
+        CAMPAGNES[_jeton.strip().lower()[:32]] = _libelle.strip()[:32]
+
+
 def _origine(brute: str | None) -> str:
     if not brute:
         return "direct"
-    return ORIGINES_CONNUES.get(brute.strip().lower()[:60], "autre")
+    propre = brute.strip().lower()[:60]
+    return CAMPAGNES.get(propre) or ORIGINES_CONNUES.get(propre, "autre")
 # Headless DPE-3D map render for the PDF context page (#88). Empty in prod until
 # the render service is wired; when set, the report shows the rendered building.
 RENDER_URL = os.environ.get("RENDER_URL", "")

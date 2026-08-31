@@ -1313,6 +1313,15 @@ def test_la_provenance_est_bornee():
     assert _origine(None) == "direct"
     assert _origine("") == "direct"
     assert _origine("site-inconnu.example") == "autre"
+    # Un jeton de campagne (opaque dans le lien, lisible sur le tableau de
+    # bord) vient des secrets, jamais du dépôt : celui-ci est public.
+    import app.main as main
+    main.CAMPAGNES["e61830"] = "reseau-promoteur"
+    try:
+        assert _origine("e61830") == "reseau-promoteur"
+        assert _origine("E61830") == "reseau-promoteur"
+    finally:
+        main.CAMPAGNES.pop("e61830", None)
     assert _origine("x" * 500) == "autre"
 
 
