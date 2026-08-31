@@ -1323,12 +1323,16 @@ def test_le_profil_de_visite_reste_grossier():
     précise ne change rien et rapproche d'une empreinte d'appareil."""
     from app.main import _systeme_et_navigateur as f
 
-    assert f("Mozilla/5.0 (Linux; Android 10; K) Chrome/152.0.0.0") == ("Android", "Chrome")
-    assert f("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0) Version/17 Safari/605") == ("iOS", "Safari")
-    assert f("Mozilla/5.0 (Windows NT 10.0; Win64) Chrome/152 Edg/152") == ("Windows", "Edge")
-    assert f("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Safari/605") == ("macOS", "Safari")
-    assert f("curl/8.13.0") == ("autre", "autre")
-    assert f("") == ("autre", "autre")
+    assert f("Mozilla/5.0 (Linux; Android 10; K) Chrome/152.0.0.0") == ("Android", "Chrome", "téléphone")
+    assert f("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0) Version/17 Safari/605") == ("iOS", "Safari", "téléphone")
+    assert f("Mozilla/5.0 (iPad; CPU OS 17_0) Version/17 Safari/605") == ("iOS", "Safari", "tablette")
+    assert f("Mozilla/5.0 (Windows NT 10.0; Win64) Chrome/152 Edg/152") == ("Windows", "Edge", "ordinateur")
+    assert f("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Safari/605") == ("macOS", "Safari", "ordinateur")
+    assert f("curl/8.13.0") == ("autre", "autre", "autre")
+    assert f("") == ("autre", "autre", "autre")
+    # Le MODÈLE ne doit jamais ressortir : « SM-A226B » reste dans la chaîne
+    # brute, qu'on ne conserve pas.
+    assert "SM-" not in "".join(f("Mozilla/5.0 (Linux; Android 13; SM-A226B) Chrome/152"))
 
 
 def test_le_chronometre_mesure_meme_l_echec():

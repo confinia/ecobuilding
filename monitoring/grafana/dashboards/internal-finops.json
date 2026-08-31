@@ -499,6 +499,78 @@
           }
         }
       ]
+    },
+    {
+      "id": 110,
+      "type": "table",
+      "title": "Chaque consultation : appareil, provenance, et le bâtiment regardé",
+      "description": "Une ligne par bâtiment consulté. L'adresse est jointe à la BDNB au moment de l'affichage (elle décrit le bâtiment, pas le visiteur) et le lien l'ouvre dans EcoBuilding. Type d'appareil, système et navigateur sont des familles : le modèle n'est jamais conservé (#356).",
+      "datasource": {
+        "type": "postgres",
+        "uid": "vues"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 59,
+        "w": 24,
+        "h": 11
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  v.ts                                             AS \"quand\",\n  coalesce(v.type_appareil, 'inconnu')             AS \"appareil\",\n  coalesce(v.systeme, 'inconnu')                   AS \"système\",\n  coalesce(v.navigateur, 'inconnu')                AS \"navigateur\",\n  coalesce(v.source, 'direct')                     AS \"provenance\",\n  coalesce(a.libelle_adr_principale_ban, v.bdnb_id) AS \"adresse\",\n  'https://ecobuilding.confinia.io/?b=' || v.bdnb_id || '#18/'\n    || v.lat::text || '/' || v.lon::text || '/-30/60' AS url\nFROM vues.vue_batiment v\nLEFT JOIN bdnb_2026_02_a_open_data.batiment_groupe_adresse a\n       ON a.batiment_groupe_id = v.bdnb_id\nWHERE $__timeFilter(v.ts)\n  AND v.bdnb_id <> 'bdnb-bg-RPKN-5A8C-L5QV'\nORDER BY v.ts DESC\nLIMIT 300",
+          "datasource": {
+            "type": "postgres",
+            "uid": "vues"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "adresse"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Ouvrir dans EcoBuilding",
+                    "url": "${__data.fields.url}",
+                    "targetBlank": true
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "url"
+            },
+            "properties": [
+              {
+                "id": "custom.hidden",
+                "value": true
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "quand",
+            "desc": true
+          }
+        ]
+      }
     }
   ]
 }

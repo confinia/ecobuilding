@@ -78,11 +78,17 @@ def _systeme_et_navigateur(agent: str) -> tuple[str, str]:
                "Windows" if "Windows" in a else
                "macOS" if "Macintosh" in a else
                "Linux" if "Linux" in a else "autre")
+    # Le TYPE d'appareil, jamais le modèle : « téléphone » change le produit
+    # (on est devant l'immeuble), « SM-A226B » ne dit rien de plus et
+    # s'approche d'une empreinte.
     navigateur = ("Edge" if "Edg/" in a else
                   "Chrome" if "Chrome" in a or "CriOS" in a else
                   "Firefox" if "Firefox" in a else
                   "Safari" if "Safari" in a else "autre")
-    return systeme, navigateur
+    type_appareil = ("tablette" if ("iPad" in a or "Tablet" in a) else
+                     "téléphone" if ("Mobi" in a or "iPhone" in a or "Android" in a) else
+                     "ordinateur" if systeme in ("Windows", "macOS", "Linux") else "autre")
+    return systeme, navigateur, type_appareil
 
 
 def _origine(brute: str | None) -> str:
@@ -1482,13 +1488,14 @@ def _noter_la_vue(bdnb_id, lon, lat, request, src=None, visite=None):
     agent = request.headers.get("user-agent") or ""
     if "Mozilla" not in agent:
         return
-    systeme, navigateur = _systeme_et_navigateur(agent)
+    systeme, navigateur, type_appareil = _systeme_et_navigateur(agent)
     ligne = {"bdnb_id": bdnb_id, "lon": lon, "lat": lat,
              "pays": _client_country(request), "source": _origine(src),
              # Identifiant de VISITE seulement : il vient du navigateur, vit le
              # temps d'un onglet, et ne rapproche jamais deux visites (#356).
              "visite": (visite or "")[:16] or None,
-             "systeme": systeme, "navigateur": navigateur}
+             "systeme": systeme, "navigateur": navigateur,
+             "type_appareil": type_appareil}
 
     async def _ecrire():
         try:
