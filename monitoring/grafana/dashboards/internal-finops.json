@@ -376,7 +376,8 @@
         "legend": {
           "show": true,
           "displayMode": "list",
-          "placement": "bottom"
+          "placement": "bottom",
+          "calcs": []
         }
       },
       "links": [],
@@ -437,7 +438,20 @@
                 }
               }
             }
-          ]
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "orange"
+          }
         },
         "overrides": [
           {
@@ -569,7 +583,7 @@
       "id": 110,
       "type": "table",
       "title": "Chaque consultation : appareil, provenance, et le bâtiment regardé",
-      "description": "Une ligne par bâtiment consulté. L'adresse est jointe à la BDNB au moment de l'affichage (elle décrit le bâtiment, pas le visiteur) et le lien l'ouvre dans EcoBuilding. Type d'appareil, système et navigateur sont des familles : le modèle n'est jamais conservé (#356).",
+      "description": "Une ligne par bâtiment consulté. L'adresse est jointe à la BDNB au moment de l'affichage (elle décrit le bâtiment, pas le visiteur) et le lien l'ouvre dans EcoBuilding. Type d'appareil, système et navigateur sont des familles : le modèle n'est jamais conservé (#356). Le pays vient de l'adresse IP, transformée en mémoire et jamais conservée ; le réseau est tronqué (dernier nombre retiré).",
       "datasource": {
         "type": "postgres",
         "uid": "vues"
@@ -585,7 +599,7 @@
           "refId": "A",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  v.ts                                             AS \"quand\",\n  coalesce(v.type_appareil, 'inconnu')             AS \"appareil\",\n  coalesce(v.systeme, 'inconnu')                   AS \"système\",\n  coalesce(v.navigateur, 'inconnu')                AS \"navigateur\",\n  coalesce(v.source, 'direct')                     AS \"provenance\",\n  coalesce(a.libelle_adr_principale_ban, v.bdnb_id) AS \"adresse\",\n  'https://ecobuilding.confinia.io/?b=' || v.bdnb_id || '#18/'\n    || v.lat::text || '/' || v.lon::text || '/-30/60' AS url\nFROM vues.vue_batiment v\nLEFT JOIN bdnb_2026_02_a_open_data.batiment_groupe_adresse a\n       ON a.batiment_groupe_id = v.bdnb_id\nWHERE $__timeFilter(v.ts)\n  AND v.bdnb_id <> 'bdnb-bg-RPKN-5A8C-L5QV'\nORDER BY v.ts DESC\nLIMIT 300",
+          "rawSql": "SELECT\n  v.ts                                             AS \"quand\",\n  coalesce(v.type_appareil, 'inconnu')             AS \"appareil\",\n  coalesce(v.systeme, 'inconnu')                   AS \"système\",\n  coalesce(v.navigateur, 'inconnu')                AS \"navigateur\",\n  coalesce(v.source, 'direct')                     AS \"provenance\",\n  coalesce(v.pays, '?')                            AS \"pays\",\n  coalesce(v.reseau, 'inconnu')                    AS \"réseau\",\n  coalesce(a.libelle_adr_principale_ban, v.bdnb_id) AS \"adresse\",\n  'https://ecobuilding.confinia.io/?b=' || v.bdnb_id || '#18/'\n    || v.lat::text || '/' || v.lon::text || '/-30/60' AS url\nFROM vues.vue_batiment v\nLEFT JOIN bdnb_2026_02_a_open_data.batiment_groupe_adresse a\n       ON a.batiment_groupe_id = v.bdnb_id\nWHERE $__timeFilter(v.ts)\n  AND v.bdnb_id <> 'bdnb-bg-RPKN-5A8C-L5QV'\nORDER BY v.ts DESC\nLIMIT 300",
           "datasource": {
             "type": "postgres",
             "uid": "vues"
