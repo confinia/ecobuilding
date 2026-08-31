@@ -290,7 +290,7 @@
       "id": 107,
       "type": "geomap",
       "title": "Où l'on regarde, et combien (bâtiments consultés)",
-      "description": "Un point par bâtiment consulté. Aucune IP, aucun identifiant d'utilisateur : la coordonnée d'un bâtiment est publique, qui la regarde ne l'est pas (#349). Couleur = d'où vient la visite (référent d'atterrissage), jamais qui la fait.",
+      "description": "Un point par bâtiment, portant son nombre de vues. L'infobulle donne l'adresse (cliquable), l'appareil, le système, le navigateur, la provenance du lien et le réseau tronqué. Aucune adresse IP, aucun identifiant de personne : le dernier octet du réseau est retiré (#356).",
       "datasource": {
         "type": "postgres",
         "uid": "vues"
@@ -306,7 +306,7 @@
           "refId": "A",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT max(ts) AS time, lat, lon, bdnb_id,\n       count(*)::int AS vues,\n       mode() WITHIN GROUP (ORDER BY coalesce(source, 'direct')) AS source,\n       -- Le lien est construit ICI, en pleine précision : un lien Grafana\n       -- interpole la valeur AFFICHÉE, donc arrondie, et le marqueur\n       -- tombait à un kilomètre du bâtiment, sur une route.\n       'https://ecobuilding.confinia.io/?b=' || bdnb_id || '#18/'\n         || lat::text || '/' || lon::text || '/-30/60' AS url\nFROM vues.vue_batiment\nWHERE $__timeFilter(ts)\n  AND bdnb_id <> 'bdnb-bg-RPKN-5A8C-L5QV'\nGROUP BY lat, lon, bdnb_id\nORDER BY vues DESC\nLIMIT 5000",
+          "rawSql": "SELECT\n  max(v.ts)                                          AS \"quand\",\n  coalesce(a.libelle_adr_principale_ban, v.bdnb_id)  AS \"adresse\",\n  count(*)::int                                      AS \"vues\",\n  mode() WITHIN GROUP (ORDER BY coalesce(v.type_appareil, 'inconnu')) AS \"appareil\",\n  mode() WITHIN GROUP (ORDER BY coalesce(v.systeme, 'inconnu'))       AS \"système\",\n  mode() WITHIN GROUP (ORDER BY coalesce(v.navigateur, 'inconnu'))    AS \"navigateur\",\n  mode() WITHIN GROUP (ORDER BY coalesce(v.source, 'direct'))         AS source,\n  mode() WITHIN GROUP (ORDER BY coalesce(v.reseau, 'inconnu'))        AS \"réseau\",\n  v.lat, v.lon,\n  'https://ecobuilding.confinia.io/?b=' || v.bdnb_id || '#18/'\n    || v.lat::text || '/' || v.lon::text || '/-30/60' AS url\nFROM vues.vue_batiment v\nLEFT JOIN bdnb_2026_02_a_open_data.batiment_groupe_adresse a\n       ON a.batiment_groupe_id = v.bdnb_id\nWHERE $__timeFilter(v.ts)\n  AND v.bdnb_id <> 'bdnb-bg-RPKN-5A8C-L5QV'\nGROUP BY v.lat, v.lon, v.bdnb_id, a.libelle_adr_principale_ban\nORDER BY count(*) DESC\nLIMIT 5000",
           "datasource": {
             "type": "postgres",
             "uid": "vues"
@@ -382,13 +382,7 @@
       "links": [],
       "fieldConfig": {
         "defaults": {
-          "links": [
-            {
-              "title": "Ouvrir ce bâtiment dans EcoBuilding",
-              "url": "${__data.fields.url}",
-              "targetBlank": true
-            }
-          ],
+          "links": [],
           "mappings": [
             {
               "type": "value",
@@ -445,7 +439,74 @@
             }
           ]
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "adresse"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Ouvrir dans EcoBuilding",
+                    "url": "${__data.fields.url}",
+                    "targetBlank": true
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "lat"
+            },
+            "properties": [
+              {
+                "id": "custom.hideFrom",
+                "value": {
+                  "tooltip": true,
+                  "legend": true,
+                  "viz": false
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "lon"
+            },
+            "properties": [
+              {
+                "id": "custom.hideFrom",
+                "value": {
+                  "tooltip": true,
+                  "legend": true,
+                  "viz": false
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "url"
+            },
+            "properties": [
+              {
+                "id": "custom.hideFrom",
+                "value": {
+                  "tooltip": true,
+                  "legend": true,
+                  "viz": false
+                }
+              }
+            ]
+          }
+        ]
       }
     },
     {

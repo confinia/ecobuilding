@@ -1337,11 +1337,44 @@ def test_le_profil_de_visite_reste_grossier():
     assert f("Mozilla/5.0 (iPad; CPU OS 17_0) Version/17 Safari/605") == ("iOS", "Safari", "tablette")
     assert f("Mozilla/5.0 (Windows NT 10.0; Win64) Chrome/152 Edg/152") == ("Windows", "Edge", "ordinateur")
     assert f("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Safari/605") == ("macOS", "Safari", "ordinateur")
+    assert f("EcoBuilding-iOS/1.0") == ("iOS", "application", "application iOS")
+    assert f("EcoBuilding-Android/1.0") == ("Android", "application", "application Android")
     assert f("curl/8.13.0") == ("autre", "autre", "autre")
     assert f("") == ("autre", "autre", "autre")
     # Le MODÈLE ne doit jamais ressortir : « SM-A226B » reste dans la chaîne
     # brute, qu'on ne conserve pas.
     assert "SM-" not in "".join(f("Mozilla/5.0 (Linux; Android 13; SM-A226B) Chrome/152"))
+
+
+def test_les_outils_ne_comptent_pas_comme_des_visites():
+    """#356 : la carte compterait ses propres instruments. Le filtre précédent
+    exigeait « Mozilla », ce qui écartait aussi NOS applications — invisibles
+    alors qu'on cherche justement à mesurer leur usage."""
+    from app.main import _est_un_outil
+
+    assert _est_un_outil("curl/8.13.0")
+    assert _est_un_outil("Blackbox-Exporter/0.28.0")
+    assert _est_un_outil("ecobuilding-smoke/1.0")
+    assert _est_un_outil("Slack-ImgProxy (+https://api.slack.com/robots)")
+    assert _est_un_outil("")
+    assert not _est_un_outil("Mozilla/5.0 (Windows NT 10.0) Chrome/152")
+    assert not _est_un_outil("EcoBuilding-iOS/1.0")
+    assert not _est_un_outil("EcoBuilding-Android/1.0")
+
+
+def test_le_reseau_est_tronque():
+    """#356 : de quoi distinguer deux sources, jamais de quoi viser un abonné."""
+    from types import SimpleNamespace
+
+    from app.main import _reseau
+
+    def req(ip):
+        return SimpleNamespace(headers={"x-forwarded-for": ip})
+
+    assert _reseau(req("203.0.113.42")) == "203.0.113.x"
+    assert _reseau(req("203.0.113.42, 10.0.0.1")) == "203.0.113.x"
+    assert _reseau(req("2001:db8:85a3:8d3:1319:8a2e:370:7348")) == "2001:db8:85a3:8d3::"
+    assert _reseau(req("")) is None
 
 
 def test_le_chronometre_mesure_meme_l_echec():

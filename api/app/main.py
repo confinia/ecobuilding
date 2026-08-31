@@ -70,6 +70,35 @@ ORIGINES_CONNUES = {
 }
 
 
+def _reseau(request) -> str | None:
+    """Le RÉSEAU d'où vient la visite, jamais l'adresse (#356).
+
+    Le dernier octet est retiré (203.0.113.x) : cela distingue une box d'un
+    hébergeur, et notre propre connexion d'un visiteur, sans jamais désigner
+    un abonné. C'est la troncature retenue partout pour la mesure d'audience.
+    """
+    ip = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
+    if not ip:
+        return None
+    if ":" in ip:                       # IPv6 : on garde le préfixe /64
+        return ":".join(ip.split(":")[:4]) + "::"
+    morceaux = ip.split(".")
+    return ".".join(morceaux[:3]) + ".x" if len(morceaux) == 4 else None
+
+
+# Ce qui n'est pas une visite : nos propres sondes, les outils, les robots.
+# Tout le reste est compté — y compris nos applications, qu'un filtre exigeant
+# « Mozilla » écartait en silence alors qu'on cherche justement à les mesurer.
+OUTILS = ("curl/", "wget/", "python-requests", "blackbox-exporter",
+          "ecobuilding-smoke", "bot", "spider", "crawler", "slack-imgproxy",
+          "headlesschrome", "postman")
+
+
+def _est_un_outil(agent: str) -> bool:
+    a = (agent or "").lower()
+    return not a or any(t in a for t in OUTILS)
+
+
 def _systeme_et_navigateur(agent: str) -> tuple[str, str]:
     """Familles de système et de navigateur, grossières et BORNÉES (#356).
 
@@ -91,6 +120,10 @@ def _systeme_et_navigateur(agent: str) -> tuple[str, str]:
                   "Chrome" if "Chrome" in a or "CriOS" in a else
                   "Firefox" if "Firefox" in a else
                   "Safari" if "Safari" in a else "autre")
+    if "EcoBuilding-iOS" in a:
+        return "iOS", "application", "application iOS"
+    if "EcoBuilding-Android" in a:
+        return "Android", "application", "application Android"
     type_appareil = ("tablette" if ("iPad" in a or "Tablet" in a) else
                      "téléphone" if ("Mobi" in a or "iPhone" in a or "Android" in a) else
                      "ordinateur" if systeme in ("Windows", "macOS", "Linux") else "autre")
@@ -1505,7 +1538,7 @@ def _noter_la_vue(bdnb_id, lon, lat, request, src=None, visite=None):
     # ses utilisateurs. La sonde de fumée, les scripts e2e et curl s'annoncent
     # honnêtement ; ils ne sont donc pas comptés.
     agent = request.headers.get("user-agent") or ""
-    if "Mozilla" not in agent:
+    if _est_un_outil(agent):
         return
     systeme, navigateur, type_appareil = _systeme_et_navigateur(agent)
     ligne = {"bdnb_id": bdnb_id, "lon": lon, "lat": lat,
@@ -1514,7 +1547,7 @@ def _noter_la_vue(bdnb_id, lon, lat, request, src=None, visite=None):
              # temps d'un onglet, et ne rapproche jamais deux visites (#356).
              "visite": (visite or "")[:16] or None,
              "systeme": systeme, "navigateur": navigateur,
-             "type_appareil": type_appareil}
+             "type_appareil": type_appareil, "reseau": _reseau(request)}
 
     async def _ecrire():
         try:
