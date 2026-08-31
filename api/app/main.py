@@ -1437,8 +1437,12 @@ def _noter_la_vue(bdnb_id, lon, lat, request):
 
     async def _ecrire():
         try:
+            # Content-Profile : PostgREST sert PLUSIEURS schémas (dvf, vues) et
+            # ne vise le second que si on le nomme — sans cet en-tête il
+            # répond 404 et l'écriture se perdait en silence (vérifié).
             await _client.post(VUES_URL, json=ligne, timeout=3.0,
-                               headers={"Prefer": "return=minimal"})
+                               headers={"Prefer": "return=minimal",
+                                        "Content-Profile": "vues"})
         except Exception:
             pass                      # cosmétique : jamais au prix d'une réponse
 
