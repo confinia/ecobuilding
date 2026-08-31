@@ -436,6 +436,10 @@
                 "autre": {
                   "color": "text",
                   "index": 10
+                },
+                "interne": {
+                  "color": "text",
+                  "index": 11
                 }
               }
             }

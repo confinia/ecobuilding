@@ -61,6 +61,12 @@ ORIGINES_CONNUES = {
     "web.whatsapp.com": "whatsapp", "whatsapp": "whatsapp",
     "mail.google.com": "email", "outlook.com": "email",
     "georezo.net": "georezo", "ecobuilding.confinia.io": "direct",
+    # Nos propres écrans : un clic depuis le tableau de bord n'est pas du
+    # trafic, et se comptait comme « autre » — l'étiquette réservée aux
+    # provenances inconnues, qu'il ne faut pas encombrer.
+    "grafana.ecobuilding.confinia.io": "interne",
+    "staging.ecobuilding.confinia.io": "interne",
+    "sandbox.ecobuilding.confinia.io": "interne",
 }
 
 
