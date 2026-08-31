@@ -1621,6 +1621,10 @@ async def building_stream(
 
     if request is not None:
         _meter_if_keyed(request, "buildings")
+        # C'est CE chemin que l'application web emprunte : ne consigner que
+        # /v1/buildings laissait la carte aveugle à ses vrais utilisateurs —
+        # le visiteur de Nantes n'y figurait pas, mes propres curl si (#349).
+        _noter_la_vue(bdnb_id, lon, lat, request)
     return StreamingResponse(_building_events(bdnb_id, lon, lat),
                              media_type="application/x-ndjson",
                              headers={"Cache-Control": "no-store",
