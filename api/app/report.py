@@ -552,14 +552,17 @@ def _groundwater_html(gw: dict) -> str:
 
 def build_report_pdf(data: dict, photos: list | None = None, map_img: str | None = None,
                      aerial_img: str | None = None, aerial_parcels: str | None = None,
-                     aerial_outline: str | None = None) -> bytes:
+                     aerial_outline: str | None = None,
+                     quartier_img: str | None = None) -> bytes:
     return HTML(string=_report_html(data, photos, map_img, aerial_img,
-                                    aerial_parcels, aerial_outline)).write_pdf()
+                                    aerial_parcels, aerial_outline,
+                                    quartier_img)).write_pdf()
 
 
 def _report_html(data: dict, photos: list | None = None, map_img: str | None = None,
                  aerial_img: str | None = None, aerial_parcels: str | None = None,
-                 aerial_outline: str | None = None) -> str:
+                 aerial_outline: str | None = None,
+                 quartier_img: str | None = None) -> str:
     b = (data.get("buildings") or [{}])[0]
     e = b.get("energy") or {}
     ban = e.get("rental_ban") or {}
@@ -758,6 +761,11 @@ def _report_html(data: dict, photos: list | None = None, map_img: str | None = N
 {_prices_html(data.get("prices"), fiche_logement=bool(cible))}
 {_local_taxes_html(data.get("local_taxes") or {})}
 {_schools_html(data.get("schools") or {})}
+{f"""<img src="{quartier_img}" style="width:100%;border-radius:4pt;margin:4pt 0"
+     alt="Carte du quartier : le bâtiment et les écoles" />
+<p class="meta">Le bâtiment épinglé en vert, les écoles nommées sur la carte.
+La liste disait combien ; la carte dit lesquelles, et où — proximité,
+jamais sectorisation (#324).</p>""" if quartier_img else ""}
 {_commune_html(data.get("commune") or {})}
 
 <footer>

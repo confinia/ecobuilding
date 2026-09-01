@@ -21,6 +21,11 @@ const q = new URLSearchParams(location.search);
 const lon = +q.get('lon'), lat = +q.get('lat');
 const zoom = +(q.get('zoom') || 18), pitch = +(q.get('pitch') || 60),
       bearing = +(q.get('bearing') || -25), bid = q.get('bdnb_id') || '';
+// Points d'intérêt à ÉTIQUETER (#324) : ?points=[{lon,lat,label}] en JSON.
+// Écoles aujourd'hui ; le paramètre est générique pour les commodités de
+// demain (commerces, transports) — le rendu ne connaît que des lieux nommés.
+let points = [];
+try { points = JSON.parse(q.get('points') || '[]').slice(0, 40); } catch {}
 const DPE = ["match", ["get", "classe_bilan_dpe"],
   "A", "#009036", "B", "#52b153", "C", "#a5cc74", "D", "#f4e70f",
   "E", "#f0b40f", "F", "#eb8235", "G", "#d7221f", "#d5cdc0"];
@@ -79,6 +84,21 @@ map.on('load', () => {
     // Pin identifying the target building (issue #113): its tip sits on the
     // footprint centroid, so the printed 3D map clearly points at the building.
     new maplibregl.Marker({ color: '#2b7a4b' }).setLngLat(center || [lon, lat]).addTo(map);
+    // Les points d'intérêt : une pastille et son nom, en HTML — les couches
+    // symbol exigeraient un glyphe et une police, un Marker non.
+    for (const pt of points) {
+      if (pt.lon == null || pt.lat == null) continue;
+      const el = document.createElement('div');
+      el.style.cssText = 'display:flex;align-items:center;gap:5px;font:600 13px sans-serif;';
+      el.innerHTML = '<span style="width:13px;height:13px;border-radius:50%;' +
+        'background:#1a5fb4;border:2.5px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.45)"></span>' +
+        '<span style="background:rgba(255,255,255,.92);padding:2px 7px;border-radius:4px;' +
+        'box-shadow:0 1px 2px rgba(0,0,0,.25);white-space:nowrap;max-width:230px;' +
+        'overflow:hidden;text-overflow:ellipsis">' +
+        String(pt.label || '').slice(0, 44).replace(/[<>&]/g, '') + '</span>';
+      new maplibregl.Marker({ element: el, anchor: 'left' })
+        .setLngLat([pt.lon, pt.lat]).addTo(map);
+    }
     if (center) {
       map.setCenter(center);   // building footprint -> container centre
       map.once('idle', () => { window.__ready = true; });
