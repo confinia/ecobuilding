@@ -31,8 +31,14 @@ html, body { margin: 0; height: 100%; font-family: system-ui, -apple-system, san
   overflow-y: auto; background: #fff; border-radius: 12px;
   box-shadow: 0 4px 18px rgba(0,0,0,.25); padding: 14px 16px;
 }
-#close { position: absolute; top: 6px; right: 10px; border: 0; background: none; font-size: 20px; cursor: pointer; color: #666; }
-#panel h2 { font-size: 15px; margin: 2px 0 10px; padding-right: 20px; }
+/* 44 px : la cible tactile minimale d'Apple. À 20 px, fermer la fiche au
+   pouce relevait de l'adresse — relevé sur iPhone X (#368). */
+#close {
+  position: absolute; top: 0; right: 0; width: 44px; height: 44px;
+  border: 0; background: none; font-size: 26px; line-height: 44px;
+  padding: 0; cursor: pointer; color: #666;
+}
+#panel h2 { font-size: 15px; margin: 2px 0 10px; padding-right: 36px; }
 #panel h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: #777; margin: 14px 0 6px; }
 /* `gap` : sans lui, une valeur longue qui passe à la ligne se collait à son
    étiquette — « Isolationenveloppe insuffisante », relevé en production. */
@@ -171,3 +177,29 @@ ul.keys li { padding: 4px 0; border-bottom: 1px dashed #eee; }
 /* Le logement dont le détail suit : repéré pour que le tableau et la section
    d'en dessous ne se lisent pas comme deux choses sans rapport (#288). */
 h4.sub { margin: 10px 0 2px; font-size: 13px; color: #2b7a4b; }
+
+/* Barre basse de Safari et encoche : les contrôles de la carte (zoom, GPS,
+   3D) vivaient sous la barre — le bouton de géolocalisation semblait
+   simplement absent (#367, #368). */
+.maplibregl-ctrl-bottom-right, .maplibregl-ctrl-bottom-left {
+  margin-bottom: env(safe-area-inset-bottom, 0px);
+}
+#legend { bottom: calc(28px + env(safe-area-inset-bottom, 0px)); }
+
+/* Petits écrans (#368). Le bandeau prenait un tiers de l'écran d'un iPhone X :
+   la recherche passe seule en seconde ligne, les liens secondaires (API, Aide)
+   s'effacent — ils restent joignables depuis les pages « à propos »/Offres. */
+@media (max-width: 640px) {
+  #topbar { flex-wrap: wrap; gap: 6px 8px; padding: 8px 10px; }
+  #brand { font-size: 15px; }
+  #apilink, #helplink { display: none; }
+  #offerlink, #auth-area a { font-size: 12px; padding: 5px 8px; }
+  #searchbox { order: 9; flex-basis: 100%; max-width: none; }
+  /* La fiche en volet bas, comme dans l'app : ancrée à 64 px du haut, elle
+     passait DERRIÈRE le bandeau devenu plus haut. */
+  #panel {
+    top: auto; bottom: 0; left: 0; right: 0; width: auto; max-width: none;
+    max-height: 60vh; border-radius: 12px 12px 0 0;
+    padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  }
+}
