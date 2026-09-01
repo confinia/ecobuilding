@@ -2,7 +2,9 @@
 <html lang="fr">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- viewport-fit=cover : sans lui, env(safe-area-inset-*) vaut 0 sur iPhone
+       et la barre basse de Safari recouvre les boutons de la carte (#368). -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>EcoBuilding — la carte d'identité écologique de chaque bâtiment</title>
   <meta name="description" content="DPE, interdiction de location, risques naturels, nappe phréatique, solaire, prix DVF : toutes les données ouvertes d'un bâtiment français, en 3D.">
   <!-- Brand + social cards (#169): shares render as a proper card, not a bare link. -->
