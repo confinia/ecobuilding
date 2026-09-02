@@ -151,6 +151,9 @@ def _origine(brute: str | None) -> str:
 # the render service is wired; when set, the report shows the rendered building.
 RENDER_URL = os.environ.get("RENDER_URL", "")
 GEORISQUES_URL = "https://georisques.gouv.fr/api/v1/resultats_rapport_risque"
+# PLU zone of the parcel (#376): Géoportail de l'Urbanisme (GPU) via the IGN
+# Géoplateforme WFS. Keyless, Licence Ouverte.
+GPU_WFS_URL = "https://data.geopf.fr/wfs/ows"
 # Groundwater (#119): Hub'Eau piezometry (ADES/BRGM) — nearest active station's
 # water-table depth. Keyless, Licence Ouverte.
 HUBEAU_STATIONS_URL = "https://hubeau.eaufrance.fr/api/v1/niveaux_nappes/stations"
@@ -984,6 +987,69 @@ async def _area_risks(lon, lat):
         return None
 
 
+def _point_in_ring(x, y, ring) -> bool:
+    """Ray-casting: is point (x, y) inside the polygon `ring` (list of [x, y])?"""
+    inside = False
+    n = len(ring)
+    j = n - 1
+    for i in range(n):
+        xi, yi = ring[i][0], ring[i][1]
+        xj, yj = ring[j][0], ring[j][1]
+        if ((yi > y) != (yj > y)) and \
+                (x < (xj - xi) * (y - yi) / (yj - yi) + xi):
+            inside = not inside
+        j = i
+    return inside
+
+
+def _point_in_geometry(x, y, geom) -> bool:
+    """Point-in-polygon against a GeoJSON Polygon or MultiPolygon, testing only
+    the exterior ring (coords[0]) of each part."""
+    if not geom:
+        return False
+    t = geom.get("type")
+    coords = geom.get("coordinates") or []
+    if t == "Polygon":
+        return bool(coords) and _point_in_ring(x, y, coords[0])
+    if t == "MultiPolygon":
+        return any(poly and _point_in_ring(x, y, poly[0]) for poly in coords)
+    return False
+
+
+async def _plu_zone(lon, lat):
+    """PLU zone of the parcel (#376): Géoportail de l'Urbanisme (GPU) via the
+    IGN Géoplateforme WFS. The bbox around the point returns the zone AND its
+    neighbours, so we keep the one polygon that actually contains the point.
+    None on any failure or when no digitised PLU covers the point — a parcel
+    without a digitised plan simply carries no urbanisme block (never a
+    "no constraint" claim)."""
+    if lon is None or lat is None:
+        return None
+    try:
+        lon = round(lon, 5)
+        lat = round(lat, 5)
+        d = 0.0008
+        gj = await _cached_get_json(GPU_WFS_URL, {
+            "SERVICE": "WFS", "VERSION": "2.0.0", "REQUEST": "GetFeature",
+            "TYPENAMES": "wfs_du:zone_urba", "SRSNAME": "EPSG:4326",
+            "OUTPUTFORMAT": "application/json", "COUNT": "50",
+            # WFS 2.0 default axis order for EPSG:4326 is lat,lon: bbox is lat first.
+            "BBOX": f"{lat - d},{lon - d},{lat + d},{lon + d}"}, ttl=86400)
+        for feat in (gj.get("features") or []):
+            if _point_in_geometry(lon, lat, feat.get("geometry")):
+                p = feat.get("properties") or {}
+                return {
+                    "libelle": p.get("libelle"),
+                    "libelong": p.get("libelong"),
+                    "typezone": p.get("typezone"),
+                    "partition": p.get("partition"),
+                }
+        return None
+    except Exception as e:
+        log.warning("Géoportail de l'Urbanisme unavailable for %s,%s: %s", lon, lat, e)
+        return None
+
+
 def _haversine_m(lon1, lat1, lon2, lat2) -> float:
     r = 6371000.0
     p1, p2 = math.radians(lat1), math.radians(lat2)
@@ -1143,11 +1209,11 @@ async def _do_lookup(q, ban_id, address, lon, lat):
     # Aucun bâtiment BDNB à cette adresse : on sert quand même le contexte
     # (risques, nappe, solaire…), qui ne dépend que du point.
     (risks, groundwater, solar_pv, water_network, official_dpe,
-     local_taxes, schools, commune_hist) = await asyncio.gather(
+     local_taxes, schools, commune_hist, urbanisme) = await asyncio.gather(
         _area_risks(lon, lat), _groundwater(lon, lat), _solar_pv(lon, lat),
         _water_network(commune), _noop(),
         _local_taxes(commune), _nearby_schools(lon, lat),
-        _commune_history(commune, lon, lat))
+        _commune_history(commune, lon, lat), _plu_zone(lon, lat))
 
     M_LOOKUPS.add(1, {"status": "no_building"})
     sources = [
@@ -1167,6 +1233,8 @@ async def _do_lookup(q, ban_id, address, lon, lat):
         sources.append("DGFiP — Fiscalité directe locale — Licence Ouverte")
     if schools:
         sources.append("Annuaire de l'éducation (MENJ) — Licence Ouverte")
+    if urbanisme:
+        sources.append("Géoportail de l'Urbanisme (GPU) — Licence Ouverte")
     market_dia = _dia_market(lon, lat, commune)
     if market_dia:
         sources.append("DIA — Montpellier Méditerranée Métropole — Open Data")
@@ -1183,6 +1251,7 @@ async def _do_lookup(q, ban_id, address, lon, lat):
         "local_taxes": local_taxes,
         "schools": schools,
         "commune": commune_hist,
+        "urbanisme": urbanisme,
         "sources": sources,
         "no_building": _motif_sans_batiment(ban_id),
     }
@@ -1278,7 +1347,7 @@ async def lookup_stream(
             # que les risques de la zone étaient déjà en main.
             for nom in ("area_risks", "groundwater", "solar_pv",
                         "water_network", "official_dpe", "local_taxes",
-                        "schools", "commune"):
+                        "schools", "commune", "urbanisme"):
                 yield json.dumps({"type": "block", "name": nom,
                                   "value": data.get(nom)}) + "\n"
             yield json.dumps(dict(data, type="done")) + "\n"
@@ -1654,7 +1723,7 @@ async def building(
 # toutes, le flux (/v1/buildings/{id}/stream) les émet au fil de l'eau.
 _BLOCK_NAMES = ("prices", "area_risks", "groundwater", "solar_pv", "click_addr",
                 "water_network", "official_dpe", "local_taxes", "schools", "rnb",
-                "commune", "dpe_spread")
+                "commune", "dpe_spread", "urbanisme")
 
 
 def _building_block_coros(bdnb_id, lon, lat, row):
@@ -1665,7 +1734,8 @@ def _building_block_coros(bdnb_id, lon, lat, row):
             _water_network(commune), _official_dpe(bdnb_id),
             _local_taxes(commune), _nearby_schools(lon, lat),
             _rnb_lookup(lon, lat), _commune_history(commune, lon, lat, bdnb_id),
-            _dpe_spread(bdnb_id, lon, lat, row.get("nb_log")))
+            _dpe_spread(bdnb_id, lon, lat, row.get("nb_log")),
+            _plu_zone(lon, lat))
 
 
 
@@ -1694,6 +1764,7 @@ def _assemble_building(bdnb_id, lon, lat, row, v):
     local_taxes, schools, rnb = v["local_taxes"], v["schools"], v["rnb"]
     commune_hist = v.get("commune")
     dpe_spread = v.get("dpe_spread")
+    urbanisme = v.get("urbanisme")
     sources = ["BDNB (CSTB) — Licence Ouverte v2.0", "Géorisques — Licence Ouverte"]
     if prices:
         sources.append("DVF (DGFiP) / Etalab — Licence Ouverte")
@@ -1709,6 +1780,8 @@ def _assemble_building(bdnb_id, lon, lat, row, v):
         sources.append("DGFiP — Fiscalité directe locale — Licence Ouverte")
     if schools:
         sources.append("Annuaire de l'éducation (MENJ) — Licence Ouverte")
+    if urbanisme:
+        sources.append("Géoportail de l'Urbanisme (GPU) — Licence Ouverte")
     market_dia = _dia_market(lon, lat, row.get("code_commune_insee"))
     if rnb:
         sources.append("Référentiel National des Bâtiments (RNB) — Licence Ouverte")
@@ -1735,6 +1808,7 @@ def _assemble_building(bdnb_id, lon, lat, row, v):
         "prices": prices,
         "commune": commune_hist,
         "dpe_spread": dpe_spread,
+        "urbanisme": urbanisme,
         "sources": sources,
     }
     return result
@@ -1809,7 +1883,7 @@ async def _building_events(bdnb_id, lon, lat, query_extra=None, extra_rows=()):
                           "buildings": done["buildings"] + list(extra_rows)}) + "\n"
         for name in ("area_risks", "groundwater", "solar_pv", "water_network",
                      "official_dpe", "local_taxes", "schools", "prices", "rnb",
-                     "commune", "dpe_spread"):
+                     "commune", "dpe_spread", "urbanisme"):
             yield json.dumps({"type": "block", "name": name,
                               "value": done.get(name)}) + "\n"
         yield json.dumps({"type": "done", "sources": done["sources"],
