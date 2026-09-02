@@ -35,6 +35,27 @@ services:
       GF_SERVER_SERVE_FROM_SUB_PATH: "false"
       GF_USERS_ALLOW_SIGN_UP: "false"
       GF_ANALYTICS_REPORTING_ENABLED: "false"
+      # Passwordless login via Keycloak (#372): the operator signs in with a
+      # passkey (Face ID / Touch ID) on iam., never a Grafana password. The
+      # local admin (GF_SECURITY_ADMIN_PASSWORD) stays as break-glass. All keys
+      # optional-substituted: if GRAFANA_OAUTH_SECRET is unset (fresh clone),
+      # the block is inert and Grafana keeps its password login.
+      GF_AUTH_GENERIC_OAUTH_ENABLED: "${GRAFANA_OAUTH_SECRET:+true}"
+      GF_AUTH_GENERIC_OAUTH_NAME: "Confinia (passkey)"
+      GF_AUTH_GENERIC_OAUTH_CLIENT_ID: "grafana"
+      GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET: "${GRAFANA_OAUTH_SECRET:-}"
+      GF_AUTH_GENERIC_OAUTH_SCOPES: "openid email profile roles"
+      GF_AUTH_GENERIC_OAUTH_AUTH_URL: "https://iam.ecobuilding.confinia.io/auth/realms/confinia/protocol/openid-connect/auth"
+      GF_AUTH_GENERIC_OAUTH_TOKEN_URL: "https://iam.ecobuilding.confinia.io/auth/realms/confinia/protocol/openid-connect/token"
+      GF_AUTH_GENERIC_OAUTH_API_URL: "https://iam.ecobuilding.confinia.io/auth/realms/confinia/protocol/openid-connect/userinfo"
+      # Admin only for holders of the grafana-admin realm role; everyone else
+      # who could authenticate gets nothing (no auto-Viewer for SaaS users who
+      # share this realm). role_attribute_strict makes the absence a denial.
+      GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH: "contains(realm_access.roles[*], 'grafana-admin') && 'Admin' || 'None'"
+      GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_STRICT: "true"
+      GF_AUTH_GENERIC_OAUTH_ALLOW_ASSIGN_GRAFANA_ADMIN: "true"
+      # No account auto-provisions itself into an org with a role it shouldn't.
+      GF_AUTH_OAUTH_ALLOW_INSECURE_EMAIL_LOOKUP: "false"
       # Ops alert emails (#128) as code: SMTP_* come from deploy/secrets.env,
       # exported by deploy.sh (set -a) so compose substitutes them here. The
       # contact point/policy/rules are file-provisioned (provisioning/alerting).
