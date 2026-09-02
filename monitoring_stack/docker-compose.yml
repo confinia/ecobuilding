@@ -37,10 +37,11 @@ services:
       GF_ANALYTICS_REPORTING_ENABLED: "false"
       # Passwordless login via Keycloak (#372): the operator signs in with a
       # passkey (Face ID / Touch ID) on iam., never a Grafana password. The
-      # local admin (GF_SECURITY_ADMIN_PASSWORD) stays as break-glass. All keys
-      # optional-substituted: if GRAFANA_OAUTH_SECRET is unset (fresh clone),
-      # the block is inert and Grafana keeps its password login.
-      GF_AUTH_GENERIC_OAUTH_ENABLED: "${GRAFANA_OAUTH_SECRET:+true}"
+      # local admin (GF_SECURITY_ADMIN_PASSWORD) stays as break-glass. Off by
+      # default: set GRAFANA_OAUTH_ENABLED=true in secrets.env to turn it on
+      # (a fresh clone keeps password login). NB podman-compose supports
+      # ${VAR:-default} but NOT ${VAR:+word}, so the gate is an explicit flag.
+      GF_AUTH_GENERIC_OAUTH_ENABLED: "${GRAFANA_OAUTH_ENABLED:-false}"
       GF_AUTH_GENERIC_OAUTH_NAME: "Confinia (passkey)"
       GF_AUTH_GENERIC_OAUTH_CLIENT_ID: "grafana"
       GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET: "${GRAFANA_OAUTH_SECRET:-}"
