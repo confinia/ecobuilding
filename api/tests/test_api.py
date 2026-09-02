@@ -528,6 +528,18 @@ def test_report_titles_with_searched_address_and_keeps_principal():
     assert "adresse principale" not in html2
 
 
+def test_report_english():
+    """#370: lang="en" renders the fiche in English; the default stays French,
+    byte-identical (the French template string IS the translation key)."""
+    from app.report import _report_html
+    en = _report_html(BUILDING_FIXTURE, lang="en")
+    assert "Year built" in en and "Risks identified in the area" in en
+    assert "Rental banned from <strong>2028</strong>" in en
+    assert "Année de construction" not in en
+    fr = _report_html(BUILDING_FIXTURE)
+    assert "Année de construction" in fr and "Year built" not in fr
+
+
 def test_report_endpoint_accepts_searched_address(monkeypatch):
     async def fake_upstream(url, params, ttl):
         if "api-adresse" in url:

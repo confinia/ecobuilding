@@ -3490,6 +3490,9 @@ async def report(
         "Numéro de DPE d'un logement précis (#311) : la fiche cible alors CE "
         "diagnostic — sa classe seule sur les échelles, son interdiction de "
         "location — et le bâtiment devient le contexte.")),
+    lang: str = Query("fr", pattern="^(fr|en)$", description=(
+        "Language of the document (#370): 'fr' (default) or 'en'. The mobile "
+        "apps send their active UI language so the fiche matches the screen.")),
 ):
     """Normalized one-page PDF fiche of a building (free during beta).
 
@@ -3522,7 +3525,7 @@ async def report(
     # sont deux documents différents.
     pdf_key = hashlib.sha256(
         f"{bdnb_id}|{address or ''}|{round(lon, 4) if lon else ''}|"
-        f"{round(lat, 4) if lat else ''}|{dpe or ''}".encode()).hexdigest()[:24]
+        f"{round(lat, 4) if lat else ''}|{dpe or ''}|{lang}".encode()).hexdigest()[:24]
     pdf_path = os.path.join(PDF_CACHE_DIR, pdf_key + ".pdf")
     cached = _tile_read(pdf_path, PDF_CACHE_TTL)
     if cached:
@@ -3600,7 +3603,7 @@ async def report(
                                aerial_img=aerial.get("image"),
                                aerial_parcels=aerial.get("parcels"),
                                aerial_outline=aerial.get("outline"),
-                               quartier_img=quartier)
+                               quartier_img=quartier, lang=lang)
     with _chrono("cache_write"):
         _tile_write(pdf_path, pdf)      # même écriture atomique que les tuiles
     nom = _nom_de_fiche(q.get("address") or (data["buildings"][0] or {}).get("address"),
