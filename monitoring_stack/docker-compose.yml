@@ -46,9 +46,9 @@ services:
       GF_AUTH_GENERIC_OAUTH_CLIENT_ID: "grafana"
       GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET: "${GRAFANA_OAUTH_SECRET:-}"
       GF_AUTH_GENERIC_OAUTH_SCOPES: "openid email profile roles"
-      GF_AUTH_GENERIC_OAUTH_AUTH_URL: "https://iam.ecobuilding.confinia.io/auth/realms/confinia/protocol/openid-connect/auth"
-      GF_AUTH_GENERIC_OAUTH_TOKEN_URL: "https://iam.ecobuilding.confinia.io/auth/realms/confinia/protocol/openid-connect/token"
-      GF_AUTH_GENERIC_OAUTH_API_URL: "https://iam.ecobuilding.confinia.io/auth/realms/confinia/protocol/openid-connect/userinfo"
+      GF_AUTH_GENERIC_OAUTH_AUTH_URL: "https://ecobuilding.confinia.io/auth/realms/confinia/protocol/openid-connect/auth"
+      GF_AUTH_GENERIC_OAUTH_TOKEN_URL: "https://ecobuilding.confinia.io/auth/realms/confinia/protocol/openid-connect/token"
+      GF_AUTH_GENERIC_OAUTH_API_URL: "https://ecobuilding.confinia.io/auth/realms/confinia/protocol/openid-connect/userinfo"
       # Admin only for holders of the grafana-admin realm role; everyone else
       # who could authenticate gets nothing (no auto-Viewer for SaaS users who
       # share this realm). role_attribute_strict makes the absence a denial.
