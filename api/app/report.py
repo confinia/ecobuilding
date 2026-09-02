@@ -596,6 +596,49 @@ def _groundwater_html(gw: dict) -> str:
 <p class="meta">{gw.get("note") or ""} {gw.get("well_regulation") or ""}</p>"""
 
 
+_TYPEZONE_LABELS = {
+    "U": "Zone urbaine", "AU": "Zone à urbaniser",
+    "A": "Zone agricole", "N": "Zone naturelle",
+}
+
+
+def _urbanisme_html(data: dict) -> str:
+    """Urbanisme section (#376): the parcel's PLU zone (Géoportail de l'Urbanisme),
+    and — as an interim flood pointer (#377) — a note when Géorisques reports an
+    inondation risk. Both parts reuse data already in the record, no re-fetch.
+
+    Coverage honesty: the PLU part renders ONLY when a digitised zone is present;
+    a parcel without one shows nothing, never a "no constraint" statement."""
+    plu = data.get("urbanisme") or {}
+    risks = data.get("area_risks") or {}
+    parts = []
+    if plu.get("libelle") or plu.get("typezone"):
+        cat = _TYPEZONE_LABELS.get(plu.get("typezone"))
+        cat_txt = T(cat) if cat else None
+        libelle = plu.get("libelle")
+        zone_val = f"<strong>{libelle}</strong>" if libelle else None
+        note = T("Zonage issu du plan local d'urbanisme (Géoportail de l'Urbanisme, GPU). "
+                 "Document de référence : {ref}. À recouper avec le règlement écrit de la zone.").format(
+                     ref=plu.get("partition") or "—")
+        verify = T("Vérifier sur le Géoportail de l'Urbanisme")
+        parts.append(f"""
+<h2>{T("Urbanisme (PLU)")}</h2>
+<table>
+  {_row(plu.get('libelong') or T("Zone du PLU"), zone_val)}
+  {_row(T("Catégorie"), cat_txt)}
+</table>
+<p class="meta">{note} <a href="https://www.geoportail-urbanisme.gouv.fr/">{verify}</a></p>""")
+    flood = any("inondation" in str(r).lower()
+                for r in (risks.get("risques_naturels") or []))
+    if flood:
+        line = T("Parcelle en zone inondable (source Géorisques). La couleur réglementaire "
+                 "du PPRI (zone bleue / rouge) n'est pas disponible ici : consulter le PPRI "
+                 "de la commune.")
+        parts.append(f'<p class="meta">{line} '
+                     f'<a href="https://www.georisques.gouv.fr/">{T("Géorisques")}</a></p>')
+    return "".join(parts)
+
+
 def build_report_pdf(data: dict, photos: list | None = None, map_img: str | None = None,
                      aerial_img: str | None = None, aerial_parcels: str | None = None,
                      aerial_outline: str | None = None,
@@ -839,6 +882,7 @@ def _report_html(data: dict, photos: list | None = None, map_img: str | None = N
   {_row(T("Rapport Géorisques"), risks.get("report_url"))}
 </table>
 
+{_urbanisme_html(data)}
 {_groundwater_html(gw)}
 {_water_network_html(data.get("water_network") or {})}
 
@@ -1257,6 +1301,26 @@ _EN = {
     "Retrait-gonflement des argiles": "Clay shrink-swell",
     "Risques recensés dans la zone": "Risks identified in the area",
     "Rapport Géorisques": "Géorisques report",
+    # — Urbanisme (PLU), issue #376
+    "Urbanisme (PLU)": "Zoning (local plan)",
+    "Zone du PLU": "Local-plan zone",
+    "Catégorie": "Category",
+    "Zone urbaine": "Urban zone",
+    "Zone à urbaniser": "Zone to be urbanised",
+    "Zone agricole": "Agricultural zone",
+    "Zone naturelle": "Natural zone",
+    "Zonage issu du plan local d'urbanisme (Géoportail de l'Urbanisme, GPU). "
+    "Document de référence : {ref}. À recouper avec le règlement écrit de la zone.":
+        "Zoning taken from the local urban plan (Géoportail de l'Urbanisme, GPU). "
+        "Reference document: {ref}. Cross-check against the written zone regulations.",
+    "Vérifier sur le Géoportail de l'Urbanisme":
+        "Check on the Géoportail de l'Urbanisme",
+    "Parcelle en zone inondable (source Géorisques). La couleur réglementaire "
+    "du PPRI (zone bleue / rouge) n'est pas disponible ici : consulter le PPRI "
+    "de la commune.":
+        "Parcel in a flood-prone area (source: Géorisques). The regulatory PPRI "
+        "colour (blue / red zone) is not available here: consult the commune's PPRI.",
+    "Géorisques": "Géorisques",
     "Solaire": "Solar",
     "Favorable au solaire thermique": "Suitable for solar thermal",
     "oui": "yes",

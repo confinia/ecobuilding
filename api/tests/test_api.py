@@ -1574,3 +1574,55 @@ def test_l_echelle_marque_chaque_classe_presente_a_l_adresse():
     # Sans compte : comportement historique, une seule classe active.
     seul = _scale("D", DPE_COLORS, "180")
     assert seul.count('class="bar active"') == 1
+
+
+def test_plu_point_in_polygon():
+    """#376: the ray-casting helper that picks the ONE PLU zone containing the
+    clicked point out of the bbox's neighbours. A unit square, inside vs out."""
+    from app.main import _point_in_ring, _point_in_geometry
+
+    square = [[0, 0], [0, 2], [2, 2], [2, 0], [0, 0]]
+    assert _point_in_ring(1, 1, square) is True
+    assert _point_in_ring(3, 1, square) is False
+    assert _point_in_ring(-1, -1, square) is False
+
+    poly = {"type": "Polygon", "coordinates": [square]}
+    assert _point_in_geometry(1, 1, poly) is True
+    assert _point_in_geometry(5, 5, poly) is False
+    multi = {"type": "MultiPolygon",
+             "coordinates": [[[[10, 10], [10, 12], [12, 12], [12, 10], [10, 10]]],
+                             [square]]}
+    assert _point_in_geometry(1, 1, multi) is True
+    assert _point_in_geometry(11, 11, multi) is True
+    assert _point_in_geometry(50, 50, multi) is False
+    assert _point_in_geometry(1, 1, None) is False
+
+
+def test_report_urbanisme_section():
+    """#376: the Urbanisme (PLU) section renders the zone and cites the GPU when
+    urbanisme is present, stays absent otherwise, and translates in English."""
+    from app.report import _report_html
+
+    urb = {"libelle": "UC 3-4-c",
+           "libelong": "Zone urbaine de continuité",
+           "typezone": "U", "partition": "DU_243400017"}
+    # No flood risk here: isolate the PLU part from the interim flood note.
+    base = {**BUILDING_FIXTURE,
+            "area_risks": {"commune": "Paris", "report_url": "https://example.org",
+                           "risques_naturels": [], "risques_technologiques": []}}
+    with_urb = _report_html({**base, "urbanisme": urb})
+    assert "Urbanisme (PLU)" in with_urb
+    assert "UC 3-4-c" in with_urb and "<strong>UC 3-4-c</strong>" in with_urb
+    assert "Zone urbaine de continuité" in with_urb
+    assert "Zone urbaine" in with_urb            # typezone U mapped
+    assert "Géoportail" in with_urb and "DU_243400017" in with_urb
+
+    # No urbanisme (and no flood) -> section absent entirely.
+    without = _report_html(base)
+    assert "Urbanisme (PLU)" not in without
+    assert "geoportail-urbanisme" not in without
+
+    # English variant translates the section title and the category.
+    en = _report_html({**base, "urbanisme": urb}, lang="en")
+    assert "Zoning (local plan)" in en and "Urban zone" in en
+    assert "Urbanisme (PLU)" not in en
