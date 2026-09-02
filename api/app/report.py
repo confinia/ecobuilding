@@ -3,12 +3,30 @@
 Target user: diagnostiqueurs / pre-sale professionals — a consistent one-page
 document to prepare a visit or a dossier. Usage measured
 via the ecobuilding_reports metric.
+
+Bilingual (#370): every user-visible template string goes through `T()`. The
+French original IS the key — rendering in French returns it untouched
+(byte-identical output), rendering in English looks it up in `_EN` at the end
+of this module. Data values (addresses, materials, dataset names) are never
+translated.
 """
 
+from contextvars import ContextVar
 from datetime import datetime, timezone
 from urllib.parse import quote
 
 from weasyprint import HTML
+
+_LANGUE: ContextVar[str] = ContextVar("langue", default="fr")
+
+
+def T(fr: str) -> str:
+    """The French template string itself, or its English translation when the
+    report is being rendered in English. Unknown keys fall back to French."""
+    if _LANGUE.get() == "en":
+        return _EN.get(fr, fr)
+    return fr
+
 
 # Dataset versions surfaced in the traceability annex (#93). Update on refresh.
 BDNB_MILLESIME = "2026_02 (open data)"
@@ -79,21 +97,21 @@ def _dia_html(m):
         return ""
     vol = f"{m['listings_12m']}"
     if m.get("listings_3m"):
-        vol += f" — dont {m['listings_3m']} au dernier trimestre"
+        vol += T(" — dont {n} au dernier trimestre").format(n=m['listings_3m'])
     price = ""
     if m.get("median_asking_eur"):
         price = f"{m['median_asking_eur']:,} €".replace(",", " ")
         if m.get("median_asking_eur_m2"):
             price += f" ({m['median_asking_eur_m2']:,} €/m²)".replace(",", " ")
+    note = T("Données {d} —\nMontpellier Méditerranée Métropole (Open Data).").format(d=m['updated'])
     return f"""
-<h2>Dynamique du marché (DIA)</h2>
+<h2>{T("Dynamique du marché (DIA)")}</h2>
 <table>
-  {_row("Zone", f"{m['zone']} ({m['scope']})")}
-  {_row("Mises en vente sur 12 mois", vol)}
-  {_row("Prix médian demandé", price or None)}
+  {_row(T("Zone"), f"{m['zone']} ({m['scope']})")}
+  {_row(T("Mises en vente sur 12 mois"), vol)}
+  {_row(T("Prix médian demandé"), price or None)}
 </table>
-<p class="note">{m['note']} Données {m['updated']} —
-Montpellier Méditerranée Métropole (Open Data).</p>
+<p class="note">{m['note']} {note}</p>
 """
 
 
@@ -103,8 +121,9 @@ def _prices_html(p: dict | None, fiche_logement: bool = False) -> str:
     if not p:
         return ""
     if not p.get("available"):
-        return ('<h2>Prix de vente (DVF)</h2><p class="meta">Données de prix indisponibles pour '
-                "ce secteur : la base DVF ne couvre pas l'Alsace-Moselle ni Mayotte.</p>")
+        return ('<h2>' + T("Prix de vente (DVF)") + '</h2><p class="meta">'
+                + T("Données de prix indisponibles pour ce secteur : la base DVF "
+                    "ne couvre pas l'Alsace-Moselle ni Mayotte.") + '</p>')
     med = {t: v for t, v in (p.get("commune_eur_m2") or {}).items() if v.get("median")}
     med_txt = " · ".join(f"{t} {_eur(v['median'])} €/m² (n={v['n']})" for t, v in med.items()) or "—"
     # Une MUTATION groupée (appartement + cave + parking vendus ensemble)
@@ -128,20 +147,26 @@ def _prices_html(p: dict | None, fiche_logement: bool = False) -> str:
                 (s.get("type_local") or "lot").lower()
                 + (f" {round(s['surface_m2'])} m²" if s.get("surface_m2") else "")
                 for s in lots)
-            rows += (f'<tr><td>{date}</td><td>Vente groupée : {desc}</td>'
-                     f'<td>—</td><td>{_eur(valeur)} € <span class="meta">(prix de '
-                     f"l'ensemble)</span></td><td>—</td></tr>")
-    sales_tbl = (f'<table class="sales"><tr><td class="k">Date</td><td class="k">Type</td><td class="k">Surface</td>'
-                 f'<td class="k">Montant</td><td class="k">€/m²</td></tr>{rows}</table>'
-                 if rows else '<p class="meta">Aucune vente récente enregistrée sur la parcelle.</p>')
-    note_logement = ('<p class="meta">Ventes enregistrées sur la PARCELLE — pas '
-                     'nécessairement celles du logement de cette fiche.</p>'
+            rows += (f'<tr><td>{date}</td><td>'
+                     + T("Vente groupée : {desc}").format(desc=desc)
+                     + f'</td><td>—</td><td>{_eur(valeur)} € <span class="meta">'
+                     + T("(prix de l'ensemble)") + '</span></td><td>—</td></tr>')
+    sales_tbl = (f'<table class="sales"><tr><td class="k">{T("Date")}</td><td class="k">{T("Type")}</td><td class="k">{T("Surface")}</td>'
+                 f'<td class="k">{T("Montant")}</td><td class="k">€/m²</td></tr>{rows}</table>'
+                 if rows else '<p class="meta">' + T("Aucune vente récente enregistrée sur la parcelle.") + '</p>')
+    note_logement = ('<p class="meta">'
+                     + T("Ventes enregistrées sur la PARCELLE — pas "
+                         "nécessairement celles du logement de cette fiche.")
+                     + '</p>'
                      if fiche_logement else "")
-    return (f'<h2>Prix de vente (DVF){" — parcelle" if fiche_logement else ""}</h2>'
-            f'{note_logement}'
-            f'<p>Prix médian dans la commune : <strong>{med_txt}</strong></p>{sales_tbl}'
-            f'<p class="meta">€/m² indicatif, calculé sur les ventes d\'un seul local. '
-            f'Transactions réelles enregistrées par la DGFiP.</p>')
+    return ('<h2>' + T("Prix de vente (DVF)")
+            + (T(" — parcelle") if fiche_logement else "") + '</h2>'
+            + note_logement
+            + '<p>' + T("Prix médian dans la commune : <strong>{med}</strong>").format(med=med_txt)
+            + f'</p>{sales_tbl}'
+            + '<p class="meta">'
+            + T("€/m² indicatif, calculé sur les ventes d'un seul local. "
+                "Transactions réelles enregistrées par la DGFiP.") + '</p>')
 
 
 def _prov(source, version, key, date, link_url) -> str:
@@ -149,9 +174,9 @@ def _prov(source, version, key, date, link_url) -> str:
     (never fabricated) — a URL only when we actually have a reproducible one."""
     link = f'<a href="{link_url}">{link_url}</a>' if link_url and link_url != "—" else "—"
     rows = "".join(_row(k, v) for k, v in [
-        ("Source", source), ("Version / licence", version),
-        ("Clé de recherche", key), ("Date de référence", date),
-        ("Vérifier à la source", link)])
+        (T("Source"), source), (T("Version / licence"), version),
+        (T("Clé de recherche"), key), (T("Date de référence"), date),
+        (T("Vérifier à la source"), link)])
     return f'<table class="prov">{rows}</table>' if rows else ""
 
 
@@ -175,25 +200,25 @@ def _traceability_annex(data: dict, photos: list | None) -> str:
     cards = []
     if addr:
         key = addr + (f" · id BAN {q['ban_id']}" if q.get("ban_id") else "")
-        cards.append(("Adresse", _prov(
+        cards.append((T("Adresse"), _prov(
             "Base Adresse Nationale (BAN)", "Licence Ouverte",
-            key, "Référentiel courant",
+            key, T("Référentiel courant"),
             f"https://api-adresse.data.gouv.fr/search/?q={quote(addr)}")))
     if bdnb_id:
-        cards.append(("Bâtiment, énergie (DPE), solaire", _prov(
+        cards.append((T("Bâtiment, énergie (DPE), solaire"), _prov(
             "BDNB — Base de Données Nationale des Bâtiments (CSTB)",
-            f"Millésime {BDNB_MILLESIME} · Licence Ouverte 2.0",
+            T("Millésime {v} · Licence Ouverte 2.0").format(v=BDNB_MILLESIME),
             f"batiment_groupe_id = {bdnb_id}",
-            ((e.get("dpe_date") or "")[:10] + " (date du DPE)")
-            if e.get("dpe_date") else f"Millésime {BDNB_MILLESIME}",
+            T("{d} (date du DPE)").format(d=(e.get("dpe_date") or "")[:10])
+            if e.get("dpe_date") else T("Millésime {v}").format(v=BDNB_MILLESIME),
             "https://api.bdnb.io/v1/bdnb/donnees/batiment_groupe_complet"
             f"?batiment_groupe_id=eq.{bdnb_id}")))
     if risks.get("report_url") or lon is not None:
         key = ((f"lat/lon = {lat}, {lon}" if lon is not None else "")
-               + (f" · commune INSEE {commune}" if commune else "")) or "—"
-        cards.append(("Risques", _prov(
-            "Géorisques (BRGM / Ministère de la Transition écologique)",
-            "Licence Ouverte", key, f"Consultation du {now}",
+               + (T(" · commune INSEE {c}").format(c=commune) if commune else "")) or "—"
+        cards.append((T("Risques"), _prov(
+            T("Géorisques (BRGM / Ministère de la Transition écologique)"),
+            "Licence Ouverte", key, T("Consultation du {now}").format(now=now),
             risks.get("report_url") or "https://www.georisques.gouv.fr")))
     if prices:
         # Deep-link straight to the property on the official DVF explorer (#98):
@@ -203,16 +228,19 @@ def _traceability_annex(data: dict, photos: list | None) -> str:
                    if (lon is not None and lat is not None) else "https://app.dvf.etalab.gouv.fr")
         if prices.get("available"):
             yrs = sorted(s["date"][:4] for s in (prices.get("sales") or []) if s.get("date"))
-            dref = (f"ventes {yrs[0]}–{yrs[-1]}" if yrs else f"fenêtre {DVF_WINDOW}")
-            cards.append(("Prix (DVF)", _prov(
-                "DVF géolocalisé — Demandes de Valeurs Foncières (DGFiP / Etalab)",
-                f"Fenêtre {DVF_WINDOW} · Licence Ouverte 2.0",
-                f"parcelle cadastrale du bâtiment · commune INSEE {prices.get('commune_code') or '—'}",
+            dref = (T("ventes {a}–{b}").format(a=yrs[0], b=yrs[-1]) if yrs
+                    else T("fenêtre {w}").format(w=DVF_WINDOW))
+            cards.append((T("Prix (DVF)"), _prov(
+                T("DVF géolocalisé — Demandes de Valeurs Foncières (DGFiP / Etalab)"),
+                T("Fenêtre {w} · Licence Ouverte 2.0").format(w=DVF_WINDOW),
+                T("parcelle cadastrale du bâtiment · commune INSEE {c}").format(
+                    c=prices.get('commune_code') or '—'),
                 dref, dvf_url)))
         else:
-            cards.append(("Prix (DVF)", _prov(
-                "DVF (DGFiP / Etalab)", f"Fenêtre {DVF_WINDOW} · Licence Ouverte 2.0",
-                "indisponible : l'Alsace-Moselle et Mayotte ne sont pas couvertes par la DVF",
+            cards.append((T("Prix (DVF)"), _prov(
+                "DVF (DGFiP / Etalab)",
+                T("Fenêtre {w} · Licence Ouverte 2.0").format(w=DVF_WINDOW),
+                T("indisponible : l'Alsace-Moselle et Mayotte ne sont pas couvertes par la DVF"),
                 "—", dvf_url)))
     # Fiche CIBLÉE (#329) : l'annexe trace le diagnostic CHOISI, pas le
     # représentatif — la provenance doit désigner ce que le document montre.
@@ -220,63 +248,71 @@ def _traceability_annex(data: dict, photos: list | None) -> str:
     od = data.get("official_dpe") or {}
     num_dpe = cible.get("numero_dpe") or od.get("dpe_number")
     if num_dpe:
-        cards.append(("DPE officiel", _prov(
-            "Observatoire DPE (ADEME)", "Licence Ouverte",
+        cards.append((T("DPE officiel"), _prov(
+            T("Observatoire DPE (ADEME)"), "Licence Ouverte",
             f"numero_dpe = {num_dpe} "
-            + ("(logement choisi)" if cible else "(logement représentatif BDNB)"),
+            + (T("(logement choisi)") if cible else T("(logement représentatif BDNB)")),
             (cible.get("etabli_le") if cible else od.get("established_on")) or "—",
             "https://data.ademe.fr/data-fair/api/v1/datasets/dpe03existant/lines"
             f"?qs=numero_dpe:%22{num_dpe}%22")))
     lt = data.get("local_taxes") or {}
     if lt.get("property_tax_built_pct") is not None:
-        cards.append(("Fiscalité locale", _prov(
-            "DGFiP — Fiscalité directe locale (data.economie.gouv.fr)",
-            "Licence Ouverte", f"insee_com = {commune or '—'} · exercice {lt.get('year') or '—'}",
-            f"exercice {lt.get('year') or '—'}",
+        cards.append((T("Fiscalité locale"), _prov(
+            T("DGFiP — Fiscalité directe locale (data.economie.gouv.fr)"),
+            "Licence Ouverte",
+            T("insee_com = {c} · exercice {y}").format(c=commune or '—', y=lt.get('year') or '—'),
+            T("exercice {y}").format(y=lt.get('year') or '—'),
             "https://data.economie.gouv.fr/explore/dataset/fiscalite-locale-des-particuliers-geo/")))
     sc = data.get("schools") or {}
     if sc.get("within_2km"):
-        cards.append(("Écoles", _prov(
-            "Annuaire de l'éducation (MENJ)", "Licence Ouverte",
-            f"within_distance 2 km de {lat}, {lon}", "annuaire courant",
+        cards.append((T("Écoles"), _prov(
+            T("Annuaire de l'éducation (MENJ)"), "Licence Ouverte",
+            T("within_distance 2 km de {lat}, {lon}").format(lat=lat, lon=lon),
+            T("annuaire courant"),
             "https://data.education.gouv.fr/explore/dataset/fr-en-annuaire-education/")))
     gw = data.get("groundwater") or {}
     if gw.get("available"):
-        cards.append(("Eau souterraine (nappe)", _prov(
+        cards.append((T("Eau souterraine (nappe)"), _prov(
             "Hub'Eau piézométrie — ADES (BRGM / OFB)", "Licence Ouverte",
-            f"code BSS {gw.get('station_code_bss')} · station à {gw.get('station_distance_m')} m du bâtiment",
-            (gw.get("measured_on") or "—")[:10] + " (dernière mesure)",
+            T("code BSS {c} · station à {d} m du bâtiment").format(
+                c=gw.get('station_code_bss'), d=gw.get('station_distance_m')),
+            T("{d} (dernière mesure)").format(d=(gw.get("measured_on") or "—")[:10]),
             "https://hubeau.eaufrance.fr/api/v1/niveaux_nappes/chroniques"
             f"?code_bss={quote(gw.get('station_code_bss') or '')}&size=1&sort=desc")))
     wn = data.get("water_network") or {}
     if wn.get("efficiency_pct") is not None:
-        cards.append(("Eau potable (rendement du réseau)", _prov(
-            "SISPEA — Observatoire des services publics d'eau (OFB)",
+        cards.append((T("Eau potable (rendement du réseau)"), _prov(
+            T("SISPEA — Observatoire des services publics d'eau (OFB)"),
             "Licence Ouverte",
-            f"commune INSEE {wn.get('commune_insee') or '—'} · indicateur P104.3",
-            f"année {wn.get('year') or '—'} (dernière publiée)",
+            T("commune INSEE {c} · indicateur P104.3").format(c=wn.get('commune_insee') or '—'),
+            T("année {y} (dernière publiée)").format(y=wn.get('year') or '—'),
             "https://hubeau.eaufrance.fr/api/v0/indicateurs_services/communes"
             f"?code_commune={wn.get('commune_insee') or ''}&type_service=AEP")))
     pv = data.get("solar_pv") or {}
     if pv and lon is not None:
-        cards.append(("Solaire photovoltaïque", _prov(
-            "PVGIS v5.2 (Joint Research Centre, Commission européenne)",
-            "© Union européenne", f"lat/lon = {lat}, {lon} · {pv.get('assumptions') or ''}",
-            "base climatique PVGIS-SARAH2",
+        cards.append((T("Solaire photovoltaïque"), _prov(
+            T("PVGIS v5.2 (Joint Research Centre, Commission européenne)"),
+            T("© Union européenne"), f"lat/lon = {lat}, {lon} · {pv.get('assumptions') or ''}",
+            T("base climatique PVGIS-SARAH2"),
             f"https://re.jrc.ec.europa.eu/api/v5_2/PVcalc?lat={lat}&lon={lon}"
             "&peakpower=1&loss=14&optimalinclination=1&outputformat=json")))
     if photos:
         ids = ", ".join(str(p["id"])[:8] for p in photos[:3])
-        dref = next((str(p["date"])[:10] for p in photos if p.get("date")), "voir la visionneuse")
+        dref = next((str(p["date"])[:10] for p in photos if p.get("date")), T("voir la visionneuse"))
         srcs = sorted({p.get("source", "Panoramax") for p in photos[:4]})
-        cards.append(("Photos (contexte)", _prov(
-            " et ".join(srcs), "CC-BY-SA / licences libres, voir chaque image",
-            f"photo id(s) : {ids}", dref,
+        cards.append((T("Photos (contexte)"), _prov(
+            T(" et ").join(srcs), T("CC-BY-SA / licences libres, voir chaque image"),
+            T("photo id(s) : {ids}").format(ids=ids), dref,
             photos[0].get("viewer") or "https://panoramax.xyz")))
 
     sections = "".join(f"<h2>{t}</h2>{c}" for t, c in cards if c)
     if not sections:
         return ""
+    intro = T("Ce rapport agrège des données ouvertes. Pour chaque donnée : la source,\n"
+              "la version, la clé de recherche exacte et un lien pour vérifier directement à la source,\n"
+              "sans avoir à faire confiance à EcoBuilding. Généré le {now}.").format(now=now)
+    footer_txt = T("Sources publiques (Licence Ouverte, CC-BY-SA, ODbL). Les identifiants ci-dessus\n"
+                   "  permettent de retrouver la donnée d'origine. Document informatif, non contractuel.")
     return f"""
 <style>
   table.prov {{ table-layout: fixed; }}
@@ -287,16 +323,13 @@ def _traceability_annex(data: dict, photos: list | None) -> str:
 <div style="page-break-before: always;"></div>
 <header>
   <div class="brand">EcoBuilding</div>
-  <div class="doctitle">Annexe — traçabilité des données</div>
+  <div class="doctitle">{T("Annexe — traçabilité des données")}</div>
 </header>
-<h1>D'où vient chaque donnée</h1>
-<p class="meta">Ce rapport agrège des données ouvertes. Pour chaque donnée : la source,
-la version, la clé de recherche exacte et un lien pour vérifier directement à la source,
-sans avoir à faire confiance à EcoBuilding. Généré le {now}.</p>
+<h1>{T("D'où vient chaque donnée")}</h1>
+<p class="meta">{intro}</p>
 {sections}
 <footer>
-  Sources publiques (Licence Ouverte, CC-BY-SA, ODbL). Les identifiants ci-dessus
-  permettent de retrouver la donnée d'origine. Document informatif, non contractuel.
+  {footer_txt}
 </footer>
 """
 
@@ -308,9 +341,10 @@ def _principal_address_note(shown_address: str, b: dict) -> str:
     principal = b.get("address")
     if not principal or principal == shown_address:
         return ""
-    n = f" ({b['dwellings']} logements)" if b.get("dwellings") else ""
-    return (f'<p class="meta">Bâtiment groupe BDNB{n} — '
-            f'adresse principale : {principal}</p>')
+    n = T(" ({n} logements)").format(n=b['dwellings']) if b.get("dwellings") else ""
+    return ('<p class="meta">'
+            + T("Bâtiment groupe BDNB{n} — adresse principale : {p}").format(n=n, p=principal)
+            + '</p>')
 
 
 def _dpe_spread_html(e: dict, dpe_representatif: str | None = None,
@@ -327,12 +361,12 @@ def _dpe_spread_html(e: dict, dpe_representatif: str | None = None,
     if not e or not e.get("diagnostics"):
         return ""
     parts = " · ".join(f"{c} : {n}" for c, n in (e.get("repartition") or {}).items())
-    titre = (f"{e['diagnostics']} diagnostics connus à cette adresse, "
-             f"tous en {e['classe_min']}."
+    titre = (T("{n} diagnostics connus à cette adresse, tous en {c}.").format(
+                 n=e['diagnostics'], c=e['classe_min'])
              if e.get("identiques") else
-             f"{e['diagnostics']} diagnostics connus à cette adresse : "
-             f"de {e['classe_min']} à {e['classe_max']}.")
-    couv = (f" L'immeuble compte {e['logements_batiment']} logements."
+             T("{n} diagnostics connus à cette adresse : de {a} à {b}.").format(
+                 n=e['diagnostics'], a=e['classe_min'], b=e['classe_max']))
+    couv = (T(" L'immeuble compte {n} logements.").format(n=e['logements_batiment'])
             if e.get("logements_batiment") else "")
     # La liste des logements, pour que le lecteur RECONNAISSE le sien.
     #
@@ -367,49 +401,52 @@ def _dpe_spread_html(e: dict, dpe_representatif: str | None = None,
         else:
             est_repr = bool(dpe_representatif and l.get("numero_dpe") == dpe_representatif)
         isolation = " · ".join(x for x in (
-            f"enveloppe {l['isolation_enveloppe']}" if l.get("isolation_enveloppe") else "",
-            f"menuiseries {l['isolation_menuiseries']}" if l.get("isolation_menuiseries") else "",
+            T("enveloppe {v}").format(v=l['isolation_enveloppe']) if l.get("isolation_enveloppe") else "",
+            T("menuiseries {v}").format(v=l['isolation_menuiseries']) if l.get("isolation_menuiseries") else "",
         ) if x)
-        marque = ("seul logement de cette surface" if l.get("identifiable")
-                  else f"{l.get('memes_surfaces')} logements de cette surface — indiscernables")
+        marque = (T("seul logement de cette surface") if l.get("identifiable")
+                  else T("{n} logements de cette surface — indiscernables").format(
+                      n=l.get('memes_surfaces')))
         # Nom distinct de `titre` : celui-ci porte la phrase d'introduction de
         # la section, et la réutiliser dans la boucle l'écrasait — la fiche
         # rendue affichait « 7.6 m² La classe ci-dessus est... » au lieu de
         # « 3 diagnostics connus à cette adresse : de D à G. »
-        entete = (f"{m2} m²" if m2 is not None else "Logement")
+        entete = (f"{m2} m²" if m2 is not None else T("Logement"))
         blocs.append(
             f'<div class="logement{" repr" if est_repr else ""}">'
-            f'<div class="logement-t"><strong>{entete} — classe {l.get("classe")}</strong>'
-            f'{(" · le logement de cette fiche" if dpe_cible else " · classe affichée ci-dessus") if est_repr else ""}</div>'
+            f'<div class="logement-t"><strong>{T("{e} — classe {c}").format(e=entete, c=l.get("classe"))}</strong>'
+            f'{(T(" · le logement de cette fiche") if dpe_cible else T(" · classe affichée ci-dessus")) if est_repr else ""}</div>'
             "<table>"
-            + _row("Établi le", l.get("etabli_le"))
-            + _row("Consommation", l.get("conso_kwh_m2y") and round(l["conso_kwh_m2y"]), " kWh/m²/an")
-            + _row("GES", l.get("ges_kgco2_m2y") and round(l["ges_kgco2_m2y"]), " kgCO₂/m²/an")
-            + _row("Coût annuel", _eur(l["cout_annuel_eur"]) + " €/an" if l.get("cout_annuel_eur") else None)
-            + _row("Isolation", isolation or None)
-            + _row("N° DPE", l.get("numero_dpe"))
+            + _row(T("Établi le"), l.get("etabli_le"))
+            + _row(T("Consommation"), l.get("conso_kwh_m2y") and round(l["conso_kwh_m2y"]), T(" kWh/m²/an"))
+            + _row(T("GES"), l.get("ges_kgco2_m2y") and round(l["ges_kgco2_m2y"]), T(" kgCO₂/m²/an"))
+            + _row(T("Coût annuel"), _eur(l["cout_annuel_eur"]) + T(" €/an") if l.get("cout_annuel_eur") else None)
+            + _row(T("Isolation"), isolation or None)
+            + _row(T("N° DPE"), l.get("numero_dpe"))
             + "</table>"
             + f'<p class="meta">{marque}</p></div>')
     table = ""
     if blocs:
-        renvoi = ((f'<p class="meta">Les {autres} autres diagnostics de '
-                   "l'immeuble figurent sur la fiche bâtiment.</p>" if autres > 1
-                   else '<p class="meta">L\'autre diagnostic de l\'immeuble '
-                        "figure sur la fiche bâtiment.</p>")
-                  if autres else """
+        renvoi = ((T('<p class="meta">Les {n} autres diagnostics de '
+                     "l'immeuble figurent sur la fiche bâtiment.</p>").format(n=autres)
+                   if autres > 1
+                   else T('<p class="meta">L\'autre diagnostic de l\'immeuble '
+                          "figure sur la fiche bâtiment.</p>"))
+                  if autres else T("""
 <p class="meta">Retrouvez le logement concerné par sa surface, ou par le numéro
 de DPE que le vendeur remet obligatoirement — il est vérifiable sur
-l'observatoire de l'ADEME.</p>""")
+l'observatoire de l'ADEME.</p>"""))
         table = "".join(blocs) + renvoi
-    phrase_classe = ("La classe ci-dessus est celle du logement choisi pour "
-                     "cette fiche." if dpe_cible else
-                     "La classe ci-dessus est celle du logement représentatif "
-                     "du bâtiment, pas celle de tous.")
+    phrase_classe = (T("La classe ci-dessus est celle du logement choisi pour "
+                       "cette fiche.") if dpe_cible else
+                     T("La classe ci-dessus est celle du logement représentatif "
+                       "du bâtiment, pas celle de tous."))
+    repartition = T("Répartition — {parts}. Source : ADEME, observatoire DPE.\n"
+                    "Seuls les logements diagnostiqués figurent : c'est un minimum observé, pas un\n"
+                    "inventaire de l'immeuble.").format(parts=parts)
     return f"""
 <div class="ban">{titre} {phrase_classe}{couv}</div>
-<p class="meta">Répartition — {parts}. Source : ADEME, observatoire DPE.
-Seuls les logements diagnostiqués figurent : c'est un minimum observé, pas un
-inventaire de l'immeuble.</p>{table}"""
+<p class="meta">{repartition}</p>{table}"""
 
 
 def _local_taxes_html(t: dict) -> str:
@@ -417,16 +454,17 @@ def _local_taxes_html(t: dict) -> str:
     if not t:
         return ""
     yr = f" ({t['year']})" if t.get("year") else ""
+    note = T("Taux globaux (commune + intercommunalité + syndicats), dernier exercice\n"
+             "publié (DGFiP). La taxe due dépend de la valeur locative cadastrale du bien.")
     return f"""
-<h2>Fiscalité locale{yr}</h2>
+<h2>{T("Fiscalité locale")}{yr}</h2>
 <table>
-  {_row("Taxe foncière (bâti), taux global", t.get("property_tax_built_pct"), " %")}
-  {_row("Taxe ordures ménagères (TEOM)", t.get("waste_tax_pct"), " %")}
-  {_row("Taxe foncière (non bâti)", t.get("property_tax_unbuilt_pct"), " %")}
-  {_row("Intercommunalité", t.get("intercommunalite"))}
+  {_row(T("Taxe foncière (bâti), taux global"), t.get("property_tax_built_pct"), " %")}
+  {_row(T("Taxe ordures ménagères (TEOM)"), t.get("waste_tax_pct"), " %")}
+  {_row(T("Taxe foncière (non bâti)"), t.get("property_tax_unbuilt_pct"), " %")}
+  {_row(T("Intercommunalité"), t.get("intercommunalite"))}
 </table>
-<p class="meta">Taux globaux (commune + intercommunalité + syndicats), dernier exercice
-publié (DGFiP). La taxe due dépend de la valeur locative cadastrale du bien.</p>"""
+<p class="meta">{note}</p>"""
 
 
 def _commune_html(c: dict) -> str:
@@ -440,26 +478,29 @@ def _commune_html(c: dict) -> str:
     """
     if not c or not c.get("nom"):
         return ""
-    avant = (_row("Auparavant",
-                  f"{c['precedent']['nom']}, jusqu'au {c['precedent']['jusqu_au_fr']}")
+    avant = (_row(T("Auparavant"),
+                  T("{nom}, jusqu'au {date}").format(nom=c['precedent']['nom'],
+                                                     date=c['precedent']['jusqu_au_fr']))
              if c.get("precedent") else "")
     reserves = list(c.get("limites") or []) + [
         d.get("texte") for d in (c.get("non_etablis") or []) if d.get("texte")]
     credits = " ; ".join(
         f"{a.get('attribution')} ({a.get('license')})"
         for a in (c.get("attribution") or []) if a.get("attribution"))
+    credits_html = ('<p class="meta">' + T("Source : {credits}.").format(credits=credits)
+                    + '</p>') if credits else ""
     return f"""
-<h2>Commune</h2>
+<h2>{T("Commune")}</h2>
 <table>
-  {_row("Commune", f"{c['nom']} ({c['code']})")}
-  {_row("Nom et limites inchangés depuis", c.get("depuis_fr"))
+  {_row(T("Commune"), f"{c['nom']} ({c['code']})")}
+  {_row(T("Nom et limites inchangés depuis"), c.get("depuis_fr"))
     if c.get("existe_encore") else
-    _row("A cessé d'exister le", c.get("jusqu_au_fr"))}
+    _row(T("A cessé d'exister le"), c.get("jusqu_au_fr"))}
   {avant}
-  {_row("Données arrêtées au", c.get("arret_des_donnees_fr"))}
+  {_row(T("Données arrêtées au"), c.get("arret_des_donnees_fr"))}
 </table>
 {f'<p class="meta">{" ".join(reserves)}</p>' if reserves else ""}
-{f'<p class="meta">Source : {credits}.</p>' if credits else ""}"""
+{credits_html}"""
 
 
 def _schools_html(sc: dict) -> str:
@@ -467,17 +508,19 @@ def _schools_html(sc: dict) -> str:
     if not sc:
         return ""
     rows = "".join(
-        _row(f"{s.get('type') or 'Établissement'} · {s.get('statut') or ''}".strip(" ·"),
+        _row(f"{s.get('type') or T('Établissement')} · {s.get('statut') or ''}".strip(" ·"),
              f"{s.get('name')} ({s.get('distance_m')} m)")
         for s in (sc.get("nearest") or []))
     if not rows:
-        return ('<h2>Écoles à proximité</h2><p class="meta">Aucun établissement recensé '
-                'à moins de 2 km (annuaire de l\'éducation).</p>')
+        return ('<h2>' + T("Écoles à proximité") + '</h2><p class="meta">'
+                + T("Aucun établissement recensé à moins de 2 km (annuaire de l'éducation).")
+                + '</p>')
+    note = T("Distances à vol d'oiseau (annuaire de l'éducation). La proximité ne vaut\n"
+             "pas sectorisation: la carte scolaire dépend de la commune.")
     return f"""
-<h2>Écoles à proximité ({sc.get('within_2km')} à moins de 2 km)</h2>
+<h2>{T("Écoles à proximité ({n} à moins de 2 km)").format(n=sc.get('within_2km'))}</h2>
 <table>{rows}</table>
-<p class="meta">Distances à vol d'oiseau (annuaire de l'éducation). La proximité ne vaut
-pas sectorisation: la carte scolaire dépend de la commune.</p>"""
+<p class="meta">{note}</p>"""
 
 
 def _official_dpe_html(od: dict) -> str:
@@ -488,26 +531,27 @@ def _official_dpe_html(od: dict) -> str:
         return ""
     ins = od.get("insulation") or {}
     cost = od.get("annual_cost_eur")
-    cost_txt = (_eur(cost) + " €/an") if cost else None
+    cost_txt = (_eur(cost) + T(" €/an")) if cost else None
+    note = T("Données du DPE officiel du logement représentatif du bâtiment (Observatoire\n"
+             "DPE, ADEME). Dans un immeuble, les autres logements peuvent différer. Coûts estimés\n"
+             "aux prix de l'énergie en vigueur à la date du diagnostic.")
     return f"""
-<h2>DPE officiel (logement représentatif)</h2>
+<h2>{T("DPE officiel (logement représentatif)")}</h2>
 <table>
-  {_row("N° DPE (ADEME)", od.get("dpe_number"))}
-  {_row("Établi le", od.get("established_on"))}
-  {_row("Valable jusqu'au", od.get("valid_until"), " (validité légale: 10 ans)")}
-  {_row("Surface habitable", od.get("surface_habitable_m2"), " m²")}
-  {_row("Coût annuel d'énergie estimé", cost_txt)}
-  {_row("Chauffage", od.get("heating"))}
-  {_row("Eau chaude sanitaire", od.get("hot_water"))}
-  {_row("Énergies", " + ".join(od.get("energies") or []) or None)}
-  {_row("Isolation: enveloppe", ins.get("enveloppe"))}
-  {_row("Isolation: menuiseries", ins.get("menuiseries"))}
-  {_row("Isolation: plancher bas", ins.get("plancher_bas"))}
-  {_row("Isolation: plancher haut", ins.get("plancher_haut"))}
+  {_row(T("N° DPE (ADEME)"), od.get("dpe_number"))}
+  {_row(T("Établi le"), od.get("established_on"))}
+  {_row(T("Valable jusqu'au"), od.get("valid_until"), T(" (validité légale: 10 ans)"))}
+  {_row(T("Surface habitable"), od.get("surface_habitable_m2"), " m²")}
+  {_row(T("Coût annuel d'énergie estimé"), cost_txt)}
+  {_row(T("Chauffage"), od.get("heating"))}
+  {_row(T("Eau chaude sanitaire"), od.get("hot_water"))}
+  {_row(T("Énergies"), " + ".join(od.get("energies") or []) or None)}
+  {_row(T("Isolation: enveloppe"), ins.get("enveloppe"))}
+  {_row(T("Isolation: menuiseries"), ins.get("menuiseries"))}
+  {_row(T("Isolation: plancher bas"), ins.get("plancher_bas"))}
+  {_row(T("Isolation: plancher haut"), ins.get("plancher_haut"))}
 </table>
-<p class="meta">Données du DPE officiel du logement représentatif du bâtiment (Observatoire
-DPE, ADEME). Dans un immeuble, les autres logements peuvent différer. Coûts estimés
-aux prix de l'énergie en vigueur à la date du diagnostic.</p>"""
+<p class="meta">{note}</p>"""
 
 
 def _water_network_html(wn: dict) -> str:
@@ -515,16 +559,17 @@ def _water_network_html(wn: dict) -> str:
     if not wn:
         return ""
     yr = f" ({wn['year']})" if wn.get("year") else ""
+    note = T("Indicateurs du service public d'eau potable de la commune (SISPEA / OFB),\n"
+             "dernière année publiée. Un rendement de 70 % signifie que 30 % de l'eau potable\n"
+             "produite est perdue avant d'arriver au robinet.")
     return f"""
-<h2>Eau potable (commune)</h2>
+<h2>{T("Eau potable (commune)")}</h2>
 <table>
-  {_row("Rendement du réseau" + yr, wn.get("efficiency_pct"), " %")}
-  {_row("Part perdue en fuites", wn.get("losses_pct"), " %")}
-  {_row("Prix de l'eau (120 m³)", wn.get("price_eur_m3"), " €/m³")}
+  {_row(T("Rendement du réseau") + yr, wn.get("efficiency_pct"), " %")}
+  {_row(T("Part perdue en fuites"), wn.get("losses_pct"), " %")}
+  {_row(T("Prix de l'eau (120 m³)"), wn.get("price_eur_m3"), " €/m³")}
 </table>
-<p class="meta">Indicateurs du service public d'eau potable de la commune (SISPEA / OFB),
-dernière année publiée. Un rendement de 70 % signifie que 30 % de l'eau potable
-produite est perdue avant d'arriver au robinet.</p>"""
+<p class="meta">{note}</p>"""
 
 
 def _groundwater_html(gw: dict) -> str:
@@ -533,19 +578,20 @@ def _groundwater_html(gw: dict) -> str:
     if not gw:
         return ""
     if not gw.get("available"):
-        return f'<h2>Eau souterraine</h2><p class="meta">{gw.get("note") or "Donnée indisponible."}</p>'
+        return ('<h2>' + T("Eau souterraine") + '</h2><p class="meta">'
+                + (gw.get("note") or T("Donnée indisponible.")) + '</p>')
     station = gw.get("station_code_bss") or "—"
     if gw.get("station_commune"):
         station += f" ({gw['station_commune']})"
     dist = gw.get("station_distance_m")
     return f"""
-<h2>Eau souterraine</h2>
+<h2>{T("Eau souterraine")}</h2>
 <table>
-  {_row("Profondeur de la nappe", gw.get("water_table_depth_m"), " m sous le sol")}
-  {_row("Niveau piézométrique", gw.get("level_masl"), " m NGF")}
-  {_row("Mesuré le", (gw.get("measured_on") or "")[:10] or None)}
-  {_row("Piézomètre le plus proche", station)}
-  {_row("Distance du bâtiment", dist, " m")}
+  {_row(T("Profondeur de la nappe"), gw.get("water_table_depth_m"), T(" m sous le sol"))}
+  {_row(T("Niveau piézométrique"), gw.get("level_masl"), " m NGF")}
+  {_row(T("Mesuré le"), (gw.get("measured_on") or "")[:10] or None)}
+  {_row(T("Piézomètre le plus proche"), station)}
+  {_row(T("Distance du bâtiment"), dist, " m")}
 </table>
 <p class="meta">{gw.get("note") or ""} {gw.get("well_regulation") or ""}</p>"""
 
@@ -553,16 +599,18 @@ def _groundwater_html(gw: dict) -> str:
 def build_report_pdf(data: dict, photos: list | None = None, map_img: str | None = None,
                      aerial_img: str | None = None, aerial_parcels: str | None = None,
                      aerial_outline: str | None = None,
-                     quartier_img: str | None = None) -> bytes:
+                     quartier_img: str | None = None, lang: str = "fr") -> bytes:
+    _LANGUE.set("en" if lang == "en" else "fr")
     return HTML(string=_report_html(data, photos, map_img, aerial_img,
                                     aerial_parcels, aerial_outline,
-                                    quartier_img)).write_pdf()
+                                    quartier_img, lang=lang)).write_pdf()
 
 
 def _report_html(data: dict, photos: list | None = None, map_img: str | None = None,
                  aerial_img: str | None = None, aerial_parcels: str | None = None,
                  aerial_outline: str | None = None,
-                 quartier_img: str | None = None) -> str:
+                 quartier_img: str | None = None, lang: str = "fr") -> str:
+    _LANGUE.set("en" if lang == "en" else "fr")
     b = (data.get("buildings") or [{}])[0]
     e = b.get("energy") or {}
     ban = e.get("rental_ban") or {}
@@ -613,15 +661,20 @@ def _report_html(data: dict, photos: list | None = None, map_img: str | None = N
     else:
         badge = '<span class="dpe">' + cls + '</span>'
     now = datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M UTC")
-    address = data.get("query", {}).get("address") or b.get("address") or "Adresse inconnue"
+    address = data.get("query", {}).get("address") or b.get("address") or T("Adresse inconnue")
 
     ban_html = ""
     if e.get("dpe_class"):
         if ban.get("rental_ban_date"):
-            ban_html = (f'<div class="ban warn">⚠ Location interdite à partir de '
-                        f'<strong>{ban["rental_ban_date"][:4]}</strong> (loi Climat &amp; Résilience)</div>')
+            ban_html = ('<div class="ban warn">'
+                        + T('⚠ Location interdite à partir de '
+                            '<strong>{y}</strong> (loi Climat &amp; Résilience)').format(
+                                y=ban["rental_ban_date"][:4])
+                        + '</div>')
         else:
-            ban_html = '<div class="ban ok">Aucune interdiction de location prévue pour cette classe</div>'
+            ban_html = ('<div class="ban ok">'
+                        + T('Aucune interdiction de location prévue pour cette classe')
+                        + '</div>')
 
     zone_risks = ", ".join((risks.get("risques_naturels") or []) + (risks.get("risques_technologiques") or [])) or None
     conso = e.get("consumption_kwh_m2y")
@@ -634,12 +687,69 @@ def _report_html(data: dict, photos: list | None = None, map_img: str | None = N
         # exactement l'écart qui intéresse un acheteur.
         seuils = {"G": "2025", "F": "2028", "E": "2034"}
         if cls in seuils:
-            ban_html = (f'<div class="ban warn">⚠ Location interdite à partir de '
-                        f'<strong>{seuils[cls]}</strong> (loi Climat &amp; Résilience) '
-                        f'pour ce logement</div>')
+            ban_html = ('<div class="ban warn">'
+                        + T('⚠ Location interdite à partir de '
+                            '<strong>{y}</strong> (loi Climat &amp; Résilience) '
+                            'pour ce logement').format(y=seuils[cls])
+                        + '</div>')
         else:
-            ban_html = ('<div class="ban ok">Aucune interdiction de location '
-                        'prévue pour la classe de ce logement</div>')
+            ban_html = ('<div class="ban ok">'
+                        + T('Aucune interdiction de location '
+                            'prévue pour la classe de ce logement')
+                        + '</div>')
+
+    cible_banner = ""
+    if cible:
+        cible_banner = ('<div class="ban" style="background:#e8f5e9;color:#2b7a4b">'
+                        + T("<strong>Fiche d'un logement</strong> : "
+                            "{m2} m² · classe {c} · N° DPE {n}. "
+                            "Les autres logements de l'immeuble ne sont pas l'objet de ce document.")
+                        .format(m2=cible.get("surface_m2"), c=cls, n=cible.get("numero_dpe"))
+                        + '</div>')
+
+    labels_html = ""
+    if e.get("dpe_class") or cible:
+        if eventail:
+            # « diagnostics », pas « logements » : un logement est re-diagnostiqué à
+            # chaque vente, l'adresse de #312 en porte 23 pour 14 logements.
+            note_classes = ('<p class="meta">'
+                            + T('Classes marquées : celles des {n} diagnostics connus à '
+                                'cette adresse. La valeur chiffrée est celle '
+                                'du logement représentatif.').format(n=spread.get("diagnostics"))
+                            + '</p>')
+        elif cible:
+            note_classes = ('<p class="meta">'
+                            + T('Classe marquée : celle du logement choisi '
+                                '(N° DPE {n}).').format(n=cible.get("numero_dpe"))
+                            + '</p>')
+        else:
+            note_classes = ""
+        labels_html = ('<table class="labels"><tr>'
+                       '<td><div class="lbl-title">'
+                       + T('Étiquette énergie <span>(kWh/m²/an, énergie primaire)</span>')
+                       + '</div>'
+                       + _scale(cls, DPE_COLORS, f"{round(conso)}" if conso else "",
+                                counts=comptes_energie)
+                       + '</td><td><div class="lbl-title">'
+                       + T('Étiquette climat <span>(kgCO₂/m²/an)</span>') + '</div>'
+                       + _scale(_ges_class(ges), GES_COLORS, f"{round(ges)}" if ges else "",
+                                counts=comptes_ges)
+                       + '</td></tr></table>' + note_classes)
+
+    quartier_html = ""
+    if quartier_img:
+        quartier_html = (f'<img src="{quartier_img}" style="width:100%;border-radius:4pt;margin:4pt 0"\n'
+                         '     alt="' + T("Carte du quartier : le bâtiment et les écoles") + '" />\n'
+                         '<p class="meta">'
+                         + T("Le bâtiment épinglé en vert, les écoles nommées sur la carte.\n"
+                             "La liste disait combien ; la carte dit lesquelles, et où — proximité,\n"
+                             "jamais sectorisation (#324).")
+                         + '</p>')
+
+    footer_txt = T("Sources : BDNB (CSTB), Base Adresse Nationale, Géorisques — Licence Ouverte, attributions requises.\n"
+                   "  Document informatif généré automatiquement à partir de données ouvertes : il ne remplace ni un\n"
+                   "  diagnostic de performance énergétique (DPE) officiel, ni un état des risques et pollutions (ERP)\n"
+                   "  réglementaire. Une question sur cette fiche : contact@confinia.io")
 
     html = f"""
 <style>
@@ -692,87 +802,63 @@ def _report_html(data: dict, photos: list | None = None, map_img: str | None = N
        assemblé à partir de données ouvertes, il ne se conforme à aucun
        référentiel. Dire ce qu'il EST — formaté par nous, sourcé chez l'État —
        vaut mieux que d'emprunter l'autorité d'une norme. -->
-  <div class="doctitle">{"Fiche LOGEMENT" if cible else "Fiche bâtiment"} formatée et sourcée — données ouvertes</div>
+  <div class="doctitle">{T("Fiche LOGEMENT formatée et sourcée — données ouvertes") if cible else T("Fiche bâtiment formatée et sourcée — données ouvertes")}</div>
 </header>
 <h1>{address}</h1>
-{f'<div class="ban" style="background:#e8f5e9;color:#2b7a4b"><strong>Fiche d\'un logement</strong> : '
- f'{cible.get("surface_m2")} m² · classe {cls} · N° DPE {cible.get("numero_dpe")}. '
- f'Les autres logements de l\'immeuble ne sont pas l\'objet de ce document.</div>' if cible else ""}
+{cible_banner}
 {_principal_address_note(address, b)}
-<p class="meta">Identifiant BDNB : {b.get("bdnb_id") or "—"} · Générée le {now} · ecobuilding.confinia.io</p>
+<p class="meta">{T("Identifiant BDNB : {id} · Générée le {now} · ecobuilding.confinia.io").format(id=b.get("bdnb_id") or "—", now=now)}</p>
 
-<h2>Énergie (DPE){f' — logement {cible.get("surface_m2")} m², classe {cls}' if cible else ""}</h2>
-<p>{badge}&nbsp;&nbsp;{f"{round(conso)} kWh/m²/an" if conso else "Aucun DPE enregistré dans la BDNB pour ce bâtiment"}</p>
+<h2>{T("Énergie (DPE)")}{T(" — logement {m2} m², classe {c}").format(m2=cible.get("surface_m2"), c=cls) if cible else ""}</h2>
+<p>{badge}&nbsp;&nbsp;{T("{v} kWh/m²/an").format(v=round(conso)) if conso else T("Aucun DPE enregistré dans la BDNB pour ce bâtiment")}</p>
 {ban_html}
 {_dpe_spread_html(data.get("dpe_spread") or {}, (data.get("official_dpe") or {}).get("dpe_number"),
                   dpe_cible=(cible or {}).get("numero_dpe"))}
-{('<table class="labels"><tr>'
-  '<td><div class="lbl-title">Étiquette énergie <span>(kWh/m²/an, énergie primaire)</span></div>'
-  + _scale(cls, DPE_COLORS, f"{round(conso)}" if conso else "",
-           counts=comptes_energie) +
-  '</td><td><div class="lbl-title">Étiquette climat <span>(kgCO₂/m²/an)</span></div>'
-  + _scale(_ges_class(ges), GES_COLORS, f"{round(ges)}" if ges else "",
-           counts=comptes_ges) +
-  '</td></tr></table>'
-  + ('<p class="meta">Classes marquées : celles des '
-     + str(spread.get("diagnostics"))
-     # « diagnostics », pas « logements » : un logement est re-diagnostiqué à
-     # chaque vente, l'adresse de #312 en porte 23 pour 14 logements.
-     + ' diagnostics connus à cette adresse. La valeur chiffrée est celle '
-     'du logement représentatif.</p>' if eventail else
-     ('<p class="meta">Classe marquée : celle du logement choisi '
-      '(N° DPE ' + str(cible.get("numero_dpe")) + ').</p>' if cible else ""))) if (e.get("dpe_class") or cible) else ""}
+{labels_html}
 <table>
-  {_row("Date du DPE", (e.get("dpe_date") or "")[:10] or None)}
-  {_row("Émissions GES", round(ges) if ges else None, " kgCO₂/m²/an")}
+  {_row(T("Date du DPE"), (e.get("dpe_date") or "")[:10] or None)}
+  {_row(T("Émissions GES"), round(ges) if ges else None, T(" kgCO₂/m²/an"))}
 </table>
 {"" if cible else _official_dpe_html(data.get("official_dpe") or {})}
 
-<h2>Bâtiment</h2>
+<h2>{T("Bâtiment")}</h2>
 <table>
-  {_row("ID-RNB (référentiel national)", b.get("rnb_id"))}
-  {_row("Année de construction", b.get("construction_year"))}
-  {_row("Hauteur moyenne", b.get("height_m"), " m")}
-  {_row("Logements", b.get("dwellings"))}
-  {_row("Matériaux des murs", b.get("wall_material"))}
-  {_row("Matériaux du toit", b.get("roof_material"))}
+  {_row(T("ID-RNB (référentiel national)"), b.get("rnb_id"))}
+  {_row(T("Année de construction"), b.get("construction_year"))}
+  {_row(T("Hauteur moyenne"), b.get("height_m"), " m")}
+  {_row(T("Logements"), b.get("dwellings"))}
+  {_row(T("Matériaux des murs"), b.get("wall_material"))}
+  {_row(T("Matériaux du toit"), b.get("roof_material"))}
 </table>
 {_dia_html(data.get("market_dia"))}
 
-<h2>Risques</h2>
+<h2>{T("Risques")}</h2>
 <table>
-  {_row("Retrait-gonflement des argiles", (b.get("risks") or {}).get("clay_shrink_swell"))}
-  {_row("Risques recensés dans la zone", zone_risks)}
-  {_row("Rapport Géorisques", risks.get("report_url"))}
+  {_row(T("Retrait-gonflement des argiles"), (b.get("risks") or {}).get("clay_shrink_swell"))}
+  {_row(T("Risques recensés dans la zone"), zone_risks)}
+  {_row(T("Rapport Géorisques"), risks.get("report_url"))}
 </table>
 
 {_groundwater_html(gw)}
 {_water_network_html(data.get("water_network") or {})}
 
-<h2>Solaire</h2>
+<h2>{T("Solaire")}</h2>
 <table>
-  {_row("Favorable au solaire thermique", {True: "oui", False: "non"}.get(solar.get("thermal_favourable")))}
-  {_row("Potentiel annuel estimé", solar.get("thermal_potential_kwh_y"), " kWh/an")}
-  {_row("Productible photovoltaïque (PVGIS)", round(pv["yield_kwh_per_kwc_y"]) if pv.get("yield_kwh_per_kwc_y") else None, " kWh/an par kWc installé")}
-  {_row("Irradiation (inclinaison optimale)", round(pv["irradiation_kwh_m2_y"]) if pv.get("irradiation_kwh_m2_y") else None, " kWh/m²/an")}
+  {_row(T("Favorable au solaire thermique"), {True: T("oui"), False: T("non")}.get(solar.get("thermal_favourable")))}
+  {_row(T("Potentiel annuel estimé"), solar.get("thermal_potential_kwh_y"), T(" kWh/an"))}
+  {_row(T("Productible photovoltaïque (PVGIS)"), round(pv["yield_kwh_per_kwc_y"]) if pv.get("yield_kwh_per_kwc_y") else None, T(" kWh/an par kWc installé"))}
+  {_row(T("Irradiation (inclinaison optimale)"), round(pv["irradiation_kwh_m2_y"]) if pv.get("irradiation_kwh_m2_y") else None, T(" kWh/m²/an"))}
 </table>
 {f'<p class="meta">{pv["assumptions"]}</p>' if pv.get("assumptions") else ""}
 
 {_prices_html(data.get("prices"), fiche_logement=bool(cible))}
 {_local_taxes_html(data.get("local_taxes") or {})}
 {_schools_html(data.get("schools") or {})}
-{f"""<img src="{quartier_img}" style="width:100%;border-radius:4pt;margin:4pt 0"
-     alt="Carte du quartier : le bâtiment et les écoles" />
-<p class="meta">Le bâtiment épinglé en vert, les écoles nommées sur la carte.
-La liste disait combien ; la carte dit lesquelles, et où — proximité,
-jamais sectorisation (#324).</p>""" if quartier_img else ""}
+{quartier_html}
 {_commune_html(data.get("commune") or {})}
 
 <footer>
-  Sources : BDNB (CSTB), Base Adresse Nationale, Géorisques — Licence Ouverte, attributions requises.
-  Document informatif généré automatiquement à partir de données ouvertes : il ne remplace ni un
-  diagnostic de performance énergétique (DPE) officiel, ni un état des risques et pollutions (ERP)
-  réglementaire. Une question sur cette fiche : contact@confinia.io
+  {footer_txt}
 </footer>
 {_context_page(data, photos, map_img, aerial_img, aerial_parcels, aerial_outline)}
 {_traceability_annex(data, photos)}
@@ -811,7 +897,7 @@ def _context_page(data: dict, photos: list | None, map_img: str | None = None,
     render is unavailable."""
     q = data.get("query", {})
     lon, lat = q.get("lon"), q.get("lat")
-    address = q.get("address") or "ce bâtiment"
+    address = q.get("address") or T("ce bâtiment")
     photos = photos or []
     def _pic(p):
         src = p.get("sd") or p.get("thumb")
@@ -836,37 +922,47 @@ def _context_page(data: dict, photos: list | None, map_img: str | None = None,
         return ""
     osm = (f'<a href="https://www.openstreetmap.org/#map=19/{lat}/{lon}">'
            f'openstreetmap.org (19/{lat}/{lon})</a>' if lon is not None else "—")
+    aerial_html = ""
+    if aerial_img:
+        cap = ((T("Photo aérienne IGN (BD ORTHO) et limites de parcelles (Parcellaire Express)")
+                if aerial_parcels else T("Photo aérienne IGN (BD ORTHO)"))
+               + T(" — Licence Ouverte. ")
+               + (T("Le bâtiment concerné est entouré en cyan. ") if aerial_outline
+                  else T("Le bâtiment concerné est au centre du repère. "))
+               + T("Le terrain, les arbres, les annexes et les accès, que nulle donnée "
+                   "structurée ne décrit."))
+        aerial_html = (f'<h2>{T("Vue aérienne")}</h2><div class="aerial"><img class="map3d" src="{aerial_img}"/>'
+                       + (f'<img class="parcels" src="{aerial_parcels}"/>' if aerial_parcels else '')
+                       + _target_overlay(aerial_outline) + '</div>'
+                       + f'<div class="cap">{cap}</div>')
+    if map_img:
+        map_html = (f'<img class="map3d" src="{map_img}"/>'
+                    '<div class="cap">'
+                    + T('Bâtiment ciblé en pleine opacité (voisins atténués), coloré par classe DPE. '
+                        'Limites de parcelles en orange. '
+                        'Zoom 18, inclinaison 60°. Fond : OpenStreetMap et contributeurs (ODbL) · Bâtiments &amp; DPE : BDNB (CSTB) '
+                        '· Parcelles : IGN Parcellaire Express (Licence Ouverte).')
+                    + '</div>')
+    else:
+        map_html = (f'<table><tr><td class="k" style="width:30%">{T("Voir la zone sur OSM")}</td>'
+                    f'<td>{osm}</td></tr></table>')
+    footer_txt = T("Imagerie : Panoramax (CC-BY-SA 4.0) et Wikimedia Commons, auteur et licence indiqués\n"
+                   "  sous chaque photo. Cartographie : OpenStreetMap et contributeurs (ODbL).\n"
+                   "  Informations de contexte, non contractuelles.")
     return f"""
 <div style="page-break-before: always;"></div>
 <header>
   <div class="brand">EcoBuilding</div>
-  <div class="doctitle">Contexte — sources tierces</div>
+  <div class="doctitle">{T("Contexte — sources tierces")}</div>
 </header>
 <h1>{address}</h1>
-{(f'<h2>Vue aérienne</h2><div class="aerial"><img class="map3d" src="{aerial_img}"/>'
-   + (f'<img class="parcels" src="{aerial_parcels}"/>' if aerial_parcels else '')
-   + _target_overlay(aerial_outline) + '</div>'
-   '<div class="cap">Photo aérienne IGN (BD ORTHO)'
-   + (' et limites de parcelles (Parcellaire Express)' if aerial_parcels else '')
-   + ' — Licence Ouverte. '
-   + ('Le bâtiment concerné est entouré en cyan. ' if aerial_outline
-      else 'Le bâtiment concerné est au centre du repère. ')
-   + 'Le terrain, les arbres, les annexes et les accès, que nulle donnée '
-   'structurée ne décrit.</div>') if aerial_img else ''}
-{(f'<section class="bloc"><h2>Photos du lieu</h2>'
+{aerial_html}
+{(f'<section class="bloc"><h2>{T("Photos du lieu")}</h2>'
    f'<div class="pics">{pics}</div></section>') if pics else ''}
-<h2>{"Localisation — carte 3D (DPE)" if map_img else "OpenStreetMap"}</h2>
-{(f'<img class="map3d" src="{map_img}"/>'
-  '<div class="cap">Bâtiment ciblé en pleine opacité (voisins atténués), coloré par classe DPE. '
-  'Limites de parcelles en orange. '
-  'Zoom 18, inclinaison 60°. Fond : OpenStreetMap et contributeurs (ODbL) · Bâtiments &amp; DPE : BDNB (CSTB) '
-  '· Parcelles : IGN Parcellaire Express (Licence Ouverte).</div>')
- if map_img else
- f'<table><tr><td class="k" style="width:30%">Voir la zone sur OSM</td><td>{osm}</td></tr></table>'}
+<h2>{T("Localisation — carte 3D (DPE)") if map_img else "OpenStreetMap"}</h2>
+{map_html}
 <footer>
-  Imagerie : Panoramax (CC-BY-SA 4.0) et Wikimedia Commons, auteur et licence indiqués
-  sous chaque photo. Cartographie : OpenStreetMap et contributeurs (ODbL).
-  Informations de contexte, non contractuelles.
+  {footer_txt}
 </footer>
 <style>
   .map3d {{ width: 100%; border-radius: 4pt; margin-bottom: 3pt; }}
@@ -897,3 +993,322 @@ def _context_page(data: dict, photos: list | None, map_img: str | None = None,
   .pic .crop img {{ width: 960pt; margin-left: -360pt; margin-top: -180pt; }}
   .pic .cap {{ font-size: 7pt; color: #888; }}
 </style>"""
+
+
+# English translations (#370). The FRENCH template string is the key, byte for
+# byte (including embedded newlines and HTML tags); the value is the English
+# rendering. Placeholders {x} and HTML tags are identical on both sides.
+# Register: professional real-estate / property report. "DPE" is kept as the
+# French certificate's proper name, glossed "(energy performance certificate)"
+# where a section first needs it. Untranslated on purpose: dataset and licence
+# proper names (BDNB, "Licence Ouverte", "Base Adresse Nationale"...), URLs,
+# and every DATA value coming from upstream sources.
+_EN = {
+    # — Market activity (DIA)
+    " — dont {n} au dernier trimestre": " — including {n} in the last quarter",
+    "Dynamique du marché (DIA)": "Market activity (DIA pre-emption filings)",
+    "Zone": "Area",
+    "Mises en vente sur 12 mois": "Properties put up for sale over 12 months",
+    "Prix médian demandé": "Median asking price",
+    "Données {d} —\nMontpellier Méditerranée Métropole (Open Data).":
+        "Data {d} —\nMontpellier Méditerranée Métropole (open data).",
+    # — Sale prices (DVF)
+    "Prix de vente (DVF)": "Sale prices (DVF)",
+    "Données de prix indisponibles pour ce secteur : la base DVF ne couvre pas l'Alsace-Moselle ni Mayotte.":
+        "Price data unavailable for this area: the DVF register does not cover Alsace-Moselle or Mayotte.",
+    "Vente groupée : {desc}": "Bundled sale: {desc}",
+    "(prix de l'ensemble)": "(price for the whole lot)",
+    "Surface": "Floor area",
+    "Montant": "Price",
+    "Aucune vente récente enregistrée sur la parcelle.": "No recent sale recorded on this parcel.",
+    "Ventes enregistrées sur la PARCELLE — pas nécessairement celles du logement de cette fiche.":
+        "Sales recorded on the PARCEL — not necessarily those of the dwelling covered by this report.",
+    " — parcelle": " — parcel",
+    "Prix médian dans la commune : <strong>{med}</strong>":
+        "Median price in the municipality: <strong>{med}</strong>",
+    "€/m² indicatif, calculé sur les ventes d'un seul local. Transactions réelles enregistrées par la DGFiP.":
+        "Indicative €/m², computed on single-unit sales. Actual transactions recorded by the DGFiP (French tax administration).",
+    # — Provenance cards (traceability annex)
+    "Clé de recherche": "Lookup key",
+    "Date de référence": "Reference date",
+    "Vérifier à la source": "Verify at the source",
+    "Adresse": "Address",
+    "Référentiel courant": "Current reference dataset",
+    "Bâtiment, énergie (DPE), solaire": "Building, energy (DPE), solar",
+    "Millésime {v} · Licence Ouverte 2.0": "Release {v} · Licence Ouverte 2.0 (French open licence)",
+    "{d} (date du DPE)": "{d} (DPE date)",
+    "Millésime {v}": "Release {v}",
+    " · commune INSEE {c}": " · INSEE municipality code {c}",
+    "Risques": "Risks",
+    "Géorisques (BRGM / Ministère de la Transition écologique)":
+        "Géorisques (BRGM / French Ministry of Ecological Transition)",
+    "Consultation du {now}": "Looked up on {now}",
+    "ventes {a}–{b}": "sales {a}–{b}",
+    "fenêtre {w}": "window {w}",
+    "Prix (DVF)": "Prices (DVF)",
+    "DVF géolocalisé — Demandes de Valeurs Foncières (DGFiP / Etalab)":
+        "Geolocated DVF — French property transaction register (DGFiP / Etalab)",
+    "Fenêtre {w} · Licence Ouverte 2.0": "Window {w} · Licence Ouverte 2.0 (French open licence)",
+    "parcelle cadastrale du bâtiment · commune INSEE {c}":
+        "cadastral parcel of the building · INSEE municipality code {c}",
+    "indisponible : l'Alsace-Moselle et Mayotte ne sont pas couvertes par la DVF":
+        "unavailable: Alsace-Moselle and Mayotte are not covered by the DVF register",
+    "DPE officiel": "Official DPE (energy performance certificate)",
+    "Observatoire DPE (ADEME)": "DPE observatory (ADEME)",
+    "(logement choisi)": "(selected dwelling)",
+    "(logement représentatif BDNB)": "(BDNB representative dwelling)",
+    "Fiscalité locale": "Local property taxes",
+    "DGFiP — Fiscalité directe locale (data.economie.gouv.fr)":
+        "DGFiP — Local direct taxation (data.economie.gouv.fr)",
+    "insee_com = {c} · exercice {y}": "insee_com = {c} · tax year {y}",
+    "exercice {y}": "tax year {y}",
+    "Écoles": "Schools",
+    "Annuaire de l'éducation (MENJ)": "French national school directory (MENJ)",
+    "within_distance 2 km de {lat}, {lon}": "within_distance 2 km of {lat}, {lon}",
+    "annuaire courant": "current directory",
+    "Eau souterraine (nappe)": "Groundwater (water table)",
+    "code BSS {c} · station à {d} m du bâtiment": "BSS code {c} · station {d} m from the building",
+    "{d} (dernière mesure)": "{d} (latest reading)",
+    "Eau potable (rendement du réseau)": "Drinking water (network efficiency)",
+    "SISPEA — Observatoire des services publics d'eau (OFB)":
+        "SISPEA — French water utilities observatory (OFB)",
+    "commune INSEE {c} · indicateur P104.3": "INSEE municipality code {c} · indicator P104.3",
+    "année {y} (dernière publiée)": "year {y} (latest published)",
+    "Solaire photovoltaïque": "Solar photovoltaics",
+    "PVGIS v5.2 (Joint Research Centre, Commission européenne)":
+        "PVGIS v5.2 (Joint Research Centre, European Commission)",
+    "© Union européenne": "© European Union",
+    "base climatique PVGIS-SARAH2": "PVGIS-SARAH2 climate database",
+    "Photos (contexte)": "Photos (context)",
+    " et ": " and ",
+    "CC-BY-SA / licences libres, voir chaque image": "CC-BY-SA / free licences, see each image",
+    "photo id(s) : {ids}": "photo id(s): {ids}",
+    "voir la visionneuse": "see the viewer",
+    "Annexe — traçabilité des données": "Annex — data traceability",
+    "D'où vient chaque donnée": "Where each piece of data comes from",
+    "Ce rapport agrège des données ouvertes. Pour chaque donnée : la source,\n"
+    "la version, la clé de recherche exacte et un lien pour vérifier directement à la source,\n"
+    "sans avoir à faire confiance à EcoBuilding. Généré le {now}.":
+        "This report aggregates open data. For each piece of data: the source, the version, "
+        "the exact lookup key and a link to verify it directly at the source, without having "
+        "to trust EcoBuilding. Generated on {now}.",
+    "Sources publiques (Licence Ouverte, CC-BY-SA, ODbL). Les identifiants ci-dessus\n"
+    "  permettent de retrouver la donnée d'origine. Document informatif, non contractuel.":
+        "Public sources (Licence Ouverte, CC-BY-SA, ODbL). The identifiers above make it "
+        "possible to retrieve the original data. Informational document, not contractually binding.",
+    # — Principal address note
+    " ({n} logements)": " ({n} dwellings)",
+    "Bâtiment groupe BDNB{n} — adresse principale : {p}":
+        "BDNB building group{n} — main address: {p}",
+    # — DPE spread (per-dwelling certificates)
+    "{n} diagnostics connus à cette adresse, tous en {c}.":
+        "{n} energy performance certificates (DPE) known at this address, all rated {c}.",
+    "{n} diagnostics connus à cette adresse : de {a} à {b}.":
+        "{n} energy performance certificates (DPE) known at this address: from {a} to {b}.",
+    " L'immeuble compte {n} logements.": " The building has {n} dwellings.",
+    "enveloppe {v}": "envelope {v}",
+    "menuiseries {v}": "windows and doors {v}",
+    "seul logement de cette surface": "the only dwelling with this floor area",
+    "{n} logements de cette surface — indiscernables":
+        "{n} dwellings with this floor area — indistinguishable",
+    "Logement": "Dwelling",
+    "{e} — classe {c}": "{e} — class {c}",
+    " · le logement de cette fiche": " · the dwelling covered by this report",
+    " · classe affichée ci-dessus": " · class shown above",
+    "Établi le": "Issued on",
+    "Consommation": "Energy use",
+    " kWh/m²/an": " kWh/m²/yr",
+    "GES": "GHG",
+    " kgCO₂/m²/an": " kgCO₂/m²/yr",
+    "Coût annuel": "Annual cost",
+    " €/an": " €/yr",
+    "Isolation": "Insulation",
+    "N° DPE": "DPE no.",
+    '<p class="meta">Les {n} autres diagnostics de l\'immeuble figurent sur la fiche bâtiment.</p>':
+        '<p class="meta">The building\'s {n} other certificates appear on the building report.</p>',
+    '<p class="meta">L\'autre diagnostic de l\'immeuble figure sur la fiche bâtiment.</p>':
+        '<p class="meta">The building\'s other certificate appears on the building report.</p>',
+    '\n<p class="meta">Retrouvez le logement concerné par sa surface, ou par le numéro\n'
+    "de DPE que le vendeur remet obligatoirement — il est vérifiable sur\n"
+    "l'observatoire de l'ADEME.</p>":
+        '\n<p class="meta">Identify the dwelling by its floor area, or by the DPE number the '
+        "seller must hand over — it can be verified on the ADEME observatory.</p>",
+    "La classe ci-dessus est celle du logement choisi pour cette fiche.":
+        "The class above is that of the dwelling selected for this report.",
+    "La classe ci-dessus est celle du logement représentatif du bâtiment, pas celle de tous.":
+        "The class above is that of the building's representative dwelling, not of every dwelling.",
+    "Répartition — {parts}. Source : ADEME, observatoire DPE.\n"
+    "Seuls les logements diagnostiqués figurent : c'est un minimum observé, pas un\n"
+    "inventaire de l'immeuble.":
+        "Breakdown — {parts}. Source: ADEME, DPE observatory. Only dwellings with a certificate "
+        "are listed: this is an observed minimum, not a full inventory of the building.",
+    # — Local taxes
+    "Taxe foncière (bâti), taux global": "Property tax (built land), combined rate",
+    "Taxe ordures ménagères (TEOM)": "Household waste tax (TEOM)",
+    "Taxe foncière (non bâti)": "Property tax (unbuilt land)",
+    "Intercommunalité": "Inter-municipal body",
+    "Taux globaux (commune + intercommunalité + syndicats), dernier exercice\n"
+    "publié (DGFiP). La taxe due dépend de la valeur locative cadastrale du bien.":
+        "Combined rates (municipality + inter-municipal body + syndicates), latest published "
+        "tax year (DGFiP). The tax due depends on the property's cadastral rental value.",
+    # — Municipality
+    "Commune": "Municipality",
+    "Auparavant": "Formerly",
+    "{nom}, jusqu'au {date}": "{nom}, until {date}",
+    "Nom et limites inchangés depuis": "Name and boundaries unchanged since",
+    "A cessé d'exister le": "Ceased to exist on",
+    "Données arrêtées au": "Data as of",
+    "Source : {credits}.": "Source: {credits}.",
+    # — Schools
+    "Établissement": "School",
+    "Écoles à proximité": "Schools nearby",
+    "Aucun établissement recensé à moins de 2 km (annuaire de l'éducation).":
+        "No school listed within 2 km (national school directory).",
+    "Écoles à proximité ({n} à moins de 2 km)": "Schools nearby ({n} within 2 km)",
+    "Distances à vol d'oiseau (annuaire de l'éducation). La proximité ne vaut\n"
+    "pas sectorisation: la carte scolaire dépend de la commune.":
+        "Straight-line distances (national school directory). Proximity does not imply "
+        "catchment: school assignment depends on the municipality.",
+    # — Official DPE
+    "DPE officiel (logement représentatif)":
+        "Official DPE (energy performance certificate) — representative dwelling",
+    "N° DPE (ADEME)": "DPE no. (ADEME)",
+    "Valable jusqu'au": "Valid until",
+    " (validité légale: 10 ans)": " (legal validity: 10 years)",
+    "Surface habitable": "Living area",
+    "Coût annuel d'énergie estimé": "Estimated annual energy cost",
+    "Chauffage": "Heating",
+    "Eau chaude sanitaire": "Domestic hot water",
+    "Énergies": "Energy sources",
+    "Isolation: enveloppe": "Insulation: envelope",
+    "Isolation: menuiseries": "Insulation: windows and doors",
+    "Isolation: plancher bas": "Insulation: lower floor",
+    "Isolation: plancher haut": "Insulation: upper floor",
+    "Données du DPE officiel du logement représentatif du bâtiment (Observatoire\n"
+    "DPE, ADEME). Dans un immeuble, les autres logements peuvent différer. Coûts estimés\n"
+    "aux prix de l'énergie en vigueur à la date du diagnostic.":
+        "Data from the official DPE of the building's representative dwelling (DPE observatory, "
+        "ADEME). In an apartment building, other dwellings may differ. Costs estimated at the "
+        "energy prices in force on the certificate date.",
+    # — Drinking water
+    "Eau potable (commune)": "Drinking water (municipality)",
+    "Rendement du réseau": "Network efficiency",
+    "Part perdue en fuites": "Share lost to leaks",
+    "Prix de l'eau (120 m³)": "Water price (120 m³)",
+    "Indicateurs du service public d'eau potable de la commune (SISPEA / OFB),\n"
+    "dernière année publiée. Un rendement de 70 % signifie que 30 % de l'eau potable\n"
+    "produite est perdue avant d'arriver au robinet.":
+        "Indicators of the municipality's public drinking-water service (SISPEA / OFB), latest "
+        "published year. An efficiency of 70 % means 30 % of the drinking water produced is "
+        "lost before reaching the tap.",
+    # — Groundwater
+    "Eau souterraine": "Groundwater",
+    "Donnée indisponible.": "Data unavailable.",
+    "Profondeur de la nappe": "Water-table depth",
+    " m sous le sol": " m below ground level",
+    "Niveau piézométrique": "Piezometric level",
+    "Mesuré le": "Measured on",
+    "Piézomètre le plus proche": "Nearest piezometer",
+    "Distance du bâtiment": "Distance from the building",
+    # — Main page
+    "Adresse inconnue": "Address unknown",
+    "⚠ Location interdite à partir de <strong>{y}</strong> (loi Climat &amp; Résilience)":
+        "⚠ Rental banned from <strong>{y}</strong> (French Climate &amp; Resilience law)",
+    "Aucune interdiction de location prévue pour cette classe":
+        "No rental ban scheduled for this class",
+    "⚠ Location interdite à partir de <strong>{y}</strong> (loi Climat &amp; Résilience) pour ce logement":
+        "⚠ Rental banned from <strong>{y}</strong> (French Climate &amp; Resilience law) for this dwelling",
+    "Aucune interdiction de location prévue pour la classe de ce logement":
+        "No rental ban scheduled for this dwelling's class",
+    "Fiche LOGEMENT formatée et sourcée — données ouvertes":
+        "DWELLING report, formatted and sourced — open data",
+    "Fiche bâtiment formatée et sourcée — données ouvertes":
+        "Building report, formatted and sourced — open data",
+    "<strong>Fiche d'un logement</strong> : {m2} m² · classe {c} · N° DPE {n}. "
+    "Les autres logements de l'immeuble ne sont pas l'objet de ce document.":
+        "<strong>Report for one dwelling</strong>: {m2} m² · class {c} · DPE no. {n}. "
+        "The building's other dwellings are not covered by this document.",
+    "Identifiant BDNB : {id} · Générée le {now} · ecobuilding.confinia.io":
+        "BDNB identifier: {id} · Generated on {now} · ecobuilding.confinia.io",
+    "Énergie (DPE)": "Energy — DPE (energy performance certificate)",
+    " — logement {m2} m², classe {c}": " — dwelling {m2} m², class {c}",
+    "{v} kWh/m²/an": "{v} kWh/m²/yr",
+    "Aucun DPE enregistré dans la BDNB pour ce bâtiment":
+        "No DPE recorded in the BDNB for this building",
+    "Étiquette énergie <span>(kWh/m²/an, énergie primaire)</span>":
+        "Energy label <span>(kWh/m²/yr, primary energy)</span>",
+    "Étiquette climat <span>(kgCO₂/m²/an)</span>":
+        "Climate label <span>(kgCO₂/m²/yr)</span>",
+    "Classes marquées : celles des {n} diagnostics connus à cette adresse. "
+    "La valeur chiffrée est celle du logement représentatif.":
+        "Classes marked: those of the {n} certificates known at this address. "
+        "The figure shown is that of the representative dwelling.",
+    "Classe marquée : celle du logement choisi (N° DPE {n}).":
+        "Class marked: that of the selected dwelling (DPE no. {n}).",
+    "Date du DPE": "DPE date",
+    "Émissions GES": "GHG emissions",
+    "Bâtiment": "Building",
+    "ID-RNB (référentiel national)": "RNB ID (national building registry)",
+    "Année de construction": "Year built",
+    "Hauteur moyenne": "Average height",
+    "Logements": "Dwellings",
+    "Matériaux des murs": "Wall materials",
+    "Matériaux du toit": "Roof materials",
+    "Retrait-gonflement des argiles": "Clay shrink-swell",
+    "Risques recensés dans la zone": "Risks identified in the area",
+    "Rapport Géorisques": "Géorisques report",
+    "Solaire": "Solar",
+    "Favorable au solaire thermique": "Suitable for solar thermal",
+    "oui": "yes",
+    "non": "no",
+    "Potentiel annuel estimé": "Estimated annual potential",
+    " kWh/an": " kWh/yr",
+    "Productible photovoltaïque (PVGIS)": "Photovoltaic yield (PVGIS)",
+    " kWh/an par kWc installé": " kWh/yr per kWp installed",
+    "Irradiation (inclinaison optimale)": "Irradiation (optimal tilt)",
+    "Carte du quartier : le bâtiment et les écoles":
+        "Neighbourhood map: the building and the schools",
+    "Le bâtiment épinglé en vert, les écoles nommées sur la carte.\n"
+    "La liste disait combien ; la carte dit lesquelles, et où — proximité,\n"
+    "jamais sectorisation (#324).":
+        "The building pinned in green, the schools named on the map. The list said how many; "
+        "the map says which ones, and where — proximity, never catchment (#324).",
+    "Sources : BDNB (CSTB), Base Adresse Nationale, Géorisques — Licence Ouverte, attributions requises.\n"
+    "  Document informatif généré automatiquement à partir de données ouvertes : il ne remplace ni un\n"
+    "  diagnostic de performance énergétique (DPE) officiel, ni un état des risques et pollutions (ERP)\n"
+    "  réglementaire. Une question sur cette fiche : contact@confinia.io":
+        "Sources: BDNB (CSTB), Base Adresse Nationale, Géorisques — Licence Ouverte (French open "
+        "licence), attribution required. Informational document generated automatically from open "
+        "data: it replaces neither an official energy performance certificate (DPE) nor a "
+        "regulatory risk and pollution report (ERP). A question about this report: contact@confinia.io",
+    # — Context page
+    "ce bâtiment": "this building",
+    "Contexte — sources tierces": "Context — third-party sources",
+    "Vue aérienne": "Aerial view",
+    "Photo aérienne IGN (BD ORTHO) et limites de parcelles (Parcellaire Express)":
+        "IGN aerial photo (BD ORTHO) and parcel boundaries (Parcellaire Express)",
+    "Photo aérienne IGN (BD ORTHO)": "IGN aerial photo (BD ORTHO)",
+    " — Licence Ouverte. ": " — Licence Ouverte (French open licence). ",
+    "Le bâtiment concerné est entouré en cyan. ": "The building concerned is outlined in cyan. ",
+    "Le bâtiment concerné est au centre du repère. ":
+        "The building concerned is at the centre of the marker. ",
+    "Le terrain, les arbres, les annexes et les accès, que nulle donnée structurée ne décrit.":
+        "The grounds, trees, outbuildings and access ways, which no structured dataset describes.",
+    "Photos du lieu": "Photos of the site",
+    "Localisation — carte 3D (DPE)": "Location — 3D map (DPE)",
+    "Bâtiment ciblé en pleine opacité (voisins atténués), coloré par classe DPE. "
+    "Limites de parcelles en orange. "
+    "Zoom 18, inclinaison 60°. Fond : OpenStreetMap et contributeurs (ODbL) · Bâtiments &amp; DPE : BDNB (CSTB) "
+    "· Parcelles : IGN Parcellaire Express (Licence Ouverte).":
+        "Targeted building at full opacity (neighbours dimmed), coloured by DPE class. "
+        "Parcel boundaries in orange. "
+        "Zoom 18, tilt 60°. Basemap: OpenStreetMap and contributors (ODbL) · Buildings &amp; DPE: BDNB (CSTB) "
+        "· Parcels: IGN Parcellaire Express (Licence Ouverte).",
+    "Voir la zone sur OSM": "View the area on OSM",
+    "Imagerie : Panoramax (CC-BY-SA 4.0) et Wikimedia Commons, auteur et licence indiqués\n"
+    "  sous chaque photo. Cartographie : OpenStreetMap et contributeurs (ODbL).\n"
+    "  Informations de contexte, non contractuelles.":
+        "Imagery: Panoramax (CC-BY-SA 4.0) and Wikimedia Commons, author and licence shown "
+        "under each photo. Cartography: OpenStreetMap and contributors (ODbL). "
+        "Contextual information, not contractually binding.",
+}
