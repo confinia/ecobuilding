@@ -540,6 +540,24 @@ def test_report_english():
     assert "Année de construction" in fr and "Year built" not in fr
 
 
+def test_report_cover_page():
+    """The fiche opens on a cover page: a hero image (aerial when present), the
+    address as a large title and the EcoBuilding brand line. With no images it
+    falls back to the green banner — never a broken <img> — and never crashes."""
+    from app.report import _report_html
+    aerial = "data:image/png;base64,AAAA"
+    html = _report_html(BUILDING_FIXTURE, aerial_img=aerial)
+    assert 'class="cover"' in html
+    assert '<div class="cover-title">1 Rue de Test 75001 Paris</div>' in html
+    assert aerial in html
+    assert "EcoBuilding" in html
+    # No images: cover still renders with the green fallback, no hero <img>.
+    plain = _report_html(BUILDING_FIXTURE)
+    assert 'class="cover"' in plain
+    assert "cover-hero-fallback" in plain
+    assert '<div class="cover-hero"><img src="data:' not in plain
+
+
 def test_report_endpoint_accepts_searched_address(monkeypatch):
     async def fake_upstream(url, params, ttl):
         if "api-adresse" in url:
