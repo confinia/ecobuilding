@@ -99,43 +99,22 @@ map.on('load', () => {
       new maplibregl.Marker({ element: el, anchor: 'left' })
         .setLngLat([pt.lon, pt.lat]).addTo(map);
     }
-    // Surcouche des zones inondables PPRI (#377) : UNE seule image GetMap
-    // Géorisques couvrant la vue FINALE, posée sous les volumes. Une couche
-    // raster tuilée ({bbox-epsg-3857}) ne se peignait pas de façon fiable dans
-    // le rendu headless ; une image unique est déterministe, et on l'attend.
-    const addFlood = (done) => {
-      if (!q.get('ppri')) { done(); return; }
+    // La surcouche des zones inondables PPRI (#377) est composée CÔTÉ SERVEUR
+    // (api/_ppri_map_png) : dans le navigateur headless, une source image
+    // distante ne déclenchait jamais son téléchargement — la surcouche
+    // n'apparaissait pas. On expose donc les bornes de la vue FINALE ; l'API
+    // récupère l'image WMS Géorisques pour ces bornes (EPSG:3857, même
+    // projection que le fond) et la superpose au cliché.
+    const settle = () => {
       const b = map.getBounds();
-      const w = b.getWest(), s = b.getSouth(), e = b.getEast(), n = b.getNorth();
-      const url = 'https://www.georisques.gouv.fr/services?SERVICE=WMS&VERSION=1.1.1'
-        + '&REQUEST=GetMap&LAYERS=PPRN_ZONE_INOND&SRS=EPSG:4326'
-        + '&BBOX=' + [w, s, e, n].join(',')
-        + '&WIDTH=960&HEIGHT=540&FORMAT=image/png&TRANSPARENT=TRUE&STYLES=';
-      map.addSource('ppri-img', { type: 'image', url,
-        coordinates: [[w, n], [e, n], [e, s], [w, s]] });
-      map.addLayer({ id: 'ppri-zones', source: 'ppri-img', type: 'raster',
-        paint: { 'raster-opacity': 0.45 } }, 'bdnb-all');   // sous les volumes
-      // En headless, la carte se déclarait « idle » AVANT que l'image WMS soit
-      // téléchargée et peinte : la surcouche n'apparaissait pas. On attend donc
-      // explicitement que la source image soit chargée, puis un idle pour la
-      // peinture. Un filet de sécurité (4 s) garantit que __ready finit par
-      // passer même si l'image n'arrive jamais — la fiche sort quand même.
-      let settled = false;
-      const finish = () => { if (settled) return; settled = true; done(); };
-      const onData = (ev) => {
-        if (ev.sourceId === 'ppri-img' && ev.isSourceLoaded) {
-          map.off('sourcedata', onData);
-          map.once('idle', finish);
-        }
-      };
-      map.on('sourcedata', onData);
-      setTimeout(finish, 4000);
+      window.__bounds = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
+      window.__ready = true;
     };
     if (center) {
       map.setCenter(center);   // building footprint -> container centre
-      map.once('idle', () => addFlood(() => { window.__ready = true; }));
+      map.once('idle', settle);
     } else {
-      addFlood(() => { window.__ready = true; });
+      settle();
     }
   });
 });

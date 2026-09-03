@@ -11,3 +11,4 @@ PyJWT[crypto]==2.*
 pyproj==3.*
 standardwebhooks==1.*
 openpyxl==3.1.5
+Pillow==11.*

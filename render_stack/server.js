@@ -67,6 +67,11 @@ app.get('/shot', async (req, res) => {
     // mesurées, #280), poids du PDF téléchargé, place au cache. Une carte en
     // aplats souffre peu du JPEG à cette qualité.
     const img = await el.screenshot({ type: 'jpeg', quality: 85 });
+    // Bornes de la vue FINALE (après recentrage sur l'emprise) : l'API s'en
+    // sert pour composer la surcouche PPRI côté serveur (#377), le navigateur
+    // headless ne chargeant pas de source image distante.
+    const bounds = await page.evaluate('window.__bounds || null');
+    if (bounds) res.set('X-Map-Bounds', JSON.stringify(bounds));
     res.type('jpeg').send(img);
   } catch (e) {
     console.error('shot failed:', e.message);
