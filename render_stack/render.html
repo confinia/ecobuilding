@@ -60,19 +60,6 @@ map.on('load', () => {
     type: 'line', minzoom: 15,
     paint: { 'line-color': '#ff8a00', 'line-width': 1.4, 'line-opacity': 0.85 } });
 
-  // Zones inondables PPRI (#377) : surcouche WMS Géorisques, à plat, servie
-  // seulement quand l'API la demande (?ppri=1). La couleur bleue / rouge est
-  // celle, officielle, du zonage réglementaire — sous les volumes semi-opaques.
-  if (q.get('ppri')) {
-    map.addSource('ppri', { type: 'raster', tileSize: 256,
-      tiles: ['https://www.georisques.gouv.fr/services?SERVICE=WMS&VERSION=1.1.1'
-        + '&REQUEST=GetMap&LAYERS=PPRN_ZONE_INOND&SRS=EPSG:3857'
-        + '&BBOX={bbox-epsg-3857}&WIDTH=256&HEIGHT=256&FORMAT=image/png'
-        + '&TRANSPARENT=TRUE&STYLES='] });
-    map.addLayer({ id: 'ppri-zones', source: 'ppri', type: 'raster',
-      paint: { 'raster-opacity': 0.6 } });
-  }
-
   const height = ['coalesce', ['get', 'hauteur_mean'], 6];
   // All buildings dimmed; the target rendered full-opacity so it stands out.
   map.addLayer({ id: 'bdnb-all', source: 'bdnb', 'source-layer': 'sql_statement',
@@ -112,11 +99,29 @@ map.on('load', () => {
       new maplibregl.Marker({ element: el, anchor: 'left' })
         .setLngLat([pt.lon, pt.lat]).addTo(map);
     }
+    // Surcouche des zones inondables PPRI (#377) : UNE seule image GetMap
+    // Géorisques couvrant la vue FINALE, posée sous les volumes. Une couche
+    // raster tuilée ({bbox-epsg-3857}) ne se peignait pas de façon fiable dans
+    // le rendu headless ; une image unique est déterministe, et on l'attend.
+    const addFlood = (done) => {
+      if (!q.get('ppri')) { done(); return; }
+      const b = map.getBounds();
+      const w = b.getWest(), s = b.getSouth(), e = b.getEast(), n = b.getNorth();
+      const url = 'https://www.georisques.gouv.fr/services?SERVICE=WMS&VERSION=1.1.1'
+        + '&REQUEST=GetMap&LAYERS=PPRN_ZONE_INOND&SRS=EPSG:4326'
+        + '&BBOX=' + [w, s, e, n].join(',')
+        + '&WIDTH=960&HEIGHT=540&FORMAT=image/png&TRANSPARENT=TRUE&STYLES=';
+      map.addSource('ppri-img', { type: 'image', url,
+        coordinates: [[w, n], [e, n], [e, s], [w, s]] });
+      map.addLayer({ id: 'ppri-zones', source: 'ppri-img', type: 'raster',
+        paint: { 'raster-opacity': 0.65 } }, 'bdnb-all');   // sous les volumes
+      map.once('idle', done);
+    };
     if (center) {
       map.setCenter(center);   // building footprint -> container centre
-      map.once('idle', () => { window.__ready = true; });
+      map.once('idle', () => addFlood(() => { window.__ready = true; }));
     } else {
-      window.__ready = true;
+      addFlood(() => { window.__ready = true; });
     }
   });
 });
