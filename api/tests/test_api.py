@@ -1669,6 +1669,12 @@ def test_ppri_colour_and_report():
     en = _report_html({**base, "ppri": ppri}, lang="en")
     assert "BLUE zone" in en
 
+    # #377 vignette : la carte du zonage s'embarque quand elle est fournie, et
+    # jamais d'<img> cassé quand elle est absente.
+    fr_img = _report_html({**base, "ppri": ppri}, ppri_img="data:image/png;base64,ZZ")
+    assert "data:image/png;base64,ZZ" in fr_img and "zones inondables" in fr_img
+    assert "data:image/png;base64,ZZ" not in _report_html({**base, "ppri": ppri})
+
     # No PPRI zone but a flood risk present -> honest presence-only note.
     flood_base = {**BUILDING_FIXTURE,
                   "area_risks": {"commune": "X", "report_url": "https://x",

@@ -47,7 +47,7 @@ app.get('/healthz', (_req, res) => res.type('text').send('ok'));
 app.get('/shot', async (req, res) => {
   // `tiles` : gabarit d'URL des tuiles bâtiments, fourni par l'API (son cache).
   // `points` : lieux à étiqueter (écoles, #324) — JSON transmis tel quel à la page.
-  const allowed = ['lon', 'lat', 'zoom', 'pitch', 'bearing', 'bdnb_id', 'tiles', 'points'];
+  const allowed = ['lon', 'lat', 'zoom', 'pitch', 'bearing', 'bdnb_id', 'tiles', 'points', 'ppri'];
   const qs = allowed.filter(k => req.query[k] != null)
     .map(k => `${k}=${encodeURIComponent(req.query[k])}`).join('&');
   if (req.query.lon == null || req.query.lat == null) return res.status(400).send('lon/lat required');
@@ -67,6 +67,11 @@ app.get('/shot', async (req, res) => {
     // mesurées, #280), poids du PDF téléchargé, place au cache. Une carte en
     // aplats souffre peu du JPEG à cette qualité.
     const img = await el.screenshot({ type: 'jpeg', quality: 85 });
+    // Bornes de la vue FINALE (après recentrage sur l'emprise) : l'API s'en
+    // sert pour composer la surcouche PPRI côté serveur (#377), le navigateur
+    // headless ne chargeant pas de source image distante.
+    const bounds = await page.evaluate('window.__bounds || null');
+    if (bounds) res.set('X-Map-Bounds', JSON.stringify(bounds));
     res.type('jpeg').send(img);
   } catch (e) {
     console.error('shot failed:', e.message);

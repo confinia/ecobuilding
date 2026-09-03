@@ -99,11 +99,22 @@ map.on('load', () => {
       new maplibregl.Marker({ element: el, anchor: 'left' })
         .setLngLat([pt.lon, pt.lat]).addTo(map);
     }
+    // La surcouche des zones inondables PPRI (#377) est composée CÔTÉ SERVEUR
+    // (api/_ppri_map_png) : dans le navigateur headless, une source image
+    // distante ne déclenchait jamais son téléchargement — la surcouche
+    // n'apparaissait pas. On expose donc les bornes de la vue FINALE ; l'API
+    // récupère l'image WMS Géorisques pour ces bornes (EPSG:3857, même
+    // projection que le fond) et la superpose au cliché.
+    const settle = () => {
+      const b = map.getBounds();
+      window.__bounds = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
+      window.__ready = true;
+    };
     if (center) {
       map.setCenter(center);   // building footprint -> container centre
-      map.once('idle', () => { window.__ready = true; });
+      map.once('idle', settle);
     } else {
-      window.__ready = true;
+      settle();
     }
   });
 });

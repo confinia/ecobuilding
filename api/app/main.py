@@ -541,6 +541,93 @@ async def _quartier_map_png(lon, lat, bdnb_id, schools):
         return None
 
 
+async def _ppri_map_png(lon, lat, bdnb_id):
+    """Vignette des ZONES INONDABLES (#377) : le bâtiment épinglé sur le zonage
+    réglementaire PPRI (bleu = risque modéré, rouge = risque fort), vue à plat.
+    Le texte dit la couleur ; la carte dit où passe la limite et de quel côté se
+    trouve le bâtiment. None sur tout échec — la fiche sort quand même."""
+    if not RENDER_URL or lon is None or lat is None:
+        return None
+    # « ppri2 » : la vignette est désormais COMPOSÉE (fond + surcouche WMS),
+    # l'ancienne clé « ppri » renvoyait un fond sans zones — on invalide.
+    chemin = os.path.join(
+        TILES_DIR, "render",
+        hashlib.sha256(f"ppri2|{round(lon, 5)}|{round(lat, 5)}|{bdnb_id}"
+                       .encode()).hexdigest()[:24] + ".jpg")
+    en_cache = _tile_read(chemin, RENDER_CACHE_TTL)
+    if en_cache:
+        M_CACHE.add(1, {"result": "hit_render"})
+        return _uri_image(en_cache)
+    try:
+        # 1. Le fond : bâtiment épinglé, parcelles, rues — vue à plat. Le
+        #    renderer renvoie AUSSI les bornes de la vue finale (après
+        #    recentrage) dans l'en-tête X-Map-Bounds.
+        r = await _client.get(RENDER_URL, params={
+            "lon": lon, "lat": lat, "zoom": 15.5, "pitch": 0, "bearing": 0,
+            "bdnb_id": bdnb_id,
+            "tiles": f"{PUBLIC_BASE_URL}/api/v1/tiles/batiment_groupe/"
+                     "{z}/{x}/{y}.pbf"}, timeout=45.0)
+        r.raise_for_status()
+        out = await _ppri_overlay(r.content, r.headers.get("x-map-bounds"))
+        if len(out) > 10_000:
+            _tile_write(chemin, out)
+        return _uri_image(out)
+    except Exception as e:
+        log.warning("ppri map render failed for %s: %s", bdnb_id, e)
+        return None
+
+
+async def _ppri_overlay(base_bytes: bytes, bounds_json: str | None) -> bytes:
+    """Superpose les zones inondables Géorisques au cliché de fond.
+
+    Le navigateur headless ne déclenchait jamais le chargement d'une source
+    image distante ; l'API, elle, atteint Géorisques (c'est déjà elle qui lit
+    le texte « zone bleue/rouge »). On récupère donc l'image WMS pour les bornes
+    EXACTES de la vue — en EPSG:3857, la projection du fond, pour un calage au
+    pixel — et on la compose à 45 % d'opacité. Tout échec renvoie le fond seul :
+    la carte reste utile, et le texte dit déjà la zone."""
+    if not bounds_json:
+        return base_bytes
+    try:
+        import io
+
+        from PIL import Image
+
+        w, s, e, n = json.loads(bounds_json)
+
+        def _merc(lon, lat):
+            r = 20037508.342789244
+            x = lon * r / 180.0
+            y = math.log(math.tan((90 + lat) * math.pi / 360.0)) / (math.pi / 180.0) * r / 180.0
+            return x, y
+
+        minx, miny = _merc(w, s)
+        maxx, maxy = _merc(e, n)
+        base = Image.open(io.BytesIO(base_bytes)).convert("RGBA")
+        W, H = base.size
+        wms = await _client.get(
+            "https://www.georisques.gouv.fr/services",
+            params={"SERVICE": "WMS", "VERSION": "1.1.1", "REQUEST": "GetMap",
+                    "LAYERS": "PPRN_ZONE_INOND", "SRS": "EPSG:3857",
+                    "BBOX": f"{minx},{miny},{maxx},{maxy}",
+                    "WIDTH": W, "HEIGHT": H, "FORMAT": "image/png",
+                    "TRANSPARENT": "TRUE", "STYLES": ""}, timeout=30.0)
+        wms.raise_for_status()
+        ov = Image.open(io.BytesIO(wms.content)).convert("RGBA")
+        if ov.size != base.size:
+            ov = ov.resize(base.size)
+        # Les aplats Géorisques sont opaques : on les rend translucides pour que
+        # les rues et le bâtiment restent lisibles dessous.
+        ov.putalpha(ov.getchannel("A").point(lambda a: int(a * 0.45)))
+        base.alpha_composite(ov)
+        buf = io.BytesIO()
+        base.convert("RGB").save(buf, "JPEG", quality=85)
+        return buf.getvalue()
+    except Exception as ex:
+        log.warning("ppri overlay compositing failed: %s", ex)
+        return base_bytes
+
+
 IGN_WMS_URL = "https://data.geopf.fr/wms-r/wms"
 
 
@@ -3672,6 +3759,10 @@ async def report(
             _chronometre("aerial", _aerial_view(bdnb_id, lon, lat)))
         quartier = await _chronometre("quartier", _quartier_map_png(
             lon, lat, bdnb_id, data.get("schools")))
+        # Carte des zones inondables : seulement si la parcelle EST en zone PPRI
+        # (#377) — inutile de faire tourner le rendu partout ailleurs.
+        ppri_map = await _chronometre("ppri_map", _ppri_map_png(
+            lon, lat, bdnb_id)) if data.get("ppri") else None
         q = data.get("query", {})
         if address:
             q["address"] = address  # title with the searched address (#146)
@@ -3705,6 +3796,8 @@ async def report(
             _chronometre("aerial", _aerial_view(bdnb_id, q.get("lon"), q.get("lat"))),
             _chronometre("quartier", _quartier_map_png(
                 q.get("lon"), q.get("lat"), bdnb_id, data.get("schools"))))
+        ppri_map = await _chronometre("ppri_map", _ppri_map_png(
+            q.get("lon"), q.get("lat"), bdnb_id)) if data.get("ppri") else None
     if dpe:
         rangs = ((data.get("dpe_spread") or {}).get("logements")) or []
         cible = next((l for l in rangs if l.get("numero_dpe") == dpe), None)
@@ -3718,7 +3811,7 @@ async def report(
                                aerial_img=aerial.get("image"),
                                aerial_parcels=aerial.get("parcels"),
                                aerial_outline=aerial.get("outline"),
-                               quartier_img=quartier, lang=lang)
+                               quartier_img=quartier, ppri_img=ppri_map, lang=lang)
     with _chrono("cache_write"):
         _tile_write(pdf_path, pdf)      # même écriture atomique que les tuiles
     nom = _nom_de_fiche(q.get("address") or (data["buildings"][0] or {}).get("address"),
