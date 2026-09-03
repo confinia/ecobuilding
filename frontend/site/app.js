@@ -322,6 +322,32 @@ class PitchToggle {
 }
 map.addControl(new PitchToggle(), "bottom-right");
 
+// Bouton d'affichage des zones inondables PPRI (#377) : la couche WMS est
+// masquée par défaut (elle ne concerne pas tout le monde et alourdit la
+// carte), un clic la montre — bleue = risque modéré, rouge = risque fort.
+class FloodToggle {
+  onAdd(m) {
+    this._map = m;
+    this._btn = document.createElement("button");
+    this._btn.className = "maplibregl-ctrl-icon";
+    this._btn.textContent = "🌊";
+    this._btn.title = "Afficher / masquer les zones inondables (PPRI)";
+    this._btn.onclick = () => {
+      if (!m.getLayer("ppri-zones")) return;
+      const on = m.getLayoutProperty("ppri-zones", "visibility") === "visible";
+      m.setLayoutProperty("ppri-zones", "visibility", on ? "none" : "visible");
+      this._btn.style.background = on ? "" : "#dceafd";
+      track(on ? "ppri_off" : "ppri_on");
+    };
+    this._el = document.createElement("div");
+    this._el.className = "maplibregl-ctrl maplibregl-ctrl-group";
+    this._el.appendChild(this._btn);
+    return this._el;
+  }
+  onRemove() { this._el.remove(); }
+}
+map.addControl(new FloodToggle(), "bottom-right");
+
 // --- 3D buildings colored by DPE class (BDNB open data, CSTB) -------------------
 const DPE_COLORS = ["match", ["get", "classe_bilan_dpe"],
   "A", "#009036", "B", "#52b153", "C", "#a5cc74", "D", "#f4e70f",
@@ -387,6 +413,25 @@ map.on("load", () => {
       // invalide la propriété en silence. Le surlignage passe par la couleur.
       "fill-extrusion-opacity": 0.9,
     },
+  });
+
+  // Zones inondables PPRI (#377) : surcouche WMS Géorisques, MASQUÉE par
+  // défaut, activée par le bouton 🌊. La couleur bleue/rouge est celle,
+  // officielle, du zonage réglementaire — c'est Géorisques qui la dessine.
+  // WMS 1.1.1 (SRS, pas d'ambiguïté d'axe) alimenté par la bbox des tuiles.
+  map.addSource("ppri", {
+    type: "raster",
+    tiles: ["https://www.georisques.gouv.fr/services?SERVICE=WMS&VERSION=1.1.1"
+      + "&REQUEST=GetMap&LAYERS=PPRN_ZONE_INOND&SRS=EPSG:3857"
+      + "&BBOX={bbox-epsg-3857}&WIDTH=256&HEIGHT=256&FORMAT=image/png"
+      + "&TRANSPARENT=TRUE&STYLES="],
+    tileSize: 256,
+    attribution: "Zones inondables : Géorisques (PPRN)",
+  });
+  map.addLayer({
+    id: "ppri-zones", type: "raster", source: "ppri",
+    layout: { visibility: "none" },
+    paint: { "raster-opacity": 0.55 },
   });
 
   // Une carte sans volumes 3D doit le DIRE. Jusqu'ici l'échec des tuiles était
@@ -851,6 +896,38 @@ function sectionRapportRisques(data) {
     : "";
 }
 
+// Urbanisme (#376/#377) : zone du PLU, et surtout la zone réglementaire du
+// PPRI inondation en BLEU / ROUGE, lisible d'un coup d'œil — la donnée que
+// l'agent cherche pendant une estimation, sans avoir à sortir le PDF.
+function sectionUrbanisme(data) {
+  const plu = data.urbanisme;
+  const ppri = data.ppri;
+  const floodPresent = (data.area_risks?.risques_naturels || [])
+    .some((r) => String(r).toLowerCase().includes("inond"));
+  if (!plu?.libelle && !ppri?.code && !floodPresent) return "";
+  let html = "<h3>Urbanisme</h3>";
+  if (plu?.libelle) {
+    html += kv("Zone PLU", `<strong>${plu.libelle}</strong>${plu.libelong ? " — " + plu.libelong : ""}`);
+  }
+  if (ppri?.code) {
+    const cls = ppri.couleur === "bleue" ? "ppri-bleue"
+      : ppri.couleur === "rouge" ? "ppri-rouge" : "ppri-autre";
+    const label = ppri.couleur === "bleue" ? "Zone BLEUE — risque modéré"
+      : ppri.couleur === "rouge" ? "Zone ROUGE — risque fort"
+      : `Zone réglementée ${ppri.code}`;
+    const lien = ppri.url_reglement
+      ? ` <a href="${ppri.url_reglement}" target="_blank" rel="noopener">règlement →</a>` : "";
+    html += `<div class="risk-block"><span class="k">PPRI inondation</span>
+      <div><span class="chip ${cls}">${label}</span>
+      <span class="hint">${ppri.nom_ppr || ""}${lien}</span></div></div>`;
+  } else if (floodPresent) {
+    html += `<div class="risk-block"><span class="k">PPRI inondation</span>
+      <div><span class="hint">Parcelle en zone inondable (Géorisques). Couleur
+      réglementaire non cartographiée ici — voir le PPRI de la commune.</span></div></div>`;
+  }
+  return html;
+}
+
 
 // Section qui ne dépend QUE de la position — donc affichable même
 // sans bâtiment BDNB.
@@ -952,6 +1029,7 @@ function renderPanel(s, data, opts) {
         || "Aucun bâtiment n'est décrit à cette adresse dans la base nationale (BDNB)."}</p>
       ${sectionRisques(data)}
       ${sectionRapportRisques(data)}
+      ${sectionUrbanisme(data)}
       ${sectionNappe(data)}
       ${sectionFiscalite(data)}
       ${sectionEcoles(data)}
@@ -1036,6 +1114,7 @@ function renderPanel(s, data, opts) {
     ${kv("Retrait-gonflement argiles", b.risks?.clay_shrink_swell)}
     ${risksHtml}
     ${sectionRapportRisques(data)}
+    ${sectionUrbanisme(data)}
     ${b.cooling?.has_cooling ? `<h3>Climatisation</h3>
     ${kv("Générateur", b.cooling.generator_type)}
     ${kv("Ancienneté", b.cooling.generator_age)}` : ""}

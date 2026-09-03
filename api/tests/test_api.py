@@ -540,6 +540,24 @@ def test_report_english():
     assert "Année de construction" in fr and "Year built" not in fr
 
 
+def test_report_cover_page():
+    """The fiche opens on a cover page: a hero image (aerial when present), the
+    address as a large title and the EcoBuilding brand line. With no images it
+    falls back to the green banner — never a broken <img> — and never crashes."""
+    from app.report import _report_html
+    aerial = "data:image/png;base64,AAAA"
+    html = _report_html(BUILDING_FIXTURE, aerial_img=aerial)
+    assert 'class="cover"' in html
+    assert '<div class="cover-title">1 Rue de Test 75001 Paris</div>' in html
+    assert aerial in html
+    assert "EcoBuilding" in html
+    # No images: cover still renders with the green fallback, no hero <img>.
+    plain = _report_html(BUILDING_FIXTURE)
+    assert 'class="cover"' in plain
+    assert "cover-hero-fallback" in plain
+    assert '<div class="cover-hero"><img src="data:' not in plain
+
+
 def test_report_endpoint_accepts_searched_address(monkeypatch):
     async def fake_upstream(url, params, ttl):
         if "api-adresse" in url:
@@ -1579,7 +1597,7 @@ def test_l_echelle_marque_chaque_classe_presente_a_l_adresse():
 def test_plu_point_in_polygon():
     """#376: the ray-casting helper that picks the ONE PLU zone containing the
     clicked point out of the bbox's neighbours. A unit square, inside vs out."""
-    from app.main import _point_in_ring, _point_in_geometry
+    from app.main import _point_in_ring, _point_in_geom
 
     square = [[0, 0], [0, 2], [2, 2], [2, 0], [0, 0]]
     assert _point_in_ring(1, 1, square) is True
@@ -1587,15 +1605,15 @@ def test_plu_point_in_polygon():
     assert _point_in_ring(-1, -1, square) is False
 
     poly = {"type": "Polygon", "coordinates": [square]}
-    assert _point_in_geometry(1, 1, poly) is True
-    assert _point_in_geometry(5, 5, poly) is False
+    assert _point_in_geom(1, 1, poly) is True
+    assert _point_in_geom(5, 5, poly) is False
     multi = {"type": "MultiPolygon",
              "coordinates": [[[[10, 10], [10, 12], [12, 12], [12, 10], [10, 10]]],
                              [square]]}
-    assert _point_in_geometry(1, 1, multi) is True
-    assert _point_in_geometry(11, 11, multi) is True
-    assert _point_in_geometry(50, 50, multi) is False
-    assert _point_in_geometry(1, 1, None) is False
+    assert _point_in_geom(1, 1, multi) is True
+    assert _point_in_geom(11, 11, multi) is True
+    assert _point_in_geom(50, 50, multi) is False
+    assert _point_in_geom(1, 1, None) is False
 
 
 def test_report_urbanisme_section():
@@ -1626,3 +1644,40 @@ def test_report_urbanisme_section():
     en = _report_html({**base, "urbanisme": urb}, lang="en")
     assert "Zoning (local plan)" in en and "Urban zone" in en
     assert "Urbanisme (PLU)" not in en
+
+
+def test_ppri_colour_and_report():
+    """#377: the PPRI regulatory zone gives the flood colour (bleue/rouge) from
+    the national Géorisques layer; the report states it with the règlement link,
+    and falls back honestly to mere presence when no zone is mapped."""
+    from app.main import _couleur_ppri
+    from app.report import _report_html
+    assert _couleur_ppri("BU") == "bleue"
+    assert _couleur_ppri("RU") == "rouge"
+    assert _couleur_ppri("Z1") is None and _couleur_ppri(None) is None
+
+    ppri = {"code": "BU", "couleur": "bleue", "libelle_zone": "BU",
+            "nom_ppr": "PPRI_Coulazou", "etat": "Approuvé",
+            "date_approbation": "23/09/2002",
+            "url_reglement": "https://www.herault.gouv.fr/FABREGUES"}
+    base = {**BUILDING_FIXTURE,
+            "area_risks": {"commune": "Fabrègues", "report_url": "https://x",
+                           "risques_naturels": [], "risques_technologiques": []}}
+    fr = _report_html({**base, "ppri": ppri})
+    assert "zone BLEUE" in fr and "PPRI_Coulazou" in fr
+    assert "herault.gouv.fr/FABREGUES" in fr
+    en = _report_html({**base, "ppri": ppri}, lang="en")
+    assert "BLUE zone" in en
+
+    # No PPRI zone but a flood risk present -> honest presence-only note.
+    flood_base = {**BUILDING_FIXTURE,
+                  "area_risks": {"commune": "X", "report_url": "https://x",
+                                 "risques_naturels": ["Inondation"],
+                                 "risques_technologiques": []}}
+    note = _report_html(flood_base)
+    assert "n'est pas cartographiée à ce point" in note
+    # Neither PPRI nor flood -> nothing.
+    dry = _report_html({**BUILDING_FIXTURE,
+                        "area_risks": {"commune": "X", "report_url": "https://x",
+                                       "risques_naturels": [], "risques_technologiques": []}})
+    assert "PPRI" not in dry and "zone inondable" not in dry

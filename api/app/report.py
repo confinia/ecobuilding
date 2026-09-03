@@ -628,15 +628,122 @@ def _urbanisme_html(data: dict) -> str:
   {_row(T("Catégorie"), cat_txt)}
 </table>
 <p class="meta">{note} <a href="https://www.geoportail-urbanisme.gouv.fr/">{verify}</a></p>""")
-    flood = any("inondation" in str(r).lower()
-                for r in (risks.get("risques_naturels") or []))
-    if flood:
+    # Zone réglementaire PPRI (#377) : la couche nationale Géorisques porte la
+    # couleur — on l'affiche quand elle est là ; sinon repli honnête sur la
+    # simple présence d'un risque inondation, sans inventer de couleur.
+    ppri = data.get("ppri") or {}
+    couleur = ppri.get("couleur")  # "bleue" / "rouge" / None
+    if ppri.get("code"):
+        if couleur == "bleue":
+            phrase = T("Parcelle en zone BLEUE du PPRI inondation : risque modéré, "
+                       "constructible sous conditions (zone {code}).")
+        elif couleur == "rouge":
+            phrase = T("Parcelle en zone ROUGE du PPRI inondation : risque fort, "
+                       "secteur très contraint (zone {code}).")
+        else:
+            phrase = T("Parcelle dans une zone réglementée du PPRI inondation "
+                       "(zone {code}).")
+        etat_raw = (ppri.get("etat") or "").lower()
+        detail = T("{nom}, {etat}{date}.").format(
+            nom=ppri.get("nom_ppr") or "—",
+            etat=T(etat_raw) if etat_raw else T("statut inconnu"),
+            date=(T(" le {d}").format(d=ppri["date_approbation"])
+                  if ppri.get("date_approbation") else ""))
+        lien = ppri.get("url_reglement")
+        verif = (f' <a href="{lien}">{T("Consulter le règlement de la zone")}</a>'
+                 if lien else "")
+        parts.append(
+            f'<p class="meta">{phrase.format(code=ppri.get("code"))} {detail}'
+            f' ({T("source")} Géorisques){verif}</p>')
+    elif any("inondation" in str(r).lower()
+             for r in (risks.get("risques_naturels") or [])):
         line = T("Parcelle en zone inondable (source Géorisques). La couleur réglementaire "
-                 "du PPRI (zone bleue / rouge) n'est pas disponible ici : consulter le PPRI "
-                 "de la commune.")
+                 "du PPRI (zone bleue / rouge) n'est pas cartographiée à ce point : consulter "
+                 "le PPRI de la commune.")
         parts.append(f'<p class="meta">{line} '
                      f'<a href="https://www.georisques.gouv.fr/">{T("Géorisques")}</a></p>')
     return "".join(parts)
+
+
+def _cover_html(data: dict, aerial_img: str | None = None,
+                map_img: str | None = None) -> str:
+    """Cover page (#PDF restyle): a full-width hero image, the building address
+    as a large title, a big DPE badge and an EcoBuilding brand line.
+
+    Content only — no datum is invented here, everything already sits in
+    `data`, and every visible string goes through `T()`. Renders correctly with
+    no images (solid EcoBuilding-green banner, no broken <img>) and with no DPE
+    (badge simply omitted). The DPE class / range logic mirrors the body badge
+    so the cover never contradicts the page that follows."""
+    b = (data.get("buildings") or [{}])[0] or {}
+    e = b.get("energy") or {}
+    cible = data.get("dpe_cible") or None
+    spread = data.get("dpe_spread") or {}
+    cls = (e.get("dpe_class") or "?").upper()
+    if cible:
+        cls = (cible.get("classe") or "?").upper()
+    color = DPE_COLORS.get(cls, "#999")
+    eventail = bool(not cible and not spread.get("identiques")
+                    and spread.get("classe_min") and spread.get("classe_max"))
+    badge = ""
+    if e.get("dpe_class") or cible:
+        if eventail:
+            c1 = DPE_COLORS.get(spread["classe_min"], "#999")
+            c2 = DPE_COLORS.get(spread["classe_max"], "#999")
+            badge = ('<span class="dpe cover-dpe" style="background:linear-gradient('
+                     '100deg,' + c1 + ' 0%,' + c2 + ' 100%)">'
+                     + spread["classe_min"] + '&nbsp;-&nbsp;' + spread["classe_max"]
+                     + '</span>')
+        else:
+            dark = ';color:#333' if cls == "D" else ""
+            badge = ('<span class="dpe cover-dpe" style="background:' + color + dark
+                     + '">' + cls + '</span>')
+        badge = '<div class="cover-badge">' + badge + '</div>'
+    address = (data.get("query", {}).get("address")
+               or b.get("address") or T("Adresse inconnue"))
+    commune = (data.get("area_risks") or {}).get("commune")
+    commune_html = f'<div class="cover-commune">{commune}</div>' if commune else ""
+    now = datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M UTC")
+    if aerial_img:
+        hero = f'<div class="cover-hero"><img src="{aerial_img}"/></div>'
+    elif map_img:
+        hero = f'<div class="cover-hero"><img src="{map_img}"/></div>'
+    else:
+        hero = '<div class="cover-hero cover-hero-fallback"></div>'
+    return f"""
+<style>
+  .cover {{ page-break-after: always; break-after: page; }}
+  .cover-hero {{ width: 100%; height: 90mm; border-radius: 8pt; overflow: hidden;
+                 line-height: 0; background: #2b7a4b; }}
+  .cover-hero img {{ width: 100%; height: 90mm; object-fit: cover; }}
+  .cover-hero-fallback {{ background: linear-gradient(135deg, #2b7a4b 0%, #1f5c38 100%); }}
+  .cover-body {{ padding: 16mm 2mm 0; }}
+  .cover-commune {{ font-size: 12pt; color: #2b7a4b; font-weight: bold;
+                    letter-spacing: .04em; text-transform: uppercase; }}
+  .cover-title {{ font-size: 28pt; line-height: 1.15; font-weight: bold;
+                  color: #1a1a1a; margin: 4pt 0 14pt; }}
+  .cover-badge {{ margin: 8pt 0 0; }}
+  .cover-dpe {{ font-size: 42pt; min-width: 60pt; padding: 8pt 18pt;
+                border-radius: 8pt; }}
+  .cover-brand {{ margin-top: 22mm; border-top: 2pt solid #2b7a4b;
+                  padding-top: 8pt; }}
+  .cover-brand .n {{ font-size: 15pt; font-weight: bold; color: #2b7a4b; }}
+  .cover-brand .s {{ font-size: 10.5pt; color: #666; }}
+  .cover-brand .d {{ font-size: 8.5pt; color: #999; margin-top: 2pt; }}
+</style>
+<div class="cover">
+  {hero}
+  <div class="cover-body">
+    {commune_html}
+    <div class="cover-title">{address}</div>
+    {badge}
+    <div class="cover-brand">
+      <span class="n">EcoBuilding</span> <span class="s">· {T("fiche bâtiment")}</span>
+      <div class="d">{now}</div>
+    </div>
+  </div>
+</div>
+"""
 
 
 def build_report_pdf(data: dict, photos: list | None = None, map_img: str | None = None,
@@ -797,11 +904,12 @@ def _report_html(data: dict, photos: list | None = None, map_img: str | None = N
     html = f"""
 <style>
   @page {{ size: A4; margin: 18mm 16mm; }}
-  body {{ font-family: 'DejaVu Sans', sans-serif; font-size: 10.5pt; color: #222; }}
+  body {{ font-family: 'DejaVu Sans', sans-serif; font-size: 10.5pt; color: #222;
+         line-height: 1.45; }}
   header {{ border-bottom: 2px solid #2b7a4b; padding-bottom: 6px; margin-bottom: 14px; }}
   .brand {{ font-size: 14pt; font-weight: bold; color: #2b7a4b; }}
   .doctitle {{ font-size: 11pt; color: #555; }}
-  h1 {{ font-size: 13pt; margin: 10px 0 2px; }}
+  h1 {{ font-size: 15pt; margin: 12px 0 3px; }}
   .meta {{ font-size: 8.5pt; color: #777; }}
   .dpe {{ display: inline-block; min-width: 26pt; text-align: center; font-weight: bold;
          color: #fff; background: {color}; border-radius: 4pt; padding: 4pt 8pt; font-size: 15pt; }}
@@ -814,14 +922,16 @@ def _report_html(data: dict, photos: list | None = None, map_img: str | None = N
 .ban {{ margin: 6pt 0; padding: 6pt 8pt; border-radius: 4pt; font-size: 10pt; }}
   .ban.warn {{ background: #fdecea; color: #b3261e; }}
   .ban.ok {{ background: #e8f5e9; color: #2b7a4b; }}
-  h2 {{ font-size: 10pt; text-transform: uppercase; letter-spacing: .05em; color: #2b7a4b;
-       border-bottom: 1px solid #ddd; padding-bottom: 2pt; margin: 14pt 0 6pt;
+  h2 {{ font-size: 11.5pt; text-transform: uppercase; letter-spacing: .04em; color: #2b7a4b;
+       background: #eef6f1; border-left: 3pt solid #2b7a4b;
+       padding: 5pt 9pt; margin: 22pt 0 9pt;
        /* Un titre ne reste JAMAIS seul en bas de page. « Photos du lieu »
           s'affichait suivi d'un grand blanc, son contenu rejeté à la page
           suivante : le lecteur en concluait que la fiche était incomplète,
           alors que les photos étaient là, une page plus loin. */
        break-after: avoid; page-break-after: avoid; }}
-  table {{ width: 100%; border-collapse: collapse; table-layout: fixed; }}
+  table {{ width: 100%; border-collapse: collapse; table-layout: fixed;
+          margin: 4pt 0 10pt; }}
   td {{ padding: 3pt 4pt; border-bottom: 0.5pt dashed #eee; vertical-align: top;
        overflow-wrap: anywhere; word-break: break-word; }}
   td.k {{ color: #666; width: 45%; }}
@@ -839,6 +949,7 @@ def _report_html(data: dict, photos: list | None = None, map_img: str | None = N
   .scale .bar.active {{ outline: 1.5pt solid #333; font-size: 10pt; }}
   .scale .bar .val {{ float: right; font-weight: bold; }}
 </style>
+{_cover_html(data, aerial_img, map_img)}
 <header>
   <div class="brand">EcoBuilding</div>
   <!-- « normalisée » promettait une norme qui n'existe pas : ce document est
@@ -1254,6 +1365,8 @@ _EN = {
     "Mesuré le": "Measured on",
     "Piézomètre le plus proche": "Nearest piezometer",
     "Distance du bâtiment": "Distance from the building",
+    # — Cover page
+    "fiche bâtiment": "building record",
     # — Main page
     "Adresse inconnue": "Address unknown",
     "⚠ Location interdite à partir de <strong>{y}</strong> (loi Climat &amp; Résilience)":
@@ -1316,10 +1429,29 @@ _EN = {
     "Vérifier sur le Géoportail de l'Urbanisme":
         "Check on the Géoportail de l'Urbanisme",
     "Parcelle en zone inondable (source Géorisques). La couleur réglementaire "
-    "du PPRI (zone bleue / rouge) n'est pas disponible ici : consulter le PPRI "
-    "de la commune.":
+    "du PPRI (zone bleue / rouge) n'est pas cartographiée à ce point : consulter "
+    "le PPRI de la commune.":
         "Parcel in a flood-prone area (source: Géorisques). The regulatory PPRI "
-        "colour (blue / red zone) is not available here: consult the commune's PPRI.",
+        "colour (blue / red zone) is not mapped at this point: consult the commune's PPRI.",
+    "Parcelle en zone BLEUE du PPRI inondation : risque modéré, "
+    "constructible sous conditions (zone {code}).":
+        "Parcel in the BLUE zone of the flood PPRI: moderate risk, buildable under "
+        "conditions (zone {code}).",
+    "Parcelle en zone ROUGE du PPRI inondation : risque fort, "
+    "secteur très contraint (zone {code}).":
+        "Parcel in the RED zone of the flood PPRI: high risk, heavily constrained "
+        "area (zone {code}).",
+    "Parcelle dans une zone réglementée du PPRI inondation "
+    "(zone {code}).":
+        "Parcel within a regulated zone of the flood PPRI (zone {code}).",
+    "{nom}, {etat}{date}.": "{nom}, {etat}{date}.",
+    " le {d}": " on {d}",
+    "statut inconnu": "status unknown",
+    "approuvé": "approved",
+    "prescrit": "prescribed",
+    "appliqué par anticipation": "applied in anticipation",
+    "Consulter le règlement de la zone": "See the zone's regulation",
+    "source": "source",
     "Géorisques": "Géorisques",
     "Solaire": "Solar",
     "Favorable au solaire thermique": "Suitable for solar thermal",
