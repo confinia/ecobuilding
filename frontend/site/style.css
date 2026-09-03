@@ -91,6 +91,14 @@ html, body { margin: 0; height: 100%; font-family: system-ui, -apple-system, san
   background: #fdecea; color: #b3261e; border-radius: 10px;
   padding: 2px 9px; font-size: 12px; white-space: nowrap;
 }
+/* Zone réglementaire PPRI (#377) : la couleur EST l'information — bleue
+   (risque modéré) / rouge (risque fort), lisible d'un coup d'œil. */
+.chip.ppri-bleue { background: #1a5fb4; color: #fff; border-radius: 10px;
+  padding: 3px 10px; font-size: 12px; font-weight: 700; }
+.chip.ppri-rouge { background: #c01c28; color: #fff; border-radius: 10px;
+  padding: 3px 10px; font-size: 12px; font-weight: 700; }
+.chip.ppri-autre { background: #777; color: #fff; border-radius: 10px;
+  padding: 3px 10px; font-size: 12px; }
 
 .pano-strip { display: flex; gap: 6px; overflow-x: auto; padding: 2px 0; }
 .pano-strip img { height: 64px; border-radius: 6px; display: block; }
