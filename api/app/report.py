@@ -628,12 +628,38 @@ def _urbanisme_html(data: dict) -> str:
   {_row(T("Catégorie"), cat_txt)}
 </table>
 <p class="meta">{note} <a href="https://www.geoportail-urbanisme.gouv.fr/">{verify}</a></p>""")
-    flood = any("inondation" in str(r).lower()
-                for r in (risks.get("risques_naturels") or []))
-    if flood:
+    # Zone réglementaire PPRI (#377) : la couche nationale Géorisques porte la
+    # couleur — on l'affiche quand elle est là ; sinon repli honnête sur la
+    # simple présence d'un risque inondation, sans inventer de couleur.
+    ppri = data.get("ppri") or {}
+    couleur = ppri.get("couleur")  # "bleue" / "rouge" / None
+    if ppri.get("code"):
+        if couleur == "bleue":
+            phrase = T("Parcelle en zone BLEUE du PPRI inondation : risque modéré, "
+                       "constructible sous conditions (zone {code}).")
+        elif couleur == "rouge":
+            phrase = T("Parcelle en zone ROUGE du PPRI inondation : risque fort, "
+                       "secteur très contraint (zone {code}).")
+        else:
+            phrase = T("Parcelle dans une zone réglementée du PPRI inondation "
+                       "(zone {code}).")
+        etat_raw = (ppri.get("etat") or "").lower()
+        detail = T("{nom}, {etat}{date}.").format(
+            nom=ppri.get("nom_ppr") or "—",
+            etat=T(etat_raw) if etat_raw else T("statut inconnu"),
+            date=(T(" le {d}").format(d=ppri["date_approbation"])
+                  if ppri.get("date_approbation") else ""))
+        lien = ppri.get("url_reglement")
+        verif = (f' <a href="{lien}">{T("Consulter le règlement de la zone")}</a>'
+                 if lien else "")
+        parts.append(
+            f'<p class="meta">{phrase.format(code=ppri.get("code"))} {detail}'
+            f' ({T("source")} Géorisques){verif}</p>')
+    elif any("inondation" in str(r).lower()
+             for r in (risks.get("risques_naturels") or [])):
         line = T("Parcelle en zone inondable (source Géorisques). La couleur réglementaire "
-                 "du PPRI (zone bleue / rouge) n'est pas disponible ici : consulter le PPRI "
-                 "de la commune.")
+                 "du PPRI (zone bleue / rouge) n'est pas cartographiée à ce point : consulter "
+                 "le PPRI de la commune.")
         parts.append(f'<p class="meta">{line} '
                      f'<a href="https://www.georisques.gouv.fr/">{T("Géorisques")}</a></p>')
     return "".join(parts)
@@ -1316,10 +1342,29 @@ _EN = {
     "Vérifier sur le Géoportail de l'Urbanisme":
         "Check on the Géoportail de l'Urbanisme",
     "Parcelle en zone inondable (source Géorisques). La couleur réglementaire "
-    "du PPRI (zone bleue / rouge) n'est pas disponible ici : consulter le PPRI "
-    "de la commune.":
+    "du PPRI (zone bleue / rouge) n'est pas cartographiée à ce point : consulter "
+    "le PPRI de la commune.":
         "Parcel in a flood-prone area (source: Géorisques). The regulatory PPRI "
-        "colour (blue / red zone) is not available here: consult the commune's PPRI.",
+        "colour (blue / red zone) is not mapped at this point: consult the commune's PPRI.",
+    "Parcelle en zone BLEUE du PPRI inondation : risque modéré, "
+    "constructible sous conditions (zone {code}).":
+        "Parcel in the BLUE zone of the flood PPRI: moderate risk, buildable under "
+        "conditions (zone {code}).",
+    "Parcelle en zone ROUGE du PPRI inondation : risque fort, "
+    "secteur très contraint (zone {code}).":
+        "Parcel in the RED zone of the flood PPRI: high risk, heavily constrained "
+        "area (zone {code}).",
+    "Parcelle dans une zone réglementée du PPRI inondation "
+    "(zone {code}).":
+        "Parcel within a regulated zone of the flood PPRI (zone {code}).",
+    "{nom}, {etat}{date}.": "{nom}, {etat}{date}.",
+    " le {d}": " on {d}",
+    "statut inconnu": "status unknown",
+    "approuvé": "approved",
+    "prescrit": "prescribed",
+    "appliqué par anticipation": "applied in anticipation",
+    "Consulter le règlement de la zone": "See the zone's regulation",
+    "source": "source",
     "Géorisques": "Géorisques",
     "Solaire": "Solar",
     "Favorable au solaire thermique": "Suitable for solar thermal",

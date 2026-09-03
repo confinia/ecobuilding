@@ -712,6 +712,8 @@ def _point_in_ring(lon, lat, ring):
 
 
 def _point_in_geom(lon, lat, geom):
+    if not geom:
+        return False
     polys = geom["coordinates"] if geom["type"] == "MultiPolygon" else [geom["coordinates"]]
     for poly in polys:
         if _point_in_ring(lon, lat, poly[0]) and                 not any(_point_in_ring(lon, lat, hole) for hole in poly[1:]):
@@ -987,35 +989,6 @@ async def _area_risks(lon, lat):
         return None
 
 
-def _point_in_ring(x, y, ring) -> bool:
-    """Ray-casting: is point (x, y) inside the polygon `ring` (list of [x, y])?"""
-    inside = False
-    n = len(ring)
-    j = n - 1
-    for i in range(n):
-        xi, yi = ring[i][0], ring[i][1]
-        xj, yj = ring[j][0], ring[j][1]
-        if ((yi > y) != (yj > y)) and \
-                (x < (xj - xi) * (y - yi) / (yj - yi) + xi):
-            inside = not inside
-        j = i
-    return inside
-
-
-def _point_in_geometry(x, y, geom) -> bool:
-    """Point-in-polygon against a GeoJSON Polygon or MultiPolygon, testing only
-    the exterior ring (coords[0]) of each part."""
-    if not geom:
-        return False
-    t = geom.get("type")
-    coords = geom.get("coordinates") or []
-    if t == "Polygon":
-        return bool(coords) and _point_in_ring(x, y, coords[0])
-    if t == "MultiPolygon":
-        return any(poly and _point_in_ring(x, y, poly[0]) for poly in coords)
-    return False
-
-
 async def _plu_zone(lon, lat):
     """PLU zone of the parcel (#376): Géoportail de l'Urbanisme (GPU) via the
     IGN Géoplateforme WFS. The bbox around the point returns the zone AND its
@@ -1036,7 +1009,8 @@ async def _plu_zone(lon, lat):
             # WFS 2.0 default axis order for EPSG:4326 is lat,lon: bbox is lat first.
             "BBOX": f"{lat - d},{lon - d},{lat + d},{lon + d}"}, ttl=86400)
         for feat in (gj.get("features") or []):
-            if _point_in_geometry(lon, lat, feat.get("geometry")):
+            g = feat.get("geometry")
+            if g and _point_in_geom(lon, lat, g):
                 p = feat.get("properties") or {}
                 return {
                     "libelle": p.get("libelle"),
@@ -1047,6 +1021,65 @@ async def _plu_zone(lon, lat):
         return None
     except Exception as e:
         log.warning("Géoportail de l'Urbanisme unavailable for %s,%s: %s", lon, lat, e)
+        return None
+
+
+# Zonage réglementaire PPRI (#377) — couche NATIONALE Géorisques, interrogée au
+# point : elle porte le code de zone réglementaire (BU, RU…), donc la couleur
+# BLEUE / ROUGE, le nom du PPRI et le lien vers le règlement officiel.
+GEORISQUES_WMS = "https://www.georisques.gouv.fr/services"
+
+
+def _couleur_ppri(code):
+    """Couleur réglementaire d'après l'INITIALE du code de zone : B* = bleue
+    (risque modéré), R* = rouge (risque fort). Tout autre schéma reste None —
+    on n'affirme pas une couleur que le code ne porte pas (certains PPRI
+    numérotent leurs zones)."""
+    if not code:
+        return None
+    c = code.strip()[:1].upper()
+    return {"B": "bleue", "R": "rouge"}.get(c)
+
+
+async def _ppri_zone(lon, lat):
+    """Zone réglementaire du PPRI inondation pour le point (#377), via la couche
+    nationale PPRN_ZONE_INOND de Géorisques (WMS GetFeatureInfo). Renvoie la
+    zone (code, couleur bleue/rouge, PPRI, état, lien règlement) ou None si
+    aucun PPRI approuvé n'est cartographié à ce point. Fail-soft."""
+    if lon is None or lat is None:
+        return None
+    try:
+        lon = round(lon, 5)
+        lat = round(lat, 5)
+        d = 0.0004
+        gj = await _cached_get_json(GEORISQUES_WMS, {
+            "SERVICE": "WMS", "VERSION": "1.3.0", "REQUEST": "GetFeatureInfo",
+            "CRS": "EPSG:4326", "LAYERS": "PPRN_ZONE_INOND",
+            "QUERY_LAYERS": "PPRN_ZONE_INOND", "INFO_FORMAT": "application/json",
+            "WIDTH": "51", "HEIGHT": "51", "I": "25", "J": "25",
+            # WMS 1.3.0 EPSG:4326 axis order is lat,lon.
+            "BBOX": f"{lat - d},{lon - d},{lat + d},{lon + d}"}, ttl=86400)
+        feats = (gj or {}).get("features") or []
+        if not feats:
+            return None
+        p = feats[0].get("properties") or {}
+        code = p.get("code_zone_reglement") or p.get("libelle_zone")
+        return {
+            "code": code,
+            "couleur": _couleur_ppri(code),
+            "libelle_zone": p.get("libelle_zone"),
+            "nom_ppr": p.get("nom_ppr"),
+            "etat": p.get("etat"),
+            "date_approbation": p.get("date_approbation"),
+            "url_reglement": p.get("url_reglement_zone"),
+        }
+    except json.JSONDecodeError:
+        # Géorisques renvoie un corps VIDE quand aucun PPRI n'est cartographié
+        # au point — c'est le cas courant (la France n'est pas toute en PPRI),
+        # pas une panne : on n'en fait pas un avertissement.
+        return None
+    except Exception as e:
+        log.warning("Géorisques PPRN_ZONE_INOND unavailable for %s,%s: %s", lon, lat, e)
         return None
 
 
@@ -1209,11 +1242,12 @@ async def _do_lookup(q, ban_id, address, lon, lat):
     # Aucun bâtiment BDNB à cette adresse : on sert quand même le contexte
     # (risques, nappe, solaire…), qui ne dépend que du point.
     (risks, groundwater, solar_pv, water_network, official_dpe,
-     local_taxes, schools, commune_hist, urbanisme) = await asyncio.gather(
+     local_taxes, schools, commune_hist, urbanisme, ppri) = await asyncio.gather(
         _area_risks(lon, lat), _groundwater(lon, lat), _solar_pv(lon, lat),
         _water_network(commune), _noop(),
         _local_taxes(commune), _nearby_schools(lon, lat),
-        _commune_history(commune, lon, lat), _plu_zone(lon, lat))
+        _commune_history(commune, lon, lat), _plu_zone(lon, lat),
+        _ppri_zone(lon, lat))
 
     M_LOOKUPS.add(1, {"status": "no_building"})
     sources = [
@@ -1235,6 +1269,8 @@ async def _do_lookup(q, ban_id, address, lon, lat):
         sources.append("Annuaire de l'éducation (MENJ) — Licence Ouverte")
     if urbanisme:
         sources.append("Géoportail de l'Urbanisme (GPU) — Licence Ouverte")
+    if ppri:
+        sources.append("Géorisques — PPR zonage réglementaire — Licence Ouverte")
     market_dia = _dia_market(lon, lat, commune)
     if market_dia:
         sources.append("DIA — Montpellier Méditerranée Métropole — Open Data")
@@ -1252,6 +1288,7 @@ async def _do_lookup(q, ban_id, address, lon, lat):
         "schools": schools,
         "commune": commune_hist,
         "urbanisme": urbanisme,
+        "ppri": ppri,
         "sources": sources,
         "no_building": _motif_sans_batiment(ban_id),
     }
@@ -1347,7 +1384,7 @@ async def lookup_stream(
             # que les risques de la zone étaient déjà en main.
             for nom in ("area_risks", "groundwater", "solar_pv",
                         "water_network", "official_dpe", "local_taxes",
-                        "schools", "commune", "urbanisme"):
+                        "schools", "commune", "urbanisme", "ppri"):
                 yield json.dumps({"type": "block", "name": nom,
                                   "value": data.get(nom)}) + "\n"
             yield json.dumps(dict(data, type="done")) + "\n"
@@ -1723,7 +1760,7 @@ async def building(
 # toutes, le flux (/v1/buildings/{id}/stream) les émet au fil de l'eau.
 _BLOCK_NAMES = ("prices", "area_risks", "groundwater", "solar_pv", "click_addr",
                 "water_network", "official_dpe", "local_taxes", "schools", "rnb",
-                "commune", "dpe_spread", "urbanisme")
+                "commune", "dpe_spread", "urbanisme", "ppri")
 
 
 def _building_block_coros(bdnb_id, lon, lat, row):
@@ -1735,7 +1772,7 @@ def _building_block_coros(bdnb_id, lon, lat, row):
             _local_taxes(commune), _nearby_schools(lon, lat),
             _rnb_lookup(lon, lat), _commune_history(commune, lon, lat, bdnb_id),
             _dpe_spread(bdnb_id, lon, lat, row.get("nb_log")),
-            _plu_zone(lon, lat))
+            _plu_zone(lon, lat), _ppri_zone(lon, lat))
 
 
 
@@ -1765,6 +1802,7 @@ def _assemble_building(bdnb_id, lon, lat, row, v):
     commune_hist = v.get("commune")
     dpe_spread = v.get("dpe_spread")
     urbanisme = v.get("urbanisme")
+    ppri = v.get("ppri")
     sources = ["BDNB (CSTB) — Licence Ouverte v2.0", "Géorisques — Licence Ouverte"]
     if prices:
         sources.append("DVF (DGFiP) / Etalab — Licence Ouverte")
@@ -1782,6 +1820,8 @@ def _assemble_building(bdnb_id, lon, lat, row, v):
         sources.append("Annuaire de l'éducation (MENJ) — Licence Ouverte")
     if urbanisme:
         sources.append("Géoportail de l'Urbanisme (GPU) — Licence Ouverte")
+    if ppri:
+        sources.append("Géorisques — PPR zonage réglementaire — Licence Ouverte")
     market_dia = _dia_market(lon, lat, row.get("code_commune_insee"))
     if rnb:
         sources.append("Référentiel National des Bâtiments (RNB) — Licence Ouverte")
@@ -1809,6 +1849,7 @@ def _assemble_building(bdnb_id, lon, lat, row, v):
         "commune": commune_hist,
         "dpe_spread": dpe_spread,
         "urbanisme": urbanisme,
+        "ppri": ppri,
         "sources": sources,
     }
     return result
@@ -1883,7 +1924,7 @@ async def _building_events(bdnb_id, lon, lat, query_extra=None, extra_rows=()):
                           "buildings": done["buildings"] + list(extra_rows)}) + "\n"
         for name in ("area_risks", "groundwater", "solar_pv", "water_network",
                      "official_dpe", "local_taxes", "schools", "prices", "rnb",
-                     "commune", "dpe_spread", "urbanisme"):
+                     "commune", "dpe_spread", "urbanisme", "ppri"):
             yield json.dumps({"type": "block", "name": name,
                               "value": done.get(name)}) + "\n"
         yield json.dumps({"type": "done", "sources": done["sources"],
