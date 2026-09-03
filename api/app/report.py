@@ -602,7 +602,7 @@ _TYPEZONE_LABELS = {
 }
 
 
-def _urbanisme_html(data: dict) -> str:
+def _urbanisme_html(data: dict, ppri_img: str | None = None) -> str:
     """Urbanisme section (#376): the parcel's PLU zone (Géoportail de l'Urbanisme),
     and — as an interim flood pointer (#377) — a note when Géorisques reports an
     inondation risk. Both parts reuse data already in the record, no re-fetch.
@@ -655,6 +655,12 @@ def _urbanisme_html(data: dict) -> str:
         parts.append(
             f'<p class="meta">{phrase.format(code=ppri.get("code"))} {detail}'
             f' ({T("source")} Géorisques){verif}</p>')
+        # La carte du zonage : le texte dit la couleur, l'image dit où passe la
+        # limite et de quel côté se trouve le bâtiment (#377).
+        if ppri_img:
+            parts.append(
+                f'<img src="{ppri_img}" style="width:100%;border-radius:4pt;margin:2pt 0" '
+                f'alt="{T("Carte des zones inondables autour du bâtiment")}" />')
     elif any("inondation" in str(r).lower()
              for r in (risks.get("risques_naturels") or [])):
         line = T("Parcelle en zone inondable (source Géorisques). La couleur réglementaire "
@@ -749,17 +755,19 @@ def _cover_html(data: dict, aerial_img: str | None = None,
 def build_report_pdf(data: dict, photos: list | None = None, map_img: str | None = None,
                      aerial_img: str | None = None, aerial_parcels: str | None = None,
                      aerial_outline: str | None = None,
-                     quartier_img: str | None = None, lang: str = "fr") -> bytes:
+                     quartier_img: str | None = None, ppri_img: str | None = None,
+                     lang: str = "fr") -> bytes:
     _LANGUE.set("en" if lang == "en" else "fr")
     return HTML(string=_report_html(data, photos, map_img, aerial_img,
                                     aerial_parcels, aerial_outline,
-                                    quartier_img, lang=lang)).write_pdf()
+                                    quartier_img, ppri_img, lang=lang)).write_pdf()
 
 
 def _report_html(data: dict, photos: list | None = None, map_img: str | None = None,
                  aerial_img: str | None = None, aerial_parcels: str | None = None,
                  aerial_outline: str | None = None,
-                 quartier_img: str | None = None, lang: str = "fr") -> str:
+                 quartier_img: str | None = None, ppri_img: str | None = None,
+                 lang: str = "fr") -> str:
     _LANGUE.set("en" if lang == "en" else "fr")
     b = (data.get("buildings") or [{}])[0]
     e = b.get("energy") or {}
@@ -993,7 +1001,7 @@ def _report_html(data: dict, photos: list | None = None, map_img: str | None = N
   {_row(T("Rapport Géorisques"), risks.get("report_url"))}
 </table>
 
-{_urbanisme_html(data)}
+{_urbanisme_html(data, ppri_img)}
 {_groundwater_html(gw)}
 {_water_network_html(data.get("water_network") or {})}
 
@@ -1451,6 +1459,8 @@ _EN = {
     "prescrit": "prescribed",
     "appliqué par anticipation": "applied in anticipation",
     "Consulter le règlement de la zone": "See the zone's regulation",
+    "Carte des zones inondables autour du bâtiment":
+        "Flood-zone map around the building",
     "source": "source",
     "Géorisques": "Géorisques",
     "Solaire": "Solar",

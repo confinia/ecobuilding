@@ -541,6 +541,36 @@ async def _quartier_map_png(lon, lat, bdnb_id, schools):
         return None
 
 
+async def _ppri_map_png(lon, lat, bdnb_id):
+    """Vignette des ZONES INONDABLES (#377) : le bâtiment épinglé sur le zonage
+    réglementaire PPRI (bleu = risque modéré, rouge = risque fort), vue à plat.
+    Le texte dit la couleur ; la carte dit où passe la limite et de quel côté se
+    trouve le bâtiment. None sur tout échec — la fiche sort quand même."""
+    if not RENDER_URL or lon is None or lat is None:
+        return None
+    chemin = os.path.join(
+        TILES_DIR, "render",
+        hashlib.sha256(f"ppri|{round(lon, 5)}|{round(lat, 5)}|{bdnb_id}"
+                       .encode()).hexdigest()[:24] + ".png")
+    en_cache = _tile_read(chemin, RENDER_CACHE_TTL)
+    if en_cache:
+        M_CACHE.add(1, {"result": "hit_render"})
+        return _uri_image(en_cache)
+    try:
+        r = await _client.get(RENDER_URL, params={
+            "lon": lon, "lat": lat, "zoom": 15.5, "pitch": 0, "bearing": 0,
+            "bdnb_id": bdnb_id, "ppri": "1",
+            "tiles": f"{PUBLIC_BASE_URL}/api/v1/tiles/batiment_groupe/"
+                     "{z}/{x}/{y}.pbf"}, timeout=45.0)
+        r.raise_for_status()
+        if len(r.content) > 10_000:
+            _tile_write(chemin, r.content)
+        return _uri_image(r.content)
+    except Exception as e:
+        log.warning("ppri map render failed for %s: %s", bdnb_id, e)
+        return None
+
+
 IGN_WMS_URL = "https://data.geopf.fr/wms-r/wms"
 
 
@@ -3672,6 +3702,10 @@ async def report(
             _chronometre("aerial", _aerial_view(bdnb_id, lon, lat)))
         quartier = await _chronometre("quartier", _quartier_map_png(
             lon, lat, bdnb_id, data.get("schools")))
+        # Carte des zones inondables : seulement si la parcelle EST en zone PPRI
+        # (#377) — inutile de faire tourner le rendu partout ailleurs.
+        ppri_map = await _chronometre("ppri_map", _ppri_map_png(
+            lon, lat, bdnb_id)) if data.get("ppri") else None
         q = data.get("query", {})
         if address:
             q["address"] = address  # title with the searched address (#146)
@@ -3705,6 +3739,8 @@ async def report(
             _chronometre("aerial", _aerial_view(bdnb_id, q.get("lon"), q.get("lat"))),
             _chronometre("quartier", _quartier_map_png(
                 q.get("lon"), q.get("lat"), bdnb_id, data.get("schools"))))
+        ppri_map = await _chronometre("ppri_map", _ppri_map_png(
+            q.get("lon"), q.get("lat"), bdnb_id)) if data.get("ppri") else None
     if dpe:
         rangs = ((data.get("dpe_spread") or {}).get("logements")) or []
         cible = next((l for l in rangs if l.get("numero_dpe") == dpe), None)
@@ -3718,7 +3754,7 @@ async def report(
                                aerial_img=aerial.get("image"),
                                aerial_parcels=aerial.get("parcels"),
                                aerial_outline=aerial.get("outline"),
-                               quartier_img=quartier, lang=lang)
+                               quartier_img=quartier, ppri_img=ppri_map, lang=lang)
     with _chrono("cache_write"):
         _tile_write(pdf_path, pdf)      # même écriture atomique que les tuiles
     nom = _nom_de_fiche(q.get("address") or (data["buildings"][0] or {}).get("address"),
