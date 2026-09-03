@@ -17,4 +17,13 @@ curl -fsS -m 5 "http://127.0.0.1:$PORT/api/v1/healthz" >/dev/null \
 cp "caddy_server/Caddyfile.$CANDIDATE" caddy_server/Caddyfile
 podman exec ecobuilding-edge_caddy_1 caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile 2>/dev/null || podman restart ecobuilding-edge_caddy_1 >/dev/null
 echo "$CANDIDATE" > deploy/.active
+
+# Purge du cache PDF au moment du bascule prod (#382) : la clé de cache ne porte
+# pas la version du code, donc une fiche mise en cache par l'ancien code serait
+# servie telle quelle après la bascule. On vide les PDF ; ils se régénèrent à la
+# première demande avec le nouveau code désormais actif. Cache partagé
+# blue/green (./data/tiles:/tiles).
+rm -f data/tiles/pdf/*.pdf data/tiles/pdf/*.nom 2>/dev/null || true
+echo "PDF cache purged — fiches will regenerate on demand with the promoted code."
+
 echo "Production now served by the $CANDIDATE stack (previous: $ACTIVE, still running for rollback)."

@@ -32,6 +32,13 @@ mkdir -p "$S/data/leads"
 #    the sandbox silently served stale code (#152 validation caught it).
 ( cd "$S" && podman-compose -p ecobuilding-sandbox -f docker-compose.yml up -d --build --force-recreate )
 
+# Purge du cache PDF à chaque déploiement sandbox (#382) : la clé de cache ne
+# porte pas la version du code, donc une fiche mise en cache avant un changement
+# de format serait servie telle quelle (déjà vu en test #376). On vide les PDF ;
+# ils se régénèrent à la première demande, avec le code à jour.
+rm -f "$S"/data/tiles/pdf/*.pdf "$S"/data/tiles/pdf/*.nom 2>/dev/null || true
+echo "   cache PDF sandbox purgé"
+
 # 3. wait for the sandbox Keycloak realm to answer (through the sandbox caddy)
 echo "   waiting for sandbox Keycloak realm..."
 for i in $(seq 1 72); do

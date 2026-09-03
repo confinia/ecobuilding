@@ -97,6 +97,14 @@ fi
 podman-compose -p "ecobuilding-$CANDIDATE" -f docker-compose.yml -f "deploy/$CANDIDATE.override.yml" build
 podman-compose -p "ecobuilding-$CANDIDATE" -f docker-compose.yml -f "deploy/$CANDIDATE.override.yml" up -d --force-recreate
 
+# Purge du cache PDF à CHAQUE déploiement (#382). La clé de cache ne porte pas
+# la version du code : une fiche mise en cache AVANT un changement de format
+# (ex. la refonte de couverture) continuerait d'être servie telle quelle. On
+# vide les PDF et leurs sidecars .nom — ils se régénèrent à la première demande,
+# avec le code à jour. Cache partagé blue/green (./data/tiles:/tiles).
+rm -f data/tiles/pdf/*.pdf data/tiles/pdf/*.nom 2>/dev/null || true
+echo "   cache PDF purgé (fiches régénérées à la demande, code à jour)"
+
 # Router: config must match .active; start or reload.
 # (podman-compose 1.3 fails to open "-f subdir/file" — run from inside the dir)
 cp "caddy_server/Caddyfile.$ACTIVE" caddy_server/Caddyfile
