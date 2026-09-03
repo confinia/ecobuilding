@@ -114,8 +114,22 @@ map.on('load', () => {
       map.addSource('ppri-img', { type: 'image', url,
         coordinates: [[w, n], [e, n], [e, s], [w, s]] });
       map.addLayer({ id: 'ppri-zones', source: 'ppri-img', type: 'raster',
-        paint: { 'raster-opacity': 0.65 } }, 'bdnb-all');   // sous les volumes
-      map.once('idle', done);
+        paint: { 'raster-opacity': 0.45 } }, 'bdnb-all');   // sous les volumes
+      // En headless, la carte se déclarait « idle » AVANT que l'image WMS soit
+      // téléchargée et peinte : la surcouche n'apparaissait pas. On attend donc
+      // explicitement que la source image soit chargée, puis un idle pour la
+      // peinture. Un filet de sécurité (4 s) garantit que __ready finit par
+      // passer même si l'image n'arrive jamais — la fiche sort quand même.
+      let settled = false;
+      const finish = () => { if (settled) return; settled = true; done(); };
+      const onData = (ev) => {
+        if (ev.sourceId === 'ppri-img' && ev.isSourceLoaded) {
+          map.off('sourcedata', onData);
+          map.once('idle', finish);
+        }
+      };
+      map.on('sourcedata', onData);
+      setTimeout(finish, 4000);
     };
     if (center) {
       map.setCenter(center);   // building footprint -> container centre
