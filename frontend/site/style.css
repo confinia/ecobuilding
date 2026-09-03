@@ -33,6 +33,14 @@ html, body { margin: 0; height: 100%; font-family: system-ui, -apple-system, san
 }
 /* 44 px : la cible tactile minimale d'Apple. À 20 px, fermer la fiche au
    pouce relevait de l'adresse — relevé sur iPhone X (#368). */
+/* Les contrôles de la carte (zoom, boussole, position, zones inondables) sont
+   en bas à droite ; la fiche s'ouvre à droite AUSSI et les recouvrait, les
+   rendant inatteignables. Sur grand écran, ils s'écartent vers la gauche le
+   temps que la fiche est ouverte, puis reviennent à leur place. */
+.maplibregl-ctrl-bottom-right { transition: right .2s ease; }
+@media (min-width: 641px) {
+  body:has(#panel:not([hidden])) .maplibregl-ctrl-bottom-right { right: 364px; }
+}
 #close {
   position: absolute; top: 0; right: 0; width: 44px; height: 44px;
   border: 0; background: none; font-size: 26px; line-height: 44px;
