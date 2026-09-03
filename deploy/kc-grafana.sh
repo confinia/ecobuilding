@@ -68,10 +68,37 @@ $KCADM create roles -r "$REALM" -s name=grafana-admin \
   && echo "kc-grafana: role grafana-admin created" \
   || echo "kc-grafana: role grafana-admin already present"
 
-# Put the client's roles into the token so Grafana can read them: a dedicated
-# client scope with a realm-roles mapper, assigned as default to the client.
-# (Keycloak already ships a 'roles' scope with realm_access.roles — Grafana's
-# role_attribute_path reads contains(realm_access.roles[*], 'grafana-admin').)
+# Put the user's realm roles WHERE Grafana reads them (#372). Keycloak's stock
+# 'roles' scope only writes realm_access.roles to the ACCESS token; Grafana's
+# generic_oauth reads roles from the ID token + userinfo, so without this the
+# login is rejected with "IdP did not return a role attribute". This
+# client-scoped mapper emits realm_access.roles into the ID token and userinfo
+# too (grafana client only — the shared scope is left untouched).
+GID=$($KCADM get clients -r "$REALM" -q clientId=grafana \
+        --fields id --format csv --noquotes)
+HAS=$($KCADM get "clients/$GID/protocol-mappers/models" -r "$REALM" \
+        --fields name --format csv --noquotes 2>/dev/null | grep -c grafana-realm-roles || true)
+if [ "${HAS:-0}" = "0" ]; then
+  $KCADM create "clients/$GID/protocol-mappers/models" -r "$REALM" -f - <<'JSON'
+{
+  "name": "grafana-realm-roles",
+  "protocol": "openid-connect",
+  "protocolMapper": "oidc-usermodel-realm-role-mapper",
+  "config": {
+    "claim.name": "realm_access.roles",
+    "jsonType.label": "String",
+    "multivalued": "true",
+    "id.token.claim": "true",
+    "access.token.claim": "true",
+    "userinfo.token.claim": "true",
+    "usermodel.realmRoleMapping.rolePrefix": ""
+  }
+}
+JSON
+  echo "kc-grafana: realm-roles mapper added to the grafana client"
+else
+  echo "kc-grafana: realm-roles mapper already present"
+fi
 
 # --- 2. passkey as an OPTIONAL required action (non-breaking) -------------------
 # ENABLED so the account console offers "add passkey"; defaultAction=false so no
