@@ -304,24 +304,6 @@ geolocate.on("geolocate", async (pos) => {
   }
 });
 
-class PitchToggle {
-  onAdd(m) {
-    this._map = m;
-    this._btn = document.createElement("button");
-    this._btn.className = "maplibregl-ctrl-icon";
-    this._btn.textContent = "3D";
-    this._btn.style.fontWeight = "700";
-    this._btn.title = "Basculer 2D / 3D";
-    this._btn.onclick = () => m.easeTo({ pitch: m.getPitch() > 10 ? 0 : 55 });
-    this._el = document.createElement("div");
-    this._el.className = "maplibregl-ctrl maplibregl-ctrl-group";
-    this._el.appendChild(this._btn);
-    return this._el;
-  }
-  onRemove() { this._el.remove(); }
-}
-map.addControl(new PitchToggle(), "bottom-right");
-
 // Bouton d'affichage des zones inondables PPRI (#377) : la couche WMS est
 // masquée par défaut (elle ne concerne pas tout le monde et alourdit la
 // carte), un clic la montre — bleue = risque modéré, rouge = risque fort.
