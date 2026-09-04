@@ -233,6 +233,28 @@ async function ecoPricing() {
         if (authenticated) { history.replaceState(null, "", location.pathname); startCheckout(wantedTier); }
         else kc.login({ redirectUri: location.origin + "/?gopro=" + wantedTier });
       }
+      // Offre de lancement (#384) : Pro S gratuite, activée en un clic. La page
+      // /offres.html n'a pas de session — comme pour gopro, elle renvoie vers
+      // /?launch=1 et c'est ici, avec le jeton, qu'on active. Pas de paiement.
+      const activateLaunch = async () => {
+        track("launch_activate_click");
+        try {
+          const r = await fetch("/api/v1/launch/activate",
+                                { method: "POST",
+                                  headers: { Authorization: "Bearer " + kc.token } });
+          if (!r.ok) throw new Error(r.status);
+          await refreshQuota();
+          showPanel(`<h2>Offre de lancement activée 🎉</h2>
+            <p>Vous êtes passé sur <strong>Pro S</strong> :
+            <strong>10 fiches PDF par jour</strong>, gratuitement.</p>
+            <p class="hint">Détail dans « Mon compte ». Une question ?
+            <a href="mailto:contact@confinia.io?subject=EcoBuilding%20-%20Pro%20S">contact@confinia.io</a></p>`);
+        } catch { alert("L'activation de l'offre de lancement est momentanément indisponible : contact@confinia.io"); }
+      };
+      if (new URLSearchParams(location.search).get("launch") === "1") {
+        if (authenticated) { history.replaceState(null, "", location.pathname); activateLaunch(); }
+        else kc.login({ redirectUri: location.origin + "/?launch=1" });
+      }
       // Arriving from the quota page: open registration immediately.
       if (!authenticated && new URLSearchParams(location.search).get("signup") === "1") {
         track("signup_autostart");

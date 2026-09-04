@@ -47,30 +47,29 @@
         <p class="price">0 €</p>
         <ul>
           <li>Carte 3D complète et API JSON publique, sans limite</li>
-          <li><strong>10 fiches PDF par mois</strong> sans créer de compte</li>
-          <li><strong>10 fiches PDF par jour</strong> avec un compte gratuit</li>
-          <li>Le compte ajoute aussi une <strong>clé API</strong></li>
+          <li><strong>10 fiches PDF par mois</strong>, sans compte</li>
+          <li>Un compte gratuit ajoute une <strong>clé API</strong> et le suivi de consommation</li>
           <li><a href="/api/v1/docs">Documentation OpenAPI</a> · attribution requise (Licence Ouverte)</li>
         </ul>
         <a class="cta" href="/api/v1/docs">Essayer l'API</a>
       </section>
 
       <section class="tier" id="tier-s">
-        <h2>Pro S <span class="badge soon">bientôt</span></h2>
-        <p class="price">9 €<small> / mois</small></p>
-        <p class="price-sub"><strong>30 fiches PDF par mois</strong>, sans engagement</p>
+        <h2>Pro S <span class="badge">offre de lancement</span></h2>
+        <p class="price">Gratuit</p>
+        <p class="price-sub"><strong>10 fiches PDF par jour</strong>, sans engagement</p>
         <ul>
           <li>Appels API, autocomplétion et carte 3D : gratuits et illimités</li>
           <li>Suivi de consommation en temps réel (<code>GET /v1/usage</code>)</li>
           <li>Clé API dédiée, support par e-mail</li>
         </ul>
-        <a class="cta" href="/?gopro=s">Choisir Pro S</a>
+        <a class="cta primary" href="/?launch=1">Activer l'offre de lancement</a>
       </section>
 
       <section class="tier" id="tier-m">
-        <h2>Pro M <span class="badge soon">bientôt</span></h2>
+        <h2>Pro M</h2>
         <p class="price">29 €<small> / mois</small></p>
-        <p class="price-sub"><strong>100 fiches PDF par mois</strong>, sans engagement</p>
+        <p class="price-sub"><strong>30 fiches PDF par jour</strong>, sans engagement</p>
         <ul>
           <li>Tout Pro S, avec plus de volume</li>
           <li>Passage de palier à tout moment, au mois le mois</li>
@@ -79,7 +78,7 @@
       </section>
 
       <section class="tier" id="tier-l">
-        <h2>Pro L <span class="badge soon">bientôt</span></h2>
+        <h2>Pro L</h2>
         <p class="price">99 €<small> / mois</small></p>
         <p class="price-sub"><strong>Fiches illimitées</strong> (usage raisonnable), sans engagement</p>
         <ul>
@@ -103,16 +102,13 @@
     </div>
 
     <section class="sim">
-      <h2>Quel palier pour votre volume ?</h2>
-      <p class="hint">10 fiches par mois sans compte, 10 par jour avec un compte
-      gratuit, puis Pro S / M / L selon votre consommation.</p>
-      <label for="sim-range">Fiches PDF par mois : <output id="sim-vol">30</output></label>
-      <input id="sim-range" type="range" min="0" max="300" step="5" value="30">
-      <table class="sim-out">
-        <tr><td>Palier recommandé</td><td id="sim-tier">Pro S</td></tr>
-        <tr><td><strong>Total mensuel</strong></td><td><strong id="sim-cost">9,00 €</strong></td></tr>
-      </table>
-      <p class="hint" id="sim-note"></p>
+      <h2>Quel palier pour vous ?</h2>
+      <p class="hint"><strong>10 fiches par mois</strong> sans compte.
+      <strong>Pro S</strong> (gratuite pendant le lancement) : 10 fiches
+      <em>par jour</em>, en bâtiments distincts — rouvrir la même fiche est
+      toujours libre. Besoin de plus ? <strong>Pro M</strong> monte à 30 par
+      jour, <strong>Pro L</strong> lève la limite (usage raisonnable). On change
+      de palier au mois le mois, sans engagement.</p>
     </section>
 
     <form id="lead-form">
@@ -147,37 +143,6 @@
     });
   </script>
 
-<script>
-// Simulateur v4 : recommande le plus petit palier couvrant le volume.
-// /v1/pricing fait autorité ; la suite de tests épingle page et serveur sur
-// les mêmes nombres.
-(function () {
-  const FREE = 10;
-  const TIERS = [["Pro S", 9, 30], ["Pro M", 29, 100], ["Pro L", 99, null]];
-  const r = document.getElementById("sim-range");
-  if (!r) return;
-  const eur = (n) => n.toFixed(2).replace(".", ",") + " €";
-  function render() {
-    const fiches = Number(r.value);
-    document.getElementById("sim-vol").textContent = fiches.toLocaleString("fr-FR");
-    if (fiches <= FREE) {
-      document.getElementById("sim-tier").textContent = "Compte gratuit";
-      document.getElementById("sim-cost").textContent = eur(0);
-      document.getElementById("sim-note").textContent =
-        `Jusqu'à ${FREE} fiches par mois, le compte gratuit suffit.`;
-      return;
-    }
-    const [label, price] = TIERS.find(([, , q]) => q === null || fiches <= q);
-    document.getElementById("sim-tier").textContent = label;
-    document.getElementById("sim-cost").textContent = eur(price);
-    document.getElementById("sim-note").textContent = label === "Pro L"
-      ? "Fiches illimitées (usage raisonnable) : votre facture ne dépasse jamais 99 €."
-      : "Sans engagement : changez de palier à tout moment.";
-  }
-  r.addEventListener("input", render);
-  render();
-})();
-</script>
 <p style="text-align:center;color:#666;font-size:14px;margin:26px 0">
   Une question, un blocage, un besoin particulier ? Écrivez à
   <a href="mailto:contact@confinia.io?subject=EcoBuilding%20-%20offres">contact@confinia.io</a>, on répond.
