@@ -695,13 +695,14 @@ def test_building_map_enabled_returns_datauri(monkeypatch):
 
 # --- Pay-as-you-go metering (#201) -------------------------------------------
 def test_pro_tier_grid_v4():
-    """Pricing #384 : quota QUOTIDIEN (fiches_jour), Pro S gratuite (offre de
-    lancement). Pro S 0 € (10/jour) · Pro M 29 € (30/jour) · Pro L 99 €
-    (illimité fair-use). Le simulateur mensuel reste un ordre de grandeur."""
+    """Pricing #397 : quota QUOTIDIEN (fiches_jour), dérivé du SPOT. Pro S 9 €
+    CATALOGUE mais gratuite au lancement (10/jour) · Pro M 29 € (50/jour) ·
+    Pro L 99 € (illimité fair-use). Le simulateur mensuel reste un ordre de
+    grandeur et applique le prix EFFECTIF (Pro S à 0 € pendant le lancement)."""
     from app.main import _usage_cost, _tier_for, CREDIT_COST, PRO_TIERS
     assert CREDIT_COST["report"] == 1 and CREDIT_COST["lookup"] == 0
-    assert PRO_TIERS["s"]["eur"] == 0 and PRO_TIERS["s"]["fiches_jour"] == 10
-    assert PRO_TIERS["m"]["eur"] == 29 and PRO_TIERS["m"]["fiches_jour"] == 30
+    assert PRO_TIERS["s"]["eur"] == 9 and PRO_TIERS["s"]["fiches_jour"] == 10
+    assert PRO_TIERS["m"]["eur"] == 29 and PRO_TIERS["m"]["fiches_jour"] == 50
     assert PRO_TIERS["l"]["eur"] == 99 and PRO_TIERS["l"]["fiches_jour"] is None
     # Plus aucune notion mensuelle dans la grille d'application.
     assert "fiches" not in PRO_TIERS["s"]
@@ -950,7 +951,7 @@ def test_config_exposes_payment_mode(monkeypatch):
     monkeypatch.setattr(main, "CREEM_API_BASE", "https://test-api.creem.io/v1")
     body = client.get("/v1/config").json()
     assert body["payment_mode"] == "sandbox" and body["payment_provider"] == "creem"
-    assert body["pro_tiers"]["s"]["eur"] == 0          # Pro S gratuite (offre de lancement)
+    assert body["pro_tiers"]["s"]["eur"] == 9          # prix CATALOGUE (gratuit au lancement via /v1/launch/activate)
     assert body["pro_tiers"]["s"]["fiches_jour"] == 10  # quota quotidien (#384)
     monkeypatch.setattr(main, "CREEM_API_BASE", "https://api.creem.io/v1")
     assert client.get("/v1/config").json()["payment_mode"] == "live"

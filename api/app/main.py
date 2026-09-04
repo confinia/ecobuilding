@@ -2557,8 +2557,15 @@ def _load_keys() -> set:
 # il n'apporte plus rien pour l'instant. Le plafond bas existait justement pour
 # provoquer l'inscription (#206). Rétablir un écart demandera de monter le
 # compte gratuit, pas de redescendre l'anonyme.
-ANON_MONTHLY_REPORTS = int(os.environ.get("ANON_MONTHLY_REPORTS", "10"))
-FREE_ACCOUNT_REPORTS = int(os.environ.get("FREE_ACCOUNT_REPORTS", "10"))
+# --- SPOT tarifaire : api/app/pricing.json est la source UNIQUE (#397). Les
+# paliers Pro, les quotas gratuits et l'offre de lancement en DÉRIVENT ;
+# creem-setup.sh, offres.html et PRICING.md s'y synchronisent, et
+# test_tier_pricing_is_consistent_everywhere échoue si une surface dévie.
+with open(os.path.join(os.path.dirname(__file__), "pricing.json"), encoding="utf-8") as _pf:
+    PRICING = json.load(_pf)
+_DISCOVER = PRICING["tiers"]["discover"]
+ANON_MONTHLY_REPORTS = int(os.environ.get("ANON_MONTHLY_REPORTS", str(_DISCOVER["quota"])))
+FREE_ACCOUNT_REPORTS = int(os.environ.get("FREE_ACCOUNT_REPORTS", str(_DISCOVER["quota"])))
 # Compte gratuit : un quota PAR JOUR, en fiches DISTINCTES — comme le mobile.
 #
 # En montant le plafond anonyme de 3 à 10 (#281), le compte gratuit s'est
@@ -2580,11 +2587,10 @@ FREE_ACCOUNT_DAILY_REPORTS = int(os.environ.get("FREE_ACCOUNT_DAILY_REPORTS", "1
 # comme le mobile. « 10 par jour » se comprend sans calcul, là où un solde
 # mensuel oblige à se rationner. Pro S passe gratuite (offre de lancement,
 # LAUNCH_FREE_PRO) ; Pro M à 29 €, Pro L à 99 € (fiches illimitées, fair-use).
-PRO_TIERS: dict = json.loads(os.environ.get("PRO_TIERS_JSON", "") or """{
-  "s": {"eur": 0,  "fiches_jour": 10,   "label": "Pro S"},
-  "m": {"eur": 29, "fiches_jour": 30,   "label": "Pro M"},
-  "l": {"eur": 99, "fiches_jour": null, "label": "Pro L"}
-}""")
+PRO_TIERS: dict = json.loads(os.environ["PRO_TIERS_JSON"]) if os.environ.get("PRO_TIERS_JSON") else {
+    k[4:]: {"eur": t["price_month"], "fiches_jour": t["quota"], "label": t["name"]}
+    for k, t in PRICING["tiers"].items() if k.startswith("pro_")
+}
 # Grille MENSUELLE héritée, conservée UNIQUEMENT pour le simulateur public
 # (/v1/pricing, /v1/config) : « quel palier pour un volume mensuel ». Le quota
 # RÉEL est désormais quotidien (PRO_TIERS[...]["fiches_jour"]) ; ce tableau ne
@@ -2594,6 +2600,18 @@ _SIM_FICHES_MOIS: dict = {"s": 30, "m": 100, "l": None}
 # connecté (/v1/launch/activate). Un interrupteur, pas un prix : on la ferme
 # d'un réglage quand la phase d'adhésion est finie, sans redéploiement.
 LAUNCH_FREE_PRO = os.environ.get("LAUNCH_FREE_PRO", "1") not in ("0", "false", "")
+# Le palier offert au lancement vient du SPOT : le seul marqué launch_free.
+LAUNCH_FREE_TIER = next((k[4:] for k, t in PRICING["tiers"].items()
+                         if k.startswith("pro_") and t.get("launch_free")), "s")
+
+
+def _prix_effectif(tier: str) -> float:
+    """Prix RÉEL du palier : 0 pour le palier offert au lancement, sinon le
+    prix catalogue de PRO_TIERS (#397). Le catalogue reste la source ; ceci dit
+    ce que l'abonné paie tant que l'offre de lancement est ouverte."""
+    if LAUNCH_FREE_PRO and tier == LAUNCH_FREE_TIER:
+        return 0.0
+    return float(PRO_TIERS[tier]["eur"])
 # --- Mobile (MOBILE.md) -------------------------------------------------------
 # Paliers SÉPARÉS de PRO_TIERS, volontairement : la promesse mobile n'est pas
 # celle du web (le mobile donne des fiches ; le web garde la clé API et
@@ -2719,7 +2737,7 @@ def _usage_cost(fiches: int) -> dict:
         "fiches": fiches,
         "credits": fiches,                  # kept: same number, one unit
         "recommended_tier": tier,
-        "cost_eur": 0.0 if fiches <= FREE_ACCOUNT_REPORTS else float(PRO_TIERS[tier]["eur"]),
+        "cost_eur": 0.0 if fiches <= FREE_ACCOUNT_REPORTS else _prix_effectif(tier),
         "tiers": {k: {"eur": v["eur"], "fiches_month": _SIM_FICHES_MOIS[k],
                       "fiches_jour": v["fiches_jour"], "label": v["label"]}
                   for k, v in PRO_TIERS.items()},
@@ -3226,7 +3244,7 @@ async def usage(request: Request):
         quota = PRO_TIERS[tier]["fiches_jour"]
         dujour = len(_daily_seen(bucket))
         body |= {"tier": tier, "tier_label": PRO_TIERS[tier]["label"],
-                 "cost_eur": float(PRO_TIERS[tier]["eur"]),
+                 "cost_eur": _prix_effectif(tier),   # 0 au lancement (#397)
                  "reports_used": dujour, "reports_used_month": used,
                  "reports_included": quota,
                  "reports_left": (None if quota is None
@@ -3586,10 +3604,10 @@ async def launch_activate(request: Request):
         raise HTTPException(401, "Invalid token")
     if not LAUNCH_FREE_PRO:
         raise HTTPException(404, "Offre de lancement close")
-    _pro_set(sub, True, tier="s", source="launch")
+    _pro_set(sub, True, tier=LAUNCH_FREE_TIER, source="launch")
     M_PRO.add(1, {"event": "launch_activate"})
-    return {"activated": True, "tier": "s",
-            "fiches_jour": PRO_TIERS["s"]["fiches_jour"]}
+    return {"activated": True, "tier": LAUNCH_FREE_TIER,
+            "fiches_jour": PRO_TIERS[LAUNCH_FREE_TIER]["fiches_jour"]}
 
 
 @app.get("/v1/pro/checkout", tags=["account"])
