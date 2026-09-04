@@ -83,7 +83,9 @@ map.on('load', () => {
     }
     // Pin identifying the target building (issue #113): its tip sits on the
     // footprint centroid, so the printed 3D map clearly points at the building.
-    new maplibregl.Marker({ color: '#2b7a4b' }).setLngLat(center || [lon, lat]).addTo(map);
+    // ONLY when there IS a target: an overview map (usage digest #393, no bdnb_id)
+    // must not drop a spurious pin at the geographic centre.
+    if (bid) new maplibregl.Marker({ color: '#2b7a4b' }).setLngLat(center || [lon, lat]).addTo(map);
     // Les points d'intérêt : une pastille et son nom, en HTML — les couches
     // symbol exigeraient un glyphe et une police, un Marker non.
     for (const pt of points) {
