@@ -6,6 +6,10 @@ services:
     build: .
     image: ecobuilding-render:latest
     shm_size: 1g
+    # Le profil/temp que Chromium écrit à chaque rendu va en RAM (compté sur
+    # mem_limit), pas sur le disque PARTAGÉ — le disque est le goulot de la VM.
+    tmpfs:
+      - /tmp:size=256m
     ports:
       - "127.0.0.1:13080:8040"   # 1PESI (#173); consumers use alias render
     networks:

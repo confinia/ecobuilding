@@ -2,8 +2,10 @@
 # EcoBuilding — CI failure notification we control (rule 20).
 # GitHub's own notifications go to the owner's personal inbox, which the
 # session cannot read; contact@confinia.io is a redirection, not a mailbox.
-# So the pipeline sends its own mail: To contact@ (the operator reads it) and
-# Cc alert@ (a real OVH mailbox, readable with deploy/check-mail.sh).
+# So the pipeline sends its own mail, To contact@ (the operator reads it).
+# NB (2026-09-05, demande plateforme) : PLUS de copie à alert@ — c'est la boîte
+# d'ALERTES de la plateforme, et nos échecs CI (plusieurs/jour) y cachaient un
+# vrai signal. Le statut CI se lit de toute façon avec `gh run view`.
 #
 # Called from a workflow step with `if: failure()`:
 #   ./deploy/ci-notify.sh "<workflow>" "<run url>" "<ref>"
@@ -27,8 +29,7 @@ for line in open("deploy/secrets.env"):
 
 m = EmailMessage()
 m["From"] = env.get("SMTP_FROM", "alert@confinia.io")
-m["To"] = env.get("ALERT_RCPT", "contact@confinia.io")
-m["Cc"] = env.get("SMTP_USER", "alert@confinia.io")   # readable mailbox
+m["To"] = env.get("ALERT_RCPT", "contact@confinia.io")   # opérateur seulement
 m["Subject"] = f"[EcoBuilding CI] ECHEC: {os.environ['WF']} ({os.environ['REF']})"
 # Without Date/Message-ID, clients and IMAP listings show the mail undated —
 # which is how six CI notifications got mistaken for bounces.
