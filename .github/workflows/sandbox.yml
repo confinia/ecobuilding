@@ -19,6 +19,10 @@ jobs:
   build:
     uses: ./.github/workflows/build-images.yml
 
+  # Pytest suite OFF the VM too (#411) — hermetic, runs in parallel.
+  test:
+    uses: ./.github/workflows/test.yml
+
   sandbox:
     needs: build
     runs-on: [self-hosted, vm, ecobuilding]
@@ -51,10 +55,8 @@ jobs:
       # La pile de rendu (partagée avec la prod) est CONSTRUITE par le job
       # build-images (#409) : si render_stack/ est cassé, le build échoue et ce
       # workflow ne démarre pas — l'ancien `podman build` de contrôle sur la VM
-      # n'a plus lieu d'être.
-
-      - name: Test suite (hermetic container)
-        run: cd ~/projects/ecobuilding && ./deploy/test.sh
+      # n'a plus lieu d'être. Le pytest hermétique tourne dans le job `test`
+      # (#411), sur un runner GitHub — plus sur la VM.
 
       # Rule 19: app-running tests belong to the pipeline. Drives real keyed
       # calls through the public sandbox host and asserts the credit counter.

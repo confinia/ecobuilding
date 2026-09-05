@@ -19,6 +19,11 @@ jobs:
   build:
     uses: ./.github/workflows/build-images.yml
 
+  # Pytest suite OFF the VM too (#411). It is the promotion gate (rule 9): a
+  # red run here means do not promote. Runs on a GitHub-hosted runner.
+  test:
+    uses: ./.github/workflows/test.yml
+
   staging:
     needs: build
     runs-on: [self-hosted, vm, ecobuilding]
@@ -58,8 +63,8 @@ jobs:
             echo "render_stack/ inchangé — rien à redéployer"
           fi
 
-      - name: Test suite (promotion gate, rule 9)
-        run: cd ~/projects/ecobuilding && ./deploy/test.sh
+      # Le pytest hermétique (jeu de tests = porte de promotion, règle 9) tourne
+      # désormais dans le job `test` sur un runner GitHub (#411), plus sur la VM.
 
       # Un healthz seul laissait passer des pannes bien réelles : carte 3D vidée
       # en silence, panneau qui attendait la source la plus lente, fiche PDF
