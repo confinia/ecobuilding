@@ -1,0 +1,287 @@
+{
+  "uid": "data-updates",
+  "title": "Données — mises à jour",
+  "tags": [
+    "ecobuilding",
+    "data"
+  ],
+  "schemaVersion": 39,
+  "editable": true,
+  "timezone": "Europe/Paris",
+  "refresh": "5m",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "type": "text",
+      "title": "",
+      "datasource": null,
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 3
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "### Données — mises à jour\nFraîcheur des données **stockées** (snapshots) servies par EcoBuilding. Les sources **live** (Géorisques, PLU/GPU, adresses BAN, coûts DPE ADEME, Hub'Eau, PVGIS…) sont interrogées en temps réel et ne figurent pas ici. La date d'import DVF n'est pas encore suivie ([#401])."
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Bâtiments (BDNB) — âge du millésime (jours)",
+      "datasource": {
+        "type": "postgres",
+        "uid": "vues"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 3,
+        "w": 8,
+        "h": 5
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 180
+              },
+              {
+                "color": "red",
+                "value": 270
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "center"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT age_jours AS value FROM meta.data_updates WHERE source = 'Bâtiments (BDNB)'",
+          "datasource": {
+            "type": "postgres",
+            "uid": "vues"
+          }
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "DVF — lignes chargées (estimation)",
+      "datasource": {
+        "type": "postgres",
+        "uid": "vues"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 3,
+        "w": 8,
+        "h": 5
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "center"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT lignes AS value FROM meta.data_updates WHERE source = 'Prix de vente (DVF)'",
+          "datasource": {
+            "type": "postgres",
+            "uid": "vues"
+          }
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Consultations (24 h)",
+      "datasource": {
+        "type": "postgres",
+        "uid": "vues"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 3,
+        "w": 8,
+        "h": 5
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "center"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(*)::bigint AS value FROM vues.vue_batiment WHERE ts > now() - interval '24 hours'",
+          "datasource": {
+            "type": "postgres",
+            "uid": "vues"
+          }
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "Sources stockées : version, couverture, fraîcheur",
+      "datasource": {
+        "type": "postgres",
+        "uid": "vues"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 24,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Âge (jours)"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 180
+                    },
+                    {
+                      "color": "red",
+                      "value": 270
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "custom.align",
+                "value": "center"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT source AS \"Source\", version AS \"Version / couverture\", lignes AS \"Lignes\", as_of AS \"À jour au\", age_jours AS \"Âge (jours)\" FROM meta.data_updates ORDER BY ord",
+          "datasource": {
+            "type": "postgres",
+            "uid": "vues"
+          }
+        }
+      ]
+    }
+  ]
+}
