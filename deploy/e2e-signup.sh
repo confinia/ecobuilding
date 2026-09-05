@@ -78,11 +78,11 @@ assert u['reports_left'] == u['reports_included'] - 1, u
 print(f\"   after 1 fiche: used={u['reports_used']} restantes={u['reports_left']}\")
 "
 
-# 3. Épuiser le droit doit refuser SANS impasse — et le droit est QUOTIDIEN,
-#    en documents DISTINCTS (#290). Générer dix fiches prendrait des minutes :
-#    la liste du jour est remplie directement (le même magasin que lit l'API),
-#    et la VRAIE réponse est vérifiée ensuite.
-API_BASE="$API_BASE" TOKEN="$TOKEN" DAILY_FILE="$PWD/sandbox_stack/data/leads/mobile_daily.json" python3 <<'PY'
+# 3. Épuiser le droit doit refuser SANS impasse — et le droit du compte gratuit
+#    est MENSUEL, en documents DISTINCTS (#397). Générer dix fiches prendrait des
+#    minutes : la liste du mois est remplie directement (le même magasin que lit
+#    l'API), et la VRAIE réponse est vérifiée ensuite.
+API_BASE="$API_BASE" TOKEN="$TOKEN" MONTHLY_FILE="$PWD/sandbox_stack/data/leads/monthly_seen.json" python3 <<'PY'
 import base64, hashlib, json, os, urllib.error, urllib.request
 from datetime import date
 
@@ -93,7 +93,7 @@ bucket = "kc:" + hashlib.sha256(claims["sub"].encode()).hexdigest()[:14]
 
 req0 = urllib.request.Request(f"{base}/api/v1/usage", headers={"Authorization": f"Bearer {token}"})
 u0 = json.load(urllib.request.urlopen(req0))
-assert u0.get("period") == "day", f"le droit doit être quotidien : {u0}"
+assert u0.get("period") == "month", f"le droit doit être mensuel : {u0}"
 included = u0["reports_included"]
 
 # La fiche déjà obtenue à l'étape 2 doit rester GRATUITE en réouverture.
@@ -107,13 +107,13 @@ assert u1["reports_used"] == u0["reports_used"], \
     f"rouvrir le même document a décompté : {u0} -> {u1}"
 print("   même document rouvert -> non décompté")
 
-# Remplir la liste du JOUR avec des documents distincts, jusqu'au droit.
-path = os.environ["DAILY_FILE"]
+# Remplir la liste du MOIS avec des documents distincts, jusqu'au droit.
+path = os.environ["MONTHLY_FILE"]
 store = json.load(open(path)) if os.path.exists(path) else {}
-jour = date.today().isoformat()
-vus = store.get(bucket) or {"day": jour, "ids": []}
-if vus.get("day") != jour:
-    vus = {"day": jour, "ids": []}
+mois = date.today().strftime("%Y-%m")
+vus = store.get(bucket) or {"month": mois, "ids": []}
+if vus.get("month") != mois:
+    vus = {"month": mois, "ids": []}
 while len(vus["ids"]) < included:
     vus["ids"].append(f"bdnb-bg-E2E-{len(vus['ids'])}")
 store[bucket] = vus
@@ -129,10 +129,10 @@ try:
 except urllib.error.HTTPError as e:
     assert e.code == 429, e.code
     detail = json.loads(e.read()).get("detail", "")
-    assert "par jour" in detail, detail            # la bonne période
-    assert "demain" in detail, detail              # et quand ça repart
+    assert "par mois" in detail, detail            # la bonne période
+    assert "mois prochain" in detail, detail       # et quand ça repart
     assert "contact@confinia.io" in detail, detail # un humain joignable
-    print("   droit du jour épuisé -> 429 « par jour », « demain », contact")
+    print("   droit du mois épuisé -> 429 « par mois », « mois prochain », contact")
 
 # Et un document DÉJÀ vu aujourd'hui passe encore : même épuisé, le même
 # document reste consultable — le refuser passerait pour une panne.
@@ -142,4 +142,4 @@ req = urllib.request.Request(
 urllib.request.urlopen(req, timeout=120)
 print("   document déjà vu, droit épuisé -> toujours servi")
 PY
-echo "== signup journey OK (droit quotidien, réouverture gratuite, refus net)"
+echo "== signup journey OK (droit mensuel, réouverture gratuite, refus net)"
