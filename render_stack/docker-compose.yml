@@ -6,6 +6,10 @@ services:
     build: .
     image: ecobuilding-render:latest
     shm_size: 1g
+    # Le profil/temp que Chromium écrit à chaque rendu va en RAM (compté sur
+    # mem_limit), pas sur le disque PARTAGÉ — le disque est le goulot de la VM.
+    tmpfs:
+      - /tmp:size=256m
     ports:
       - "127.0.0.1:13080:8040"   # 1PESI (#173); consumers use alias render
     networks:
@@ -23,6 +27,14 @@ services:
       - "ecobuilding.confinia.io:host-gateway"
       - "staging.ecobuilding.confinia.io:host-gateway"
       - "sandbox.ecobuilding.confinia.io:host-gateway"
+    mem_limit: 1536m
+    cpus: 1.5
+    # Plafond de tas Node explicite (#402) ; Chromium vit HORS du tas V8, c'est
+    # mem_limit qui le borne. Le rendu a déjà un timeout puppeteer de 30 s dans
+    # server.js — règle « tout job a un timeout » : un rendu qui pend meurt vite,
+    # pas au bout de 16 jours.
+    environment:
+      NODE_OPTIONS: "--max-old-space-size=384"
     restart: unless-stopped
 
 networks:

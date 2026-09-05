@@ -17,6 +17,8 @@ services:
     volumes:
       - ./stack_caddy/Caddyfile:/etc/caddy/Caddyfile:ro
     # ports: set per stack by deploy/{blue,green}.override.yml
+    mem_limit: 256m
+    cpus: 1.0
     restart: unless-stopped
 
   api:
@@ -78,11 +80,15 @@ services:
     networks:
       default:
       internal: {}
+    mem_limit: 768m
+    cpus: 1.5
     restart: unless-stopped
 
   frontend:
     build: ./frontend
     image: ecobuilding-frontend:latest
+    mem_limit: 128m
+    cpus: 0.5
     restart: unless-stopped
 
   # App-local OTel buffer; its prometheus exporter (:8889) is published per
@@ -95,6 +101,8 @@ services:
     volumes:
       - ./monitoring/otel-collector.yaml:/etc/otelcol/config.yaml:ro
     # ports: set per stack by deploy/{blue,green}.override.yml
+    mem_limit: 256m
+    cpus: 0.5
     restart: unless-stopped
 
 networks:

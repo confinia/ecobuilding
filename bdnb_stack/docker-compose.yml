@@ -28,6 +28,8 @@ services:
     # in the platform numbering. Never exposed beyond 127.0.0.1.
     ports:
       - "127.0.0.1:13030:5432"
+    mem_limit: 2g
+    cpus: 2.0
     restart: unless-stopped
 
   # PostgREST mirrors the BDNB REST interface. db-schema is set after restore
@@ -56,6 +58,8 @@ services:
       default:
       internal:
         aliases: [bdnb-rest]
+    mem_limit: 512m
+    cpus: 1.0
     restart: unless-stopped
 
 networks:

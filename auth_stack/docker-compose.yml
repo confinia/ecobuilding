@@ -17,6 +17,8 @@ services:
       - ../deploy/secrets.env
     volumes:
       - kc_pgdata:/var/lib/postgresql/data
+    mem_limit: 512m
+    cpus: 1.0
     restart: unless-stopped
 
   keycloak:
@@ -36,6 +38,10 @@ services:
       KC_HOSTNAME_ADMIN: https://iam.ecobuilding.confinia.io/auth
       KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      # Plafond de tas EXPLICITE (VM partagée, #402) : sans -Xmx la JVM se sert
+      # (~1/4 de la RAM hôte) puis se fait tuer par mem_limit, ce qui ressemble à
+      # un crash. mem_limit reste le filet ; ceci est le vrai réglage.
+      JAVA_OPTS_APPEND: "-Xmx1024m"
     env_file:
       - ../deploy/secrets.env
     volumes:
@@ -50,6 +56,8 @@ services:
       default:
       internal:
         aliases: [keycloak]
+    mem_limit: 1536m
+    cpus: 1.5
     restart: unless-stopped
 
 networks:
