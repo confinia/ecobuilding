@@ -529,6 +529,14 @@ def _official_dpe_html(od: dict) -> str:
     systems — honestly framed as the group's representative dwelling."""
     if not od or not od.get("dpe_number"):
         return ""
+    # Validité : un DPE expiré affiché comme valable induit en erreur le
+    # professionnel visé (#399). On le DIT, plutôt que d'imprimer une échéance
+    # future fausse pour un diagnostic déjà périmé.
+    from datetime import date
+    vu = od.get("valid_until")
+    dpe_expired = bool(vu and vu < date.today().isoformat())
+    valid_suffix = (T(" (expiré, DPE à refaire)") if dpe_expired
+                    else T(" (validité légale: 10 ans)"))
     ins = od.get("insulation") or {}
     cost = od.get("annual_cost_eur")
     cost_txt = (_eur(cost) + T(" €/an")) if cost else None
@@ -540,7 +548,7 @@ def _official_dpe_html(od: dict) -> str:
 <table>
   {_row(T("N° DPE (ADEME)"), od.get("dpe_number"))}
   {_row(T("Établi le"), od.get("established_on"))}
-  {_row(T("Valable jusqu'au"), od.get("valid_until"), T(" (validité légale: 10 ans)"))}
+  {_row(T("Valable jusqu'au"), vu, valid_suffix)}
   {_row(T("Surface habitable"), od.get("surface_habitable_m2"), " m²")}
   {_row(T("Coût annuel d'énergie estimé"), cost_txt)}
   {_row(T("Chauffage"), od.get("heating"))}
@@ -1338,6 +1346,7 @@ _EN = {
     "N° DPE (ADEME)": "DPE no. (ADEME)",
     "Valable jusqu'au": "Valid until",
     " (validité légale: 10 ans)": " (legal validity: 10 years)",
+    " (expiré, DPE à refaire)": " (expired, DPE to be redone)",
     "Surface habitable": "Living area",
     "Coût annuel d'énergie estimé": "Estimated annual energy cost",
     "Chauffage": "Heating",

@@ -1616,6 +1616,26 @@ def _m2_propre(v):
     return int(v) if v == int(v) else v
 
 
+def _dpe_valid_until(established: str) -> str:
+    """Fin de validité légale du DPE, réforme 2021 comprise (#399).
+
+    La règle des 10 ans (art. L126-26 CCH) ne vaut que pour les DPE établis à
+    partir du 1er juillet 2021. La réforme a RACCOURCI la validité des plus
+    anciens :
+      établi 2013-01-01 -> 2017-12-31 : valable jusqu'au 31/12/2022 ;
+      établi 2018-01-01 -> 2021-06-30 : valable jusqu'au 31/12/2024.
+    Servir « établi + 10 ans » pour un DPE de 2018 afficherait « valable jusqu'en
+    2028 » alors qu'il a expiré fin 2024 — le piège même signalé en clientèle."""
+    d = established[:10]
+    if d >= "2021-07-01":
+        return str(int(d[:4]) + 10) + d[4:]
+    if d >= "2018-01-01":
+        return "2024-12-31"
+    if d >= "2013-01-01":
+        return "2022-12-31"
+    return str(int(d[:4]) + 10) + d[4:]   # pré-2013 : 10 ans, déjà expiré
+
+
 async def _official_dpe(bdnb_id: str):
     """Official-DPE block (#189): BDNB's representative dwelling gives the real
     ADEME DPE number, surface and final energy; the ADEME observatoire adds the
@@ -1635,9 +1655,9 @@ async def _official_dpe(bdnb_id: str):
         block = {
             "dpe_number": num,
             "established_on": established,
-            # Legal validity: 10 years (art. L126-26 CCH).
-            "valid_until": (str(int(established[:4]) + 10) + established[4:])
-            if established else None,
+            # Validité légale : 10 ans depuis la réforme du 1/7/2021, mais
+            # RACCOURCIE pour les DPE antérieurs (#399, cf. _dpe_valid_until).
+            "valid_until": _dpe_valid_until(established) if established else None,
             # Arrondie à la décimale À LA SOURCE : la BDNB livre des flottants
             # du genre 57.2999992370605, et quinze décimales sur des mètres
             # carrés est une faute de sérieux — vue en production (#309).

@@ -464,6 +464,23 @@ def test_official_dpe_html_and_pdf():
     assert pdf.startswith(b"%PDF") and len(pdf) > 5000
 
 
+def test_dpe_validity_2021_reform():
+    """#399 : la réforme 2021 raccourcit la validité des DPE antérieurs, et un
+    DPE expiré est SIGNALÉ sur la fiche plutôt qu'affiché comme valable."""
+    f = main._dpe_valid_until
+    assert f("2026-03-12T23:00:00") == "2036-03-12"   # post-réforme : 10 ans
+    assert f("2021-07-01") == "2031-07-01"            # borne : 10 ans pleins
+    assert f("2021-06-30") == "2024-12-31"            # juste avant : expiré fin 2024
+    assert f("2018-01-01") == "2024-12-31"
+    assert f("2017-12-31") == "2022-12-31"            # 2013-2017 : expiré fin 2022
+    assert f("2015-05-10") == "2022-12-31"
+    from app.report import _official_dpe_html
+    perime = _official_dpe_html({"dpe_number": "X", "valid_until": "2024-12-31"})
+    assert "expiré" in perime
+    valide = _official_dpe_html({"dpe_number": "X", "valid_until": "2099-12-31"})
+    assert "expiré" not in valide and "10 ans" in valide
+
+
 def test_local_taxes_block(monkeypatch):
     async def fake(url, params, ttl):
         assert 'insee_com="78575"' in params["where"]
