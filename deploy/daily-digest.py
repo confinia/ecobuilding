@@ -45,7 +45,7 @@ def psql(sql):
     r = subprocess.run(
         ["podman", "exec", BDNB_DB, "psql", "-U", "bdnb", "-d", "bdnb",
          "-tAF", "\t", "-c", sql],
-        capture_output=True, text=True)
+        capture_output=True, text=True, timeout=30)   # jamais bloqué (règle timeout)
     if r.returncode != 0:
         raise RuntimeError(f"psql: {r.stderr[:400]}")
     return [ln.split("\t") for ln in r.stdout.strip().splitlines() if ln]

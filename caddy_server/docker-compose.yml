@@ -10,4 +10,6 @@ services:
     network_mode: host
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    mem_limit: 256m
+    cpus: 1.0
     restart: unless-stopped

@@ -15,6 +15,8 @@ services:
     volumes:
       - ../monitoring/prometheus-shared.yml:/etc/prometheus/prometheus.yml:ro
       - prom_data:/prometheus
+    mem_limit: 768m
+    cpus: 1.0
     restart: unless-stopped
 
   grafana:
@@ -71,6 +73,8 @@ services:
       - grafana_data:/var/lib/grafana
       - ../monitoring/grafana-shared/provisioning:/etc/grafana/provisioning:ro
       - ../monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    mem_limit: 512m
+    cpus: 1.0
     restart: unless-stopped
 
   podman-exporter:
@@ -84,6 +88,8 @@ services:
       - ${XDG_RUNTIME_DIR}/podman/podman.sock:/run/podman/podman.sock:ro
     security_opt:
       - label=disable
+    mem_limit: 256m
+    cpus: 0.5
     restart: unless-stopped
 
 volumes:
