@@ -1,0 +1,62 @@
+# Reusable image build (#409): builds the app images on GitHub-hosted runners
+# and pushes them to GHCR, so the SHARED VM never runs `podman build` again.
+# The VM was measured at 88% of all disk I/O during a build burst (12G overlay
+# store) — moving the build off it is the whole point.
+#
+# Called by sandbox.yml (PR) and staging.yml (push to main). Every job in a run
+# shares the same ${{ github.sha }}, so the tag pushed here is exactly the tag
+# the VM pulls in the deploy job — no drift possible. `latest` is added only on
+# main, as a convenience tag for the manual break-glass path.
+name: build-images
+
+on:
+  workflow_call:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - name: api
+            context: ./api
+          - name: frontend
+            context: ./frontend
+          - name: render
+            context: ./render_stack
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Tag EXPLICITLY with ${{ github.sha }} (not metadata-action's derived sha,
+      # which on a pull_request is the PR head, not the run's github.sha the VM
+      # deploy pulls). raw values keep build and deploy tags identical.
+      - name: Compute tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/confinia/ecobuilding-${{ matrix.name }}
+          tags: |
+            type=raw,value=${{ github.sha }}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Per-image GHA layer cache: an unchanged image rebuilds in seconds.
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}

@@ -10,13 +10,27 @@ concurrency:
   group: vm-deploy            # one VM, one deploy at a time (shared with staging)
   cancel-in-progress: false
 
+permissions:
+  contents: read
+  packages: write             # build-images pushes to GHCR (#409)
+
 jobs:
+  # Build the app images OFF the VM (#409), then the VM only pulls them.
+  build:
+    uses: ./.github/workflows/build-images.yml
+
   sandbox:
+    needs: build
     runs-on: [self-hosted, vm, ecobuilding]
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0          # origin/main nécessaire au diff render_stack/ (#341)
+
+      # The VM pulls the GHCR images built above; login with the run's token so
+      # the packages can stay private (public repo, but no need to expose them).
+      - name: Log the VM into GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | ssh -o BatchMode=yes localhost 'podman login ghcr.io -u ${{ github.actor }} --password-stdin'
 
       - name: Sync branch tree to ~/projects/ecobuilding
         run: |
@@ -32,18 +46,12 @@ jobs:
       # nor in a transient unit (stop-timeout reaps them too) — a logind
       # login session with lingering is the context that provably survives.
       - name: Deploy the sandbox stack
-        run: ssh -o BatchMode=yes localhost 'cd ~/projects/ecobuilding && ./deploy/sandbox.sh'
+        run: ssh -o BatchMode=yes localhost 'cd ~/projects/ecobuilding && ECOBUILDING_TAG=${{ github.sha }} ./deploy/sandbox.sh'
 
-      # Contrôle de la pile de rendu (#341) : l'image se CONSTRUIT (JS
-      # syntaxiquement valide, dépendances présentes). On ne la déploie pas
-      # ici — elle est partagée avec la prod.
-      - name: Render image builds
-        run: |
-          if git diff --name-only origin/${{ github.base_ref }}...HEAD -- render_stack/ | grep -q .; then
-            cd render_stack && podman build -q -t ecobuilding-render-check . >/dev/null && echo "image de rendu OK"
-          else
-            echo "render_stack/ inchangé"
-          fi
+      # La pile de rendu (partagée avec la prod) est CONSTRUITE par le job
+      # build-images (#409) : si render_stack/ est cassé, le build échoue et ce
+      # workflow ne démarre pas — l'ancien `podman build` de contrôle sur la VM
+      # n'a plus lieu d'être.
 
       - name: Test suite (hermetic container)
         run: cd ~/projects/ecobuilding && ./deploy/test.sh

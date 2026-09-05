@@ -5,7 +5,11 @@
 # attend le gardien de chaleur (#337) plutôt que de tirer à froid nous-mêmes.
 set -euo pipefail
 cd "$(dirname "$0")/../render_stack"
-podman-compose -p ecobuilding-render up -d --build --force-recreate
+# Image construite hors VM et tirée de GHCR (#409) — plus de build ici.
+export ECOBUILDING_TAG="${ECOBUILDING_TAG:-latest}"
+podman pull -q "ghcr.io/confinia/ecobuilding-render:$ECOBUILDING_TAG" >/dev/null \
+  || { echo "render: échec du pull ghcr.io/confinia/ecobuilding-render:$ECOBUILDING_TAG"; exit 1; }
+podman-compose -p ecobuilding-render up -d --force-recreate
 for i in $(seq 1 30); do
   podman exec ecobuilding-render_render_1 sh -c 'curl -sf -m 3 http://127.0.0.1:8040/healthz' >/dev/null 2>&1 && break
   sleep 2
