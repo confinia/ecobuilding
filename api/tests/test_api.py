@@ -712,17 +712,21 @@ def test_building_map_enabled_returns_datauri(monkeypatch):
 
 # --- Pay-as-you-go metering (#201) -------------------------------------------
 def test_pro_tier_grid_v4():
-    """Pricing v4 (bascule Creem, 2026-08-17) : paliers fixes, plus de metering.
-    Pro S 9 € (30 fiches) · Pro M 29 € (100) · Pro L 99 € (illimité fair-use).
-    Le simulateur recommande le plus petit palier couvrant le volume."""
+    """Pricing #397 : quota QUOTIDIEN (fiches_jour), dérivé du SPOT. Pro S 9 €
+    CATALOGUE mais gratuite au lancement (10/jour) · Pro M 29 € (50/jour) ·
+    Pro L 99 € (illimité fair-use). Le simulateur mensuel reste un ordre de
+    grandeur et applique le prix EFFECTIF (Pro S à 0 € pendant le lancement)."""
     from app.main import _usage_cost, _tier_for, CREDIT_COST, PRO_TIERS
     assert CREDIT_COST["report"] == 1 and CREDIT_COST["lookup"] == 0
-    assert PRO_TIERS["s"]["eur"] == 9 and PRO_TIERS["s"]["fiches"] == 30
-    assert PRO_TIERS["m"]["eur"] == 29 and PRO_TIERS["m"]["fiches"] == 100
-    assert PRO_TIERS["l"]["eur"] == 99 and PRO_TIERS["l"]["fiches"] is None
+    assert PRO_TIERS["s"]["eur"] == 9 and PRO_TIERS["s"]["fiches_jour"] == 10
+    assert PRO_TIERS["m"]["eur"] == 29 and PRO_TIERS["m"]["fiches_jour"] == 50
+    assert PRO_TIERS["l"]["eur"] == 99 and PRO_TIERS["l"]["fiches_jour"] is None
+    # Plus aucune notion mensuelle dans la grille d'application.
+    assert "fiches" not in PRO_TIERS["s"]
+    # Simulateur mensuel (ordre de grandeur, hors barrière) : inchangé.
     assert _usage_cost(0)["cost_eur"] == 0.0        # rien consommé, rien dû
     assert _usage_cost(10)["cost_eur"] == 0.0       # couvert par le compte gratuit
-    assert _tier_for(30) == "s" and _usage_cost(30)["cost_eur"] == 9.0
+    assert _tier_for(30) == "s" and _usage_cost(30)["cost_eur"] == 0.0   # Pro S gratuite
     assert _tier_for(31) == "m" and _usage_cost(100)["cost_eur"] == 29.0
     assert _tier_for(101) == "l" and _usage_cost(10_000)["cost_eur"] == 99.0
     tiers = _usage_cost(0)["free_tiers"]
@@ -768,27 +772,30 @@ def test_usage_endpoint_requires_key_and_reports_cost(tmp_path, monkeypatch):
     kid = hashlib.sha256(b"K1").hexdigest()[:16]
     main._usage_add(kid, 20)                       # 20 fiches ce mois
     body = client.get("/v1/usage", headers={"X-API-Key": "K1"}).json()
-    # Un compte GRATUIT voit son droit, pas une facture (#206) — et ce droit
-    # est QUOTIDIEN depuis #290 : le total du mois reste visible à part, il
-    # sert la facture, pas le plafond.
+    # Un compte GRATUIT par clé voit son droit, pas une facture (#206) : plafond
+    # MENSUEL de crédits (une fiche = un crédit), inchangé par #384.
     assert body["plan"] == "free" and body["cost_eur"] == 0.0
-    assert body["period"] == "day"
-    assert body["reports_used_month"] == 20
-    assert body["reports_used"] == 0                       # rien servi aujourd'hui
-    assert body["reports_left"] == main.FREE_ACCOUNT_DAILY_REPORTS
-    for i in range(3):
-        main._daily_add(kid, f"bdnb-{i}")
-    apres = client.get("/v1/usage", headers={"X-API-Key": "K1"}).json()
-    assert apres["reports_used"] == 3
-    assert apres["reports_left"] == main.FREE_ACCOUNT_DAILY_REPORTS - 3
-    # A PRO subscriber sees the fixed tier price and the tier allowance (v4).
+    assert body["period"] == "month"
+    assert body["reports_used"] == 20
+    assert body["reports_included"] == main.FREE_ACCOUNT_REPORTS
+    assert body["reports_left"] == 0                       # 20 > 10, plafond dépassé
+    # A PRO subscriber : quota QUOTIDIEN, prix du palier (#384). Pro S gratuite.
     monkeypatch.setattr(main, "_key_plans", lambda: {"K1": "pro"})
     monkeypatch.setattr(main, "_key_owners", lambda: {"K1": "sub-1"})
     monkeypatch.setattr(main, "_pro_tier", lambda sub: "s")
     pro = client.get("/v1/usage", headers={"X-API-Key": "K1"}).json()
     assert pro["plan"] == "pro" and pro["tier"] == "s"
-    assert pro["cost_eur"] == 9.0
-    assert pro["reports_used"] == 20 and pro["reports_left"] == 10   # sur 30
+    assert pro["cost_eur"] == 0.0                          # Pro S, offre de lancement
+    assert pro["period"] == "day"
+    assert pro["reports_included"] == main.PRO_TIERS["s"]["fiches_jour"]  # 10/jour
+    assert pro["reports_used"] == 0                        # rien servi aujourd'hui
+    assert pro["reports_left"] == 10
+    assert pro["reports_used_month"] == 20                 # facture, à part
+    for i in range(3):
+        main._daily_add(kid, f"bdnb-{i}")
+    apres = client.get("/v1/usage", headers={"X-API-Key": "K1"}).json()
+    assert apres["reports_used"] == 3                      # fiches distinctes du jour
+    assert apres["reports_left"] == main.PRO_TIERS["s"]["fiches_jour"] - 3
 
 
 def test_pricing_simulator_matches_frontend_formula():
@@ -850,10 +857,12 @@ def test_free_tiers_enforced(tmp_path, monkeypatch):
     assert main._quota_gate(Req("PROKEY"), "report") == "key"   # never blocked
 
 def test_registered_user_gets_the_free_account_ladder(tmp_path, monkeypatch):
-    """#206: a signed-in browser user (no API key) consumes the free-account
-    allowance, and a subscriber is never blocked."""
+    """#384 : un compte gratuit connecté a un droit MENSUEL, en fiches
+    distinctes (10/mois). Rouvrir un bâtiment déjà vu ce mois-ci est libre ; un
+    abonné, lui, n'est jamais bloqué au mois (il est plafonné au jour)."""
     monkeypatch.setattr(main, "USAGE_PATH", str(tmp_path / "usage.json"))
     monkeypatch.setattr(main, "DAILY_PATH", str(tmp_path / "daily.json"))
+    monkeypatch.setattr(main, "MONTHLY_PATH", str(tmp_path / "monthly.json"))
     monkeypatch.setattr(main, "_load_keys", lambda: set())
     monkeypatch.setattr(main, "_decode_token", lambda t: {"sub": "user-1"})
     monkeypatch.setattr(main, "_pro_active", lambda sub: False)
@@ -862,19 +871,66 @@ def test_registered_user_gets_the_free_account_ladder(tmp_path, monkeypatch):
         headers = {"authorization": "Bearer x", "x-forwarded-for": "10.0.0.9"}
         query_params: dict = {}
 
-    # Le droit d'un compte gratuit est QUOTIDIEN, en fiches distinctes (#290) :
-    # il ne se comptait plus au mois depuis que le plafond anonyme l'avait
-    # rejoint, et créer un compte n'apportait alors plus rien.
-    for i in range(main.FREE_ACCOUNT_DAILY_REPORTS):
+    # Le droit d'un compte gratuit est de nouveau MENSUEL, en fiches distinctes
+    # (#384) : le plafond quotidien avait aligné le compte sur l'anonyme.
+    for i in range(main.FREE_ACCOUNT_REPORTS):
         assert main._quota_gate(Req(), "report", subject=f"bdnb-{i}") == "user_free"
-    # La MÊME fiche, rouverte, ne consomme rien.
+    # La MÊME fiche, rouverte ce mois-ci, ne consomme rien.
     assert main._quota_gate(Req(), "report", subject="bdnb-0") == "user_free"
     with pytest.raises(HTTPException) as e:
-        main._quota_gate(Req(), "report", subject="bdnb-neuf")
-    assert "par jour" in e.value.detail and "demain" in e.value.detail
+        main._quota_gate(Req(), "report", subject="bdnb-onze")
+    assert "par mois" in e.value.detail and "mois prochain" in e.value.detail
 
     monkeypatch.setattr(main, "_pro_active", lambda sub: True)
-    assert main._quota_gate(Req(), "report") == "user_pro"   # never blocked
+    assert main._quota_gate(Req(), "report") == "user_pro"   # never blocked au mois
+
+
+def test_launch_activate_grants_pro_s_daily(tmp_path, monkeypatch):
+    """#384 : POST /v1/launch/activate rend l'utilisateur Pro S — reconnu
+    LOCALEMENT, sans appel Creem/Polar (_pro_active lit pro.json) — avec un
+    plafond de 10 fiches DISTINCTES par jour. Rouvrir un bâtiment déjà vu est
+    libre ; le 11e bâtiment distinct du jour bute sur le mur."""
+    monkeypatch.setattr(main, "PRO_PATH", str(tmp_path / "pro.json"))
+    monkeypatch.setattr(main, "USAGE_PATH", str(tmp_path / "usage.json"))
+    monkeypatch.setattr(main, "DAILY_PATH", str(tmp_path / "daily.json"))
+    monkeypatch.setattr(main, "MONTHLY_PATH", str(tmp_path / "monthly.json"))
+    monkeypatch.setattr(main, "LAUNCH_FREE_PRO", True)
+    monkeypatch.setattr(main, "_load_keys", lambda: set())
+    monkeypatch.setattr(main, "_decode_token", lambda t: {"sub": "u-launch"})
+    monkeypatch.setattr(main, "_bearer_sub", lambda r: "u-launch")
+
+    # Sans jeton : refus.
+    assert client.post("/v1/launch/activate").status_code == 401
+
+    # Activation : Pro S, 10/jour, reconnue sans fournisseur.
+    r = client.post("/v1/launch/activate", headers={"Authorization": "Bearer x"})
+    assert r.status_code == 200
+    assert r.json() == {"activated": True, "tier": "s", "fiches_jour": 10}
+    assert main._pro_active("u-launch") is True      # statut local, pas d'appel Creem
+    assert main._pro_tier("u-launch") == "s"
+    # Idempotent : réactiver ne change rien.
+    again = client.post("/v1/launch/activate", headers={"Authorization": "Bearer x"})
+    assert again.json()["activated"] is True
+
+    class Req:
+        headers = {"authorization": "Bearer x", "x-forwarded-for": "10.0.0.5"}
+        query_params: dict = {}
+
+    # 10 bâtiments distincts dans la journée : tous servis en Pro.
+    for i in range(main.PRO_TIERS["s"]["fiches_jour"]):
+        assert main._quota_gate(Req(), "report", subject=f"bat-{i}") == "user_pro"
+    # Le MÊME bâtiment, rouvert le même jour, reste gratuit et non décompté.
+    assert main._quota_gate(Req(), "report", subject="bat-0") == "user_pro"
+    # Le 11e bâtiment DISTINCT du jour bute sur le plafond quotidien.
+    with pytest.raises(HTTPException) as e:
+        main._quota_gate(Req(), "report", subject="bat-onze")
+    assert "par jour" in e.value.detail
+
+    # Offre close : l'activation répond 404 (et n'accorde rien).
+    monkeypatch.setattr(main, "LAUNCH_FREE_PRO", False)
+    monkeypatch.setattr(main, "_decode_token", lambda t: {"sub": "u-late"})
+    closed = client.post("/v1/launch/activate", headers={"Authorization": "Bearer x"})
+    assert closed.status_code == 404
 
 
 def test_key_plan_follows_the_account_subscription(tmp_path, monkeypatch):
@@ -912,7 +968,8 @@ def test_config_exposes_payment_mode(monkeypatch):
     monkeypatch.setattr(main, "CREEM_API_BASE", "https://test-api.creem.io/v1")
     body = client.get("/v1/config").json()
     assert body["payment_mode"] == "sandbox" and body["payment_provider"] == "creem"
-    assert body["pro_tiers"]["s"]["eur"] == 9          # la grille arrive au front
+    assert body["pro_tiers"]["s"]["eur"] == 9          # prix CATALOGUE (gratuit au lancement via /v1/launch/activate)
+    assert body["pro_tiers"]["s"]["fiches_jour"] == 10  # quota quotidien (#384)
     monkeypatch.setattr(main, "CREEM_API_BASE", "https://api.creem.io/v1")
     assert client.get("/v1/config").json()["payment_mode"] == "live"
     monkeypatch.setattr(main, "PAYMENT_PROVIDER", "polar")
@@ -1147,6 +1204,7 @@ def test_un_appelant_identifie_est_toujours_decompte(monkeypatch, tmp_path):
     from fastapi import Request
 
     monkeypatch.setattr(main, "DAILY_PATH", str(tmp_path / "d.json"))
+    monkeypatch.setattr(main, "MONTHLY_PATH", str(tmp_path / "m.json"))
     monkeypatch.setattr(main, "USAGE_PATH", str(tmp_path / "u.json"))
     monkeypatch.setattr(main, "_bearer_sub", lambda r: "kc-utilisateur-1")
     monkeypatch.setattr(main, "_pro_active", lambda sub: False)
@@ -1208,23 +1266,26 @@ def test_le_previsionnel_et_l_usage_annoncent_le_meme_droit(monkeypatch, tmp_pat
 
     monkeypatch.setattr(main, "USAGE_PATH", str(tmp_path / "u.json"))
     monkeypatch.setattr(main, "DAILY_PATH", str(tmp_path / "d.json"))
+    monkeypatch.setattr(main, "MONTHLY_PATH", str(tmp_path / "m.json"))
     monkeypatch.setattr(main, "_load_keys", lambda: set())
     monkeypatch.setattr(main, "_decode_token", lambda t: {"sub": "u-quota"})
     monkeypatch.setattr(main, "_pro_active", lambda sub: False)
 
     import hashlib
     bucket = "kc:" + hashlib.sha256(b"u-quota").hexdigest()[:14]
-    # 12 fiches CE MOIS (facture), 2 aujourd'hui (droit).
+    # 12 crédits CE MOIS (facture), 2 bâtiments distincts vus ce mois (droit).
     main._usage_add(bucket, 12 * main.CREDIT_COST["report"])
-    main._daily_add(bucket, "bdnb-a"); main._daily_add(bucket, "bdnb-b")
+    main._monthly_add(bucket, "bdnb-a"); main._monthly_add(bucket, "bdnb-b")
 
     h = {"Authorization": "Bearer x"}
     quota = client.get("/v1/quota", headers=h).json()
     usage = client.get("/v1/usage", headers=h).json()
-    assert quota["period"] == usage["period"] == "day"
+    # Droit MENSUEL depuis #384 : les deux surfaces disent le même reste,
+    # la même période.
+    assert quota["period"] == usage["period"] == "month"
     assert quota["reports_used"] == usage["reports_used"] == 2
     assert quota["reports_left"] == usage["reports_left"] \
-        == main.FREE_ACCOUNT_DAILY_REPORTS - 2
+        == main.FREE_ACCOUNT_REPORTS - 2
     assert quota["free_again"] == ["bdnb-a", "bdnb-b"]
 
 

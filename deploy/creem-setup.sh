@@ -8,8 +8,9 @@
 # dashboard (demande opérateur : « use current product as creem product:
 # ecobuilding ») comme palier dont le prix correspond, puis crée UNIQUEMENT
 # les paliers manquants de la grille v4 (PRICING.md) :
-#   Pro S  9 €/mois  (900 c)  · 30 fiches
-#   Pro M 29 €/mois (2900 c)  · 100 fiches
+# les paliers manquants (prix et quotas lus dans api/app/pricing.json, le SPOT) :
+#   Pro S  9 €/mois  (900 c)  · 10 fiches/jour (gratuit au lancement)
+#   Pro M 29 €/mois (2900 c)  · 50 fiches/jour
 #   Pro L 99 €/mois (9900 c)  · illimité fair-use
 # Imprime le bloc CREEM_* à coller dans sandbox_stack/secrets.env.
 set -eu
@@ -19,6 +20,11 @@ case "$CREEM_API_KEY" in
   *) echo "ERREUR: clé de PRODUCTION refusée — la règle est Test Mode uniquement"; exit 1 ;;
 esac
 AUTH=(-H "x-api-key: $CREEM_API_KEY" -H "Content-Type: application/json")
+
+# Prix et quotas depuis le SPOT (api/app/pricing.json), source unique (#397).
+SPOT="$(cd "$(dirname "$0")/.." && pwd)/api/app/pricing.json"
+spot(){ python3 -c "import json;print(json.load(open('$SPOT'))['tiers']['$1']['$2'])"; }
+cents(){ echo $(( $(spot "$1" price_month) * 100 )); }
 
 echo "== produits existants ($BASE)"
 EXISTING=$(curl -fsS "${AUTH[@]}" "$BASE/products/search?page_size=50")
@@ -61,9 +67,9 @@ JSON
   echo "$id"
 }
 
-S_ID=$(pick_or_create s 900  "30 fiches PDF par mois. Sans engagement."  "EcoBuilding Pro S")
-M_ID=$(pick_or_create m 2900 "100 fiches PDF par mois. Sans engagement." "EcoBuilding Pro M")
-L_ID=$(pick_or_create l 9900 "Fiches PDF illimitées (usage raisonnable). Sans engagement." "EcoBuilding Pro L")
+S_ID=$(pick_or_create s "$(cents pro_s)" "$(spot pro_s quota) fiches PDF par jour. Sans engagement." "EcoBuilding Pro S")
+M_ID=$(pick_or_create m "$(cents pro_m)" "$(spot pro_m quota) fiches PDF par jour. Sans engagement." "EcoBuilding Pro M")
+L_ID=$(pick_or_create l "$(cents pro_l)" "Fiches PDF illimitées (usage raisonnable). Sans engagement." "EcoBuilding Pro L")
 
 cat <<EOF
 

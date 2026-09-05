@@ -1,0 +1,12 @@
+{
+  "_": "SPOT tarifaire — source UNIQUE. Change un prix ICI, tout le reste s'y synchronise : api/app/main.py (PRO_TIERS + quotas gratuits + offre de lancement), deploy/creem-setup.sh (produits Creem), frontend/site/offres.html, business/PRICING.md. test_tier_pricing_is_consistent_everywhere échoue si une surface dévie. Champs : price_month = prix catalogue en € (0 = gratuit) ; launch_free = offert pendant le lancement (LAUNCH_FREE_PRO) ; quota = fiches par 'period' (day|month), null = illimité (fair-use) ; access = qui / comment.",
+  "unit": "fiche PDF",
+  "currency": "EUR",
+  "tiers": {
+    "discover": {"name": "Découverte", "price_month": 0,  "launch_free": false, "quota": 10,   "period": "month", "access": "anonyme (par IP) ou compte gratuit + clé API"},
+    "pro_s":    {"name": "Pro S",       "price_month": 9,  "launch_free": true,  "quota": 10,   "period": "day",   "access": "activation 1 clic (offre) ; Creem ensuite"},
+    "pro_m":    {"name": "Pro M",       "price_month": 29, "launch_free": false, "quota": 50,   "period": "day",   "access": "abonné Creem"},
+    "pro_l":    {"name": "Pro L",       "price_month": 99, "launch_free": false, "quota": null, "period": "day",   "access": "abonné Creem"}
+  },
+  "enterprise": {"name": "Entreprise", "price": "sur devis (dès 10 k€/an)", "access": "contrat annuel"}
+}

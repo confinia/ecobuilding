@@ -230,33 +230,44 @@ def test_account_tier_is_wired_in_the_app():
 
 @needs_repo
 def test_tier_pricing_is_consistent_everywhere():
-    """v4 : la page offres, les constantes serveur, PRICING.md et le script
-    Creem doivent citer LES MÊMES nombres — un écart de prix est un bug de
-    confiance (et polar_report l'a prouvé : le produit v2 a survécu à la v3)."""
+    """#397 : api/app/pricing.json est le SPOT (source unique). Toutes les
+    surfaces — offres.html, PRO_TIERS/constantes serveur, creem-setup.sh —
+    doivent s'y accorder ; un écart de prix ou de quota est un bug de confiance.
+    Le serveur et le script DÉRIVENT du SPOT ; la page HTML est écrite à la main,
+    donc c'est elle qu'on confronte nombre par nombre."""
+    import json
+    spot = json.loads((ROOT / "api/app/pricing.json").read_text())["tiers"]
     html = (ROOT / "frontend/site/offres.html").read_text()
-    for n in ("9 €", "29 €", "99 €", "30 fiches", "100 fiches"):
-        assert n in html, n
-    # L'échelle gratuite : 10 fiches par mois, avec ou sans compte (2026-08-26).
-    # Le compte ne se distingue plus par le volume mais par la clé API.
-    # L'échelle : 10 par mois sans compte, 10 par JOUR avec un compte (#290).
-    assert "10 fiches PDF par mois" in html and "10 fiches PDF par jour" in html
+
+    # Gratuit : quota mensuel affiché.
+    disc = spot["discover"]
+    assert f"{disc['quota']} fiches PDF par mois" in html
+    # Chaque palier Pro : quota/jour affiché ; prix affiché SAUF l'offert (gratuit).
+    for key in ("pro_s", "pro_m", "pro_l"):
+        t = spot[key]
+        if t["quota"] is not None:
+            assert f"{t['quota']} fiches PDF par jour" in html, key
+        if not t["launch_free"]:
+            assert f"{t['price_month']} €" in html, key
+    assert "offre de lancement" in html.lower() and "gratuit" in html.lower()
     assert "clé API" in html
-    assert "crédit" not in html.lower()                # billed unit = la fiche
-    main_py = (ROOT / "api/app/main.py").read_text()
-    assert '"s": {"eur": 9,  "fiches": 30' in main_py
-    assert '"m": {"eur": 29, "fiches": 100' in main_py
-    assert '"l": {"eur": 99, "fiches": null' in main_py
-    assert 'ANON_MONTHLY_REPORTS", "10"' in main_py
-    assert 'FREE_ACCOUNT_DAILY_REPORTS", "10"' in main_py
-    assert 'FREE_ACCOUNT_REPORTS", "10"' in main_py
-    assert '"report": 1' in main_py                    # one unit = one fiche
-    # PRICING.md vit désormais dans le dépôt PRIVÉ de monétisation : ce test
-    # doit passer sur un clone public, donc il vérifie la cohérence entre les
-    # surfaces publiques (page offres, constantes serveur, script de création
-    # des produits) et non plus contre un document absent.
+    assert "crédit" not in html.lower()                 # unité facturée = la fiche
+
+    # PRO_TIERS et les quotas gratuits DÉRIVENT du SPOT : on vérifie l'accord.
+    from app.main import PRO_TIERS, ANON_MONTHLY_REPORTS, FREE_ACCOUNT_REPORTS, CREDIT_COST
+    for key in ("pro_s", "pro_m", "pro_l"):
+        t = spot[key]
+        k = key[len("pro_"):]
+        assert PRO_TIERS[k]["eur"] == t["price_month"], key
+        assert PRO_TIERS[k]["fiches_jour"] == t["quota"], key
+        assert PRO_TIERS[k]["label"] == t["name"], key
+    assert ANON_MONTHLY_REPORTS == disc["quota"]
+    assert FREE_ACCOUNT_REPORTS == disc["quota"]
+    assert CREDIT_COST["report"] == 1                   # une unité = une fiche
+
+    # creem-setup.sh lit le SPOT, il ne code plus les cents en dur.
     setup = (ROOT / "deploy/creem-setup.sh").read_text()
-    for n in ("900", "2900", "9900"):                  # cents des trois paliers
-        assert n in setup, n
+    assert "pricing.json" in setup and "cents pro_m" in setup
 
 @needs_repo
 def test_self_service_support_and_signup(needs_repo_ok=None):

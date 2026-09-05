@@ -2611,8 +2611,15 @@ def _load_keys() -> set:
 # il n'apporte plus rien pour l'instant. Le plafond bas existait justement pour
 # provoquer l'inscription (#206). Rétablir un écart demandera de monter le
 # compte gratuit, pas de redescendre l'anonyme.
-ANON_MONTHLY_REPORTS = int(os.environ.get("ANON_MONTHLY_REPORTS", "10"))
-FREE_ACCOUNT_REPORTS = int(os.environ.get("FREE_ACCOUNT_REPORTS", "10"))
+# --- SPOT tarifaire : api/app/pricing.json est la source UNIQUE (#397). Les
+# paliers Pro, les quotas gratuits et l'offre de lancement en DÉRIVENT ;
+# creem-setup.sh, offres.html et PRICING.md s'y synchronisent, et
+# test_tier_pricing_is_consistent_everywhere échoue si une surface dévie.
+with open(os.path.join(os.path.dirname(__file__), "pricing.json"), encoding="utf-8") as _pf:
+    PRICING = json.load(_pf)
+_DISCOVER = PRICING["tiers"]["discover"]
+ANON_MONTHLY_REPORTS = int(os.environ.get("ANON_MONTHLY_REPORTS", str(_DISCOVER["quota"])))
+FREE_ACCOUNT_REPORTS = int(os.environ.get("FREE_ACCOUNT_REPORTS", str(_DISCOVER["quota"])))
 # Compte gratuit : un quota PAR JOUR, en fiches DISTINCTES — comme le mobile.
 #
 # En montant le plafond anonyme de 3 à 10 (#281), le compte gratuit s'est
@@ -2629,11 +2636,36 @@ FREE_ACCOUNT_DAILY_REPORTS = int(os.environ.get("FREE_ACCOUNT_DAILY_REPORTS", "1
 # record: Creem bills fixed recurring amounts only, no metering. Decision
 # 2026-08-17: paliers plutôt que packs (subscription-first, cf BUSINESS.md).
 # JSON env override so a price fix stays a config change, not a deploy.
-PRO_TIERS: dict = json.loads(os.environ.get("PRO_TIERS_JSON", "") or """{
-  "s": {"eur": 9,  "fiches": 30,   "label": "Pro S"},
-  "m": {"eur": 29, "fiches": 100,  "label": "Pro M"},
-  "l": {"eur": 99, "fiches": null, "label": "Pro L"}
-}""")
+#
+# Pricing #384 : le quota Pro devient QUOTIDIEN (fiches distinctes par jour),
+# comme le mobile. « 10 par jour » se comprend sans calcul, là où un solde
+# mensuel oblige à se rationner. Pro S passe gratuite (offre de lancement,
+# LAUNCH_FREE_PRO) ; Pro M à 29 €, Pro L à 99 € (fiches illimitées, fair-use).
+PRO_TIERS: dict = json.loads(os.environ["PRO_TIERS_JSON"]) if os.environ.get("PRO_TIERS_JSON") else {
+    k[4:]: {"eur": t["price_month"], "fiches_jour": t["quota"], "label": t["name"]}
+    for k, t in PRICING["tiers"].items() if k.startswith("pro_")
+}
+# Grille MENSUELLE héritée, conservée UNIQUEMENT pour le simulateur public
+# (/v1/pricing, /v1/config) : « quel palier pour un volume mensuel ». Le quota
+# RÉEL est désormais quotidien (PRO_TIERS[...]["fiches_jour"]) ; ce tableau ne
+# sert qu'à la recommandation d'ordre de grandeur affichée hors barrière.
+_SIM_FICHES_MOIS: dict = {"s": 30, "m": 100, "l": None}
+# Offre de LANCEMENT : Pro S gratuite, activable en un clic par tout compte
+# connecté (/v1/launch/activate). Un interrupteur, pas un prix : on la ferme
+# d'un réglage quand la phase d'adhésion est finie, sans redéploiement.
+LAUNCH_FREE_PRO = os.environ.get("LAUNCH_FREE_PRO", "1") not in ("0", "false", "")
+# Le palier offert au lancement vient du SPOT : le seul marqué launch_free.
+LAUNCH_FREE_TIER = next((k[4:] for k, t in PRICING["tiers"].items()
+                         if k.startswith("pro_") and t.get("launch_free")), "s")
+
+
+def _prix_effectif(tier: str) -> float:
+    """Prix RÉEL du palier : 0 pour le palier offert au lancement, sinon le
+    prix catalogue de PRO_TIERS (#397). Le catalogue reste la source ; ceci dit
+    ce que l'abonné paie tant que l'offre de lancement est ouverte."""
+    if LAUNCH_FREE_PRO and tier == LAUNCH_FREE_TIER:
+        return 0.0
+    return float(PRO_TIERS[tier]["eur"])
 # --- Mobile (MOBILE.md) -------------------------------------------------------
 # Paliers SÉPARÉS de PRO_TIERS, volontairement : la promesse mobile n'est pas
 # celle du web (le mobile donne des fiches ; le web garde la clé API et
@@ -2658,6 +2690,10 @@ MOBILE_FREE_REPORTS = int(os.environ.get("MOBILE_FREE_REPORTS", "10"))
 # le refuser passerait pour une panne.
 MOBILE_DAILY_REPORTS = int(os.environ.get("MOBILE_DAILY_REPORTS", "10"))
 DAILY_PATH = os.environ.get("DAILY_PATH", "/leads/mobile_daily.json")
+# Journal MENSUEL des bâtiments distincts vus par un compte gratuit connecté
+# (#384). Même forme que DAILY_PATH mais clé sur le mois : rouvrir le même
+# bâtiment dans le mois ne consomme rien, exactement comme la règle du jour.
+MONTHLY_PATH = os.environ.get("MONTHLY_PATH", "/leads/monthly_seen.json")
 # Cache des fiches PDF : 24 h. Une fiche coûte 15 à 45 s de rendu ; la même
 # demandée deux fois doit être servie, pas refabriquée.
 PDF_CACHE_DIR = os.environ.get("PDF_CACHE_DIR", "/tiles/pdf")
@@ -2735,9 +2771,12 @@ def _usage_add(key_id: str, credits: int) -> int:
 
 
 def _tier_for(fiches: int) -> str:
-    """Smallest tier whose allowance covers this monthly volume (v4)."""
+    """Smallest tier whose allowance covers this monthly volume (simulateur).
+
+    Le quota d'exécution est quotidien depuis #384 ; cette recommandation
+    d'ordre de grandeur reste mensuelle et s'appuie sur _SIM_FICHES_MOIS."""
     for k in ("s", "m", "l"):
-        q = PRO_TIERS[k]["fiches"]
+        q = _SIM_FICHES_MOIS[k]
         if q is None or fiches <= q:
             return k
     return "l"
@@ -2752,8 +2791,9 @@ def _usage_cost(fiches: int) -> dict:
         "fiches": fiches,
         "credits": fiches,                  # kept: same number, one unit
         "recommended_tier": tier,
-        "cost_eur": 0.0 if fiches <= FREE_ACCOUNT_REPORTS else float(PRO_TIERS[tier]["eur"]),
-        "tiers": {k: {"eur": v["eur"], "fiches_month": v["fiches"], "label": v["label"]}
+        "cost_eur": 0.0 if fiches <= FREE_ACCOUNT_REPORTS else _prix_effectif(tier),
+        "tiers": {k: {"eur": v["eur"], "fiches_month": _SIM_FICHES_MOIS[k],
+                      "fiches_jour": v["fiches_jour"], "label": v["label"]}
                   for k, v in PRO_TIERS.items()},
         "free_tiers": {"anonymous_reports_month": ANON_MONTHLY_REPORTS,
                        # Le droit d'un compte gratuit est QUOTIDIEN (#290).
@@ -2904,6 +2944,41 @@ def _daily_add(bucket: str, subject: str) -> None:
         log.warning("journal quotidien non écrit (%s): %s", bucket, e2)
 
 
+def _monthly_load() -> dict:
+    try:
+        with open(MONTHLY_PATH) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def _monthly_seen(bucket: str) -> list:
+    """Bâtiments distincts déjà servis à ce compte CE MOIS-CI (#384). Même
+    logique que _daily_seen, clé sur le mois : rouvrir le même document dans le
+    mois est libre."""
+    e = _monthly_load().get(bucket) or {}
+    return e.get("ids", []) if e.get("month") == _month_key() else []
+
+
+def _monthly_add(bucket: str, subject: str) -> None:
+    data = _monthly_load()
+    month = _month_key()
+    e = data.get(bucket) or {}
+    if e.get("month") != month:
+        e = {"month": month, "ids": []}
+    if subject not in e["ids"]:
+        e["ids"].append(subject)
+    data[bucket] = e
+    try:
+        os.makedirs(os.path.dirname(MONTHLY_PATH), exist_ok=True)
+        tmp = MONTHLY_PATH + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(data, f)
+        os.replace(tmp, MONTHLY_PATH)
+    except OSError as e2:
+        log.warning("journal mensuel non écrit (%s): %s", bucket, e2)
+
+
 def _mobile_gate(request: Request, endpoint: str, subject: str | None = None) -> str | None:
     """Échelle mobile (MOBILE.md §5.2) : 3 fiches offertes par installation,
     puis fiches à l'unité et/ou abonnement. Renvoie None si l'appel ne vient
@@ -2995,8 +3070,8 @@ def _quota_gate(request: Request, endpoint: str, subject: str | None = None):
                 raise HTTPException(
                     429,
                     f"Compte gratuit : {FREE_ACCOUNT_REPORTS} fiches par mois atteintes. "
-                    f"Les offres Pro démarrent à {PRO_TIERS['s']['eur']:.0f} €/mois "
-                    f"({PRO_TIERS['s']['fiches']} fiches) : "
+                    f"Les offres Pro : Pro S gratuite "
+                    f"({PRO_TIERS['s']['fiches_jour']} fiches/jour) sur "
                     f"https://ecobuilding.confinia.io/offres.html — une question ? {SUPPORT_EMAIL}")
         _meter_call(request, endpoint, key)
         return "key"
@@ -3006,50 +3081,61 @@ def _quota_gate(request: Request, endpoint: str, subject: str | None = None):
         uid = "kc:" + hashlib.sha256(sub.encode()).hexdigest()[:14]
         if _pro_active(sub):
             tier = _pro_tier(sub) or "s"
-            quota = PRO_TIERS[tier]["fiches"]        # None = illimité (fair-use)
+            quota = PRO_TIERS[tier]["fiches_jour"]   # None = illimité (fair-use)
             if endpoint == "report":
-                if quota is not None:
-                    used = (_usage_load().get(_month_key()) or {}).get(uid, 0) \
-                           // CREDIT_COST["report"]
-                    if used >= quota:
-                        nxt = {"s": "m", "m": "l"}.get(tier)
-                        M_QUOTA_WALL.add(1, {"plan": "pro", "period": "month"})
-                        raise HTTPException(
-                            429,
-                            f"{PRO_TIERS[tier]['label']} : {quota} fiches par mois atteintes. "
-                            + (f"Passez à {PRO_TIERS[nxt]['label']} "
-                               f"({PRO_TIERS[nxt]['eur']:.0f} €/mois) : "
-                               "https://ecobuilding.confinia.io/offres.html"
-                               if nxt else "")
-                            + f" — une question ? {SUPPORT_EMAIL}")
-                _usage_add(uid, CREDIT_COST["report"])
-                M_CREDITS.add(CREDIT_COST["report"], {"endpoint": endpoint, "plan": "pro"})
-                if PAYMENT_PROVIDER == "polar":
-                    try:
-                        asyncio.get_running_loop().create_task(
-                            _polar_ingest(uid, endpoint, CREDIT_COST["report"]))
-                    except RuntimeError:
-                        pass
+                # Quota du JOUR, en bâtiments DISTINCTS (#384) — comme le mobile.
+                # Rouvrir aujourd'hui une fiche déjà obtenue ne recompte pas :
+                # c'est le même document, et il ne doit rien facturer non plus.
+                vues = _daily_seen(uid)
+                deja_vue = bool(subject) and subject in vues
+                if quota is not None and not deja_vue and len(vues) >= quota:
+                    nxt = {"s": "m", "m": "l"}.get(tier)
+                    M_QUOTA_WALL.add(1, {"plan": "pro", "period": "day"})
+                    if nxt:
+                        nfj = PRO_TIERS[nxt]["fiches_jour"]
+                        njour = "illimité" if nfj is None else f"{nfj}/jour"
+                        upsell = (f"Passez à {PRO_TIERS[nxt]['label']} "
+                                  f"({njour}, {PRO_TIERS[nxt]['eur']:.0f} €/mois) : "
+                                  "https://ecobuilding.confinia.io/offres.html")
+                    else:
+                        upsell = ""
+                    raise HTTPException(
+                        429,
+                        f"{PRO_TIERS[tier]['label']} : {quota} fiches par jour atteintes. "
+                        + upsell + f" — une question ? {SUPPORT_EMAIL}")
+                if not deja_vue:
+                    # Le décompte MENSUEL reste tenu (facture / metering Polar) ;
+                    # seule la barrière est passée au jour.
+                    if subject:
+                        _daily_add(uid, subject)
+                    _usage_add(uid, CREDIT_COST["report"])
+                    M_CREDITS.add(CREDIT_COST["report"], {"endpoint": endpoint, "plan": "pro"})
+                    if PAYMENT_PROVIDER == "polar":
+                        try:
+                            asyncio.get_running_loop().create_task(
+                                _polar_ingest(uid, endpoint, CREDIT_COST["report"]))
+                        except RuntimeError:
+                            pass
             return "user_pro"
         if endpoint == "report":
-            # Quota du JOUR, en fiches distinctes. Une fiche déjà obtenue
-            # aujourd'hui n'en consomme pas une seconde : c'est le même
-            # document, et le refuser passerait pour une panne.
-            vues = _daily_seen(uid)
+            # Compte gratuit : quota MENSUEL, en fiches DISTINCTES (#384). Une
+            # fiche déjà obtenue ce mois-ci n'en consomme pas une seconde :
+            # c'est le même document, et le refuser passerait pour une panne.
+            vues = _monthly_seen(uid)
             deja_vue = bool(subject) and subject in vues
-            if not deja_vue and len(vues) >= FREE_ACCOUNT_DAILY_REPORTS:
-                M_QUOTA_WALL.add(1, {"plan": "free", "period": "day"})
+            if not deja_vue and len(vues) >= FREE_ACCOUNT_REPORTS:
+                M_QUOTA_WALL.add(1, {"plan": "free", "period": "month"})
                 raise HTTPException(
                     429,
-                    f"Compte gratuit : {FREE_ACCOUNT_DAILY_REPORTS} fiches par jour "
-                    f"atteintes. Le compteur repart demain — "
+                    f"Compte gratuit : {FREE_ACCOUNT_REPORTS} fiches par mois atteintes. "
+                    f"Le compteur repart le mois prochain — "
                     f"une question ? {SUPPORT_EMAIL}")
             if not deja_vue:
                 # Sans identifiant de bâtiment on ne peut pas dédoublonner :
                 # l'appel compte, faute de quoi ce chemin ne plafonnerait
                 # jamais. Le décompte mensuel reste tenu, il sert la facture.
                 if subject:
-                    _daily_add(uid, subject)
+                    _monthly_add(uid, subject)
                 _usage_add(uid, CREDIT_COST["report"])
         return "user_free"
     ip = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip() or "?"
@@ -3207,25 +3293,36 @@ async def usage(request: Request):
     body = {"month": month, "plan": plan, "credit_costs": CREDIT_COST,
             **_usage_cost(credits)}
     if plan == "pro":
-        quota = PRO_TIERS[tier]["fiches"]
-        body |= {"tier": tier, "tier_label": PRO_TIERS[tier]["label"],
-                 "cost_eur": float(PRO_TIERS[tier]["eur"]),
-                 "reports_used": used, "reports_included": quota,
-                 "reports_left": (None if quota is None
-                                  else max(0, quota - used))}
-    else:
-        # Un compte gratuit ne doit rien : on montre son droit, pas une facture.
-        #
-        # Et ce droit est QUOTIDIEN, en fiches distinctes : afficher un reste
-        # mensuel ferait croire à un plafond qui n'existe plus, et laisserait
-        # l'utilisateur bloqué sans comprendre que le compteur repart demain.
+        # Abonné : quota QUOTIDIEN en fiches distinctes (#384). Le total du mois
+        # reste montré à part (facture), mais le reste affiché est celui du jour.
+        quota = PRO_TIERS[tier]["fiches_jour"]
         dujour = len(_daily_seen(bucket))
-        body |= {"cost_eur": 0.0,
-                 "reports_used": dujour,
-                 "reports_used_month": used,
-                 "reports_included": FREE_ACCOUNT_DAILY_REPORTS,
-                 "reports_left": max(0, FREE_ACCOUNT_DAILY_REPORTS - dujour),
+        body |= {"tier": tier, "tier_label": PRO_TIERS[tier]["label"],
+                 "cost_eur": _prix_effectif(tier),   # 0 au lancement (#397)
+                 "reports_used": dujour, "reports_used_month": used,
+                 "reports_included": quota,
+                 "reports_left": (None if quota is None
+                                  else max(0, quota - dujour)),
                  "period": "day"}
+    elif sub:
+        # Compte gratuit CONNECTÉ : droit MENSUEL en fiches distinctes (#384).
+        # On montre son droit, pas une facture ; le total du mois reste visible
+        # à part (il sert la facture, pas le plafond).
+        dumois = len(_monthly_seen(bucket))
+        body |= {"cost_eur": 0.0,
+                 "reports_used": dumois,
+                 "reports_used_month": used,
+                 "reports_included": FREE_ACCOUNT_REPORTS,
+                 "reports_left": max(0, FREE_ACCOUNT_REPORTS - dumois),
+                 "period": "month"}
+    else:
+        # Compte gratuit par CLÉ : plafond mensuel de crédits (chaque fiche = 1),
+        # inchangé (#206). Son droit, pas une facture.
+        body |= {"cost_eur": 0.0,
+                 "reports_used": used,
+                 "reports_included": FREE_ACCOUNT_REPORTS,
+                 "reports_left": max(0, FREE_ACCOUNT_REPORTS - used),
+                 "period": "month"}
     return body
 
 
@@ -3286,29 +3383,34 @@ async def quota_preflight(request: Request):
         ip = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip() or "?"
         bucket = "ip:" + hashlib.sha256(ip.encode()).hexdigest()[:16]
     used = (_usage_load().get(_month_key()) or {}).get(bucket, 0) // CREDIT_COST["report"]
-    included = (PRO_TIERS[tier]["fiches"] if tier
+    included = (PRO_TIERS[tier]["fiches_jour"] if tier
                 else FREE_ACCOUNT_REPORTS if plan == "free"
                 else ANON_MONTHLY_REPORTS)
     periode = "month"
-    if plan == "free":
-        # Le droit d'un compte gratuit est QUOTIDIEN, en documents distincts
-        # (#290). Ce pré-vol comptait encore au mois : l'en-tête disait « 10
-        # fiches restantes aujourd'hui » pendant que le mur, déclenché par ce
-        # même pré-vol, disait « limite atteinte ». Deux endpoints annonçaient
-        # deux mondes — la même dispersion que config/pricing, une heure plus
-        # tôt, sur une autre paire.
+    free_again: list = _daily_seen(bucket) if plan == "anonymous" else []
+    if tier:
+        # Abonné : quota QUOTIDIEN en fiches distinctes (#384). Le pré-vol doit
+        # dire le MÊME reste que la barrière, sans quoi l'en-tête et le mur se
+        # contrediraient (le défaut réglé pour le compte gratuit à #290).
         used = len(_daily_seen(bucket))
-        included = FREE_ACCOUNT_DAILY_REPORTS
         periode = "day"
+        free_again = _daily_seen(bucket)
+    elif plan == "free" and bucket.startswith("kc:"):
+        # Compte gratuit CONNECTÉ : droit MENSUEL en fiches distinctes (#384).
+        # Rouvrir un bâtiment déjà vu ce mois-ci est libre — la barrière
+        # l'exempte, ce pré-vol le dit avec le même seau.
+        used = len(_monthly_seen(bucket))
+        free_again = _monthly_seen(bucket)
+    # Compte gratuit par CLÉ : plafond mensuel de crédits (chaque fiche = 1),
+    # inchangé (#206) — `used` reste le compteur mensuel, période « month ».
     return {"plan": plan, "tier": tier, "reports_used": used,
             "reports_included": included, "period": periode,
             "reports_left": None if included is None else max(0, included - used),
-            # Bâtiments déjà obtenus aujourd'hui : les redemander est libre.
-            # Y compris pour un ANONYME : la barrière (_quota_gate) exempte
-            # « subject in _daily_seen(_seau_ip) », et ce pré-vol calcule le
-            # même seau — ne pas le dire ferait afficher un décompte au
-            # visiteur qui rouvre une fiche gratuite (#290).
-            "free_again": _daily_seen(bucket) if plan in ("free", "anonymous") else []}
+            # Bâtiments déjà obtenus aujourd'hui/ce mois : les redemander est
+            # libre. Pour l'ANONYME, la barrière (_quota_gate) exempte
+            # « subject in _daily_seen(_seau_ip) » ; ne pas le dire ferait
+            # afficher un décompte au visiteur qui rouvre une fiche (#290).
+            "free_again": free_again}
 
 
 @app.get("/v1/config", tags=["meta"])
@@ -3324,7 +3426,8 @@ async def config():
         mode = "disabled"
     return {"payment_mode": mode,
             "payment_provider": PAYMENT_PROVIDER,
-            "pro_tiers": {k: {"eur": v["eur"], "fiches_month": v["fiches"],
+            "pro_tiers": {k: {"eur": v["eur"], "fiches_month": _SIM_FICHES_MOIS[k],
+                              "fiches_jour": v["fiches_jour"],
                               "label": v["label"]} for k, v in PRO_TIERS.items()},
             "free_tiers": {"anonymous_reports_month": ANON_MONTHLY_REPORTS,
                            "free_account_reports_month": FREE_ACCOUNT_REPORTS,
@@ -3535,6 +3638,30 @@ def _sub_external_id(data: dict) -> str | None:
     return (cust.get("external_id")
             or data.get("customer_external_id")
             or (data.get("metadata") or {}).get("kc_sub"))
+
+
+@app.post("/v1/launch/activate", tags=["account"])
+async def launch_activate(request: Request):
+    """Offre de LANCEMENT (#384) : Pro S gratuite, activée en un clic par tout
+    compte connecté. Aucun paiement, aucun fournisseur — le statut est posé
+    localement (_pro_set) et _pro_active le reconnaît immédiatement, sans appel
+    à Creem/Polar. Idempotent : réactiver ne change rien."""
+    auth = request.headers.get("authorization", "")
+    if not auth.lower().startswith("bearer "):
+        raise HTTPException(401, "Bearer token required")
+    try:
+        claims = _decode_token(auth[7:].strip())
+    except Exception:
+        raise HTTPException(401, "Invalid token")
+    sub = claims.get("sub")
+    if not sub:
+        raise HTTPException(401, "Invalid token")
+    if not LAUNCH_FREE_PRO:
+        raise HTTPException(404, "Offre de lancement close")
+    _pro_set(sub, True, tier=LAUNCH_FREE_TIER, source="launch")
+    M_PRO.add(1, {"event": "launch_activate"})
+    return {"activated": True, "tier": LAUNCH_FREE_TIER,
+            "fiches_jour": PRO_TIERS[LAUNCH_FREE_TIER]["fiches_jour"]}
 
 
 @app.get("/v1/pro/checkout", tags=["account"])
