@@ -11,6 +11,7 @@ of this module. Data values (addresses, materials, dataset names) are never
 translated.
 """
 
+import os
 from contextvars import ContextVar
 from datetime import datetime, timezone
 from urllib.parse import quote
@@ -28,8 +29,10 @@ def T(fr: str) -> str:
     return fr
 
 
-# Dataset versions surfaced in the traceability annex (#93). Update on refresh.
-BDNB_MILLESIME = "2026_02 (open data)"
+# Dataset versions surfaced in the traceability annex (#93). Le millésime BDNB
+# est CONFIGURABLE (#402) : la fiche interroge api.bdnb.io en direct, mais son
+# lot de données a une version ; on la met à jour d'un réglage, pas d'un commit.
+BDNB_MILLESIME = os.environ.get("BDNB_MILLESIME", "2026_02 (open data)")
 DVF_WINDOW = "2021-2025"
 
 DPE_COLORS = {"A": "#009036", "B": "#52b153", "C": "#a5cc74", "D": "#f4e70f",
@@ -207,10 +210,10 @@ def _traceability_annex(data: dict, photos: list | None) -> str:
     if bdnb_id:
         cards.append((T("Bâtiment, énergie (DPE), solaire"), _prov(
             "BDNB — Base de Données Nationale des Bâtiments (CSTB)",
-            T("Millésime {v} · Licence Ouverte 2.0").format(v=BDNB_MILLESIME),
+            T("Millésime {v} · interrogée en direct · Licence Ouverte 2.0").format(v=BDNB_MILLESIME),
             f"batiment_groupe_id = {bdnb_id}",
             T("{d} (date du DPE)").format(d=(e.get("dpe_date") or "")[:10])
-            if e.get("dpe_date") else T("Millésime {v}").format(v=BDNB_MILLESIME),
+            if e.get("dpe_date") else T("Consulté le {d}").format(d=now),
             "https://api.bdnb.io/v1/bdnb/donnees/batiment_groupe_complet"
             f"?batiment_groupe_id=eq.{bdnb_id}")))
     if risks.get("report_url") or lon is not None:
@@ -1207,7 +1210,9 @@ _EN = {
     "Référentiel courant": "Current reference dataset",
     "Bâtiment, énergie (DPE), solaire": "Building, energy (DPE), solar",
     "Millésime {v} · Licence Ouverte 2.0": "Release {v} · Licence Ouverte 2.0 (French open licence)",
+    "Millésime {v} · interrogée en direct · Licence Ouverte 2.0": "Release {v} · queried live · Licence Ouverte 2.0 (French open licence)",
     "{d} (date du DPE)": "{d} (DPE date)",
+    "Consulté le {d}": "Retrieved on {d}",
     "Millésime {v}": "Release {v}",
     " · commune INSEE {c}": " · INSEE municipality code {c}",
     "Risques": "Risks",
