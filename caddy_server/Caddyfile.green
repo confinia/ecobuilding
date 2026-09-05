@@ -94,6 +94,18 @@ http://staging.api.ecobuilding.confinia.io:13300 {
 	reverse_proxy 127.0.0.1:13100
 }
 
+http://grafana.ecobuilding.confinia.io:13000 {
+	log {
+		output stdout
+		format json
+	}
+	import block_scanners
+
+	# Observabilité interne : Grafana (projet monitoring, hors blue/green) sur
+	# l'hôte en 13040. root_url de Grafana = ce sous-domaine (#403).
+	reverse_proxy 127.0.0.1:13040
+}
+
 :13000 {
 	respond "ecobuilding router (active: green)" 200
 }
