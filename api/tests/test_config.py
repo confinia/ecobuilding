@@ -82,14 +82,24 @@ def test_keycloak_client_uris_are_code():
 @needs_repo
 def test_cicd_pipeline_is_code():
     """Rule 14: the pipeline mirrors code state — PR→sandbox, main→staging,
-    dispatch→promote — on the VM's own runner; the wrappers stay break-glass."""
+    dispatch→promote. Image builds (#409) and the pytest gate (#411) run on
+    GitHub-hosted runners; the VM's own runner only pulls and deploys. The
+    wrappers stay break-glass."""
     wf = ROOT / ".github/workflows"
     sandbox = (wf / "sandbox.yml").read_text()
     staging = (wf / "staging.yml").read_text()
     promote = (wf / "promote.yml").read_text()
     assert "pull_request" in sandbox and "deploy/sandbox.sh" in sandbox
-    assert "main" in staging and "deploy/stack-up.sh" in staging and "deploy/test.sh" in staging
+    assert "main" in staging and "deploy/stack-up.sh" in staging
     assert "workflow_dispatch" in promote and "deploy/promote-up.sh" in promote
+    # #409/#411: image builds and the pytest gate run OFF the shared VM, on
+    # GitHub-hosted runners; the VM only pulls images and deploys.
+    build_wf = (wf / "build-images.yml").read_text()
+    test_wf = (wf / "test.yml").read_text()
+    assert "ghcr.io/confinia/ecobuilding-" in build_wf and "ubuntu-latest" in build_wf
+    assert "deploy/test.sh" in test_wf and "ubuntu-latest" in test_wf
+    for caller in (sandbox, staging):
+        assert "build-images.yml" in caller and "test.yml" in caller
     for y in (sandbox, staging, promote):
         assert "self-hosted" in y and "ecobuilding" in y
         assert "group: vm-deploy" in y          # one VM: deploys serialized
