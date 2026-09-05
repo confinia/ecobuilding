@@ -1757,6 +1757,29 @@ async def _click_address(bdnb_id: str, lon, lat):
     return None
 
 
+# La position CONSIGNÉE d'une vue doit être celle du BÂTIMENT, jamais le point
+# que le visiteur avait sous les yeux (#394) : sinon la même fiche se pose à deux
+# endroits sur la carte, et le repère finit à Saint-Denis quand l'adresse — elle,
+# toujours résolue depuis le bdnb_id — dit Rivoli. Le centroïde ne bouge pas : on
+# le mémorise, une seule fois par bâtiment.
+_point_batiment: dict = {}
+
+
+async def _building_point(bdnb_id) -> tuple[float, float] | None:
+    """Centroïde WGS84 du bâtiment (mémorisé), ou None si indisponible."""
+    if not bdnb_id:
+        return None
+    if bdnb_id in _point_batiment:
+        return _point_batiment[bdnb_id]
+    pt = None
+    ring = await _building_ring(bdnb_id)
+    if ring:
+        pt = (sum(c[0] for c in ring) / len(ring),
+              sum(c[1] for c in ring) / len(ring))
+    _point_batiment[bdnb_id] = pt
+    return pt
+
+
 def _noter_la_vue(bdnb_id, lon, lat, request, src=None, visite=None):
     """Consigner un bâtiment consulté, SANS JAMAIS retarder la réponse (#349).
 
@@ -1765,7 +1788,7 @@ def _noter_la_vue(bdnb_id, lon, lat, request, src=None, visite=None):
     écriture par vue, en tâche de fond, dont l'échec est ignoré — une carte
     d'observation ne doit jamais peser sur ce qu'elle observe.
     """
-    if not VUES_URL or lon is None or lat is None:
+    if not VUES_URL or not bdnb_id:
         return
     # SEULEMENT les navigateurs. La carte a d'abord montré, mélangés, un vrai
     # visiteur, le bâtiment d'essai de la CI et mes propres appels curl de
@@ -1776,16 +1799,27 @@ def _noter_la_vue(bdnb_id, lon, lat, request, src=None, visite=None):
     if _est_un_outil(agent):
         return
     systeme, navigateur, type_appareil = _systeme_et_navigateur(agent)
-    ligne = {"bdnb_id": bdnb_id, "lon": lon, "lat": lat,
-             "pays": _client_country(request), "source": _origine(src),
-             # Identifiant de VISITE seulement : il vient du navigateur, vit le
-             # temps d'un onglet, et ne rapproche jamais deux visites (#356).
-             "visite": (visite or "")[:16] or None,
-             "systeme": systeme, "navigateur": navigateur,
-             "type_appareil": type_appareil, "reseau": _reseau(request)}
+    base = {"bdnb_id": bdnb_id,
+            "pays": _client_country(request), "source": _origine(src),
+            # Identifiant de VISITE seulement : il vient du navigateur, vit le
+            # temps d'un onglet, et ne rapproche jamais deux visites (#356).
+            "visite": (visite or "")[:16] or None,
+            "systeme": systeme, "navigateur": navigateur,
+            "type_appareil": type_appareil, "reseau": _reseau(request)}
 
     async def _ecrire():
         try:
+            # Position CANONIQUE du bâtiment (#394), jamais le point que le
+            # visiteur avait sous les yeux : le repère doit toujours s'accorder
+            # avec l'adresse, elle-même résolue depuis le bdnb_id. Repli sur le
+            # point client si la géométrie manque ; sans aucune position, on ne
+            # pose pas de repère fantôme.
+            pt = await _building_point(bdnb_id)
+            if pt is None and lon is not None and lat is not None:
+                pt = (lon, lat)
+            if pt is None:
+                return
+            ligne = {**base, "lon": pt[0], "lat": pt[1]}
             # Content-Profile : PostgREST sert PLUSIEURS schémas (dvf, vues) et
             # ne vise le second que si on le nomme — sans cet en-tête il
             # répond 404 et l'écriture se perdait en silence (vérifié).
