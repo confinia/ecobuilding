@@ -56,12 +56,13 @@ def scalar_row(sql):
     return rows[0] if rows else []
 
 
-def render_map(points):
-    """Carte France des consultations 24 h. Best-effort : None si échec."""
-    if not points:
+def render_map(zones):
+    """Carte France : un repère par ZONE, étiqueté du NOMBRE de consultations
+    (grappes par maille ~10 km). Best-effort : None si échec."""
+    if not zones:
         return None
-    pts = [{"lon": float(lo), "lat": float(la), "label": ""}
-           for lo, la in points if lo and la][:60]
+    pts = [{"lon": float(lo), "lat": float(la), "label": str(n)}
+           for lo, la, n in zones if lo and la][:40]
     if not pts:
         return None
     params = {"lon": "2.4", "lat": "46.6", "zoom": "5", "pitch": "0",
@@ -91,11 +92,21 @@ def collect():
         f"select count(*), count(distinct visite), count(distinct bdnb_id) "
         f"from vues.vue_batiment where {WIN}")
     vues, visites, batiments = (t + ["0", "0", "0"])[:3]
+    # Schéma BDNB courant : traduire un bdnb_id en ADRESSE lisible (jointure sur
+    # l'adresse principale BAN du bâtiment groupe, comme le tableau de bord).
+    bdnb_schema = (scalar_row(
+        "select max(nspname) from pg_namespace "
+        "where nspname ~ '^bdnb_[0-9]{4}_[0-9]{2}_.*open_data$'") or [""])[0]
+    top_bat = (psql(
+        "select coalesce(a.libelle_adr_principale_ban, v.bdnb_id), count(*) "
+        "from vues.vue_batiment v left join "
+        f"{bdnb_schema}.batiment_groupe_adresse a on a.batiment_groupe_id = v.bdnb_id "
+        f"where {WIN} group by 1 order by 2 desc limit 8") if bdnb_schema else psql(
+        f"select bdnb_id, count(*) from vues.vue_batiment where {WIN} "
+        "group by 1 order by 2 desc limit 8"))
     data = {
         "vues": int(vues), "visites": int(visites), "batiments": int(batiments),
-        "top_bat": psql(
-            f"select bdnb_id, count(*) from vues.vue_batiment where {WIN} "
-            "group by 1 order by 2 desc limit 8"),
+        "top_bat": top_bat,
         "sources": psql(
             f"select coalesce(nullif(source,''),'(direct)'), count(*) "
             f"from vues.vue_batiment where {WIN} group by 1 order by 2 desc limit 8"),
@@ -110,9 +121,12 @@ def collect():
             "count(distinct visite) from vues.vue_batiment "
             "where ts > now() - interval '7 days' group by date_trunc('day',ts) "
             "order by date_trunc('day',ts)"),
-        "points": [(r[0], r[1]) for r in psql(
-            f"select lon, lat from vues.vue_batiment where {WIN} "
-            "and lon is not null and lat is not null limit 300")],
+        # Grappes par MAILLE (~0,1° ≈ 10 km) : un repère par zone, compté.
+        "zones": psql(
+            "select round(avg(lon)::numeric,4), round(avg(lat)::numeric,4), count(*) "
+            f"from vues.vue_batiment where {WIN} and lon is not null and lat is not null "
+            "group by round(lon::numeric,1), round(lat::numeric,1) "
+            "order by 3 desc limit 40"),
         "jour": (scalar_row(
             "select to_char((now() at time zone 'Europe/Paris')::date - 1, "
             "'DD/MM/YYYY')") or [""])[0],
@@ -132,7 +146,7 @@ def _rows(pairs, unit=""):
 
 def build_html(d, has_map, cid):
     jour = d.get("jour", "")
-    carte = (f'<img src="cid:{cid}" alt="Carte des consultations (hier)" '
+    carte = (f'<img src="cid:{cid}" alt="Carte des consultations par zone (hier)" '
              'style="width:100%;max-width:600px;border-radius:8px;margin:8px 0" />'
              if has_map else
              '<p style="color:#888;font-style:italic">Carte indisponible aujourd\'hui.</p>')
@@ -174,7 +188,7 @@ def build_html(d, has_map, cid):
     <td style="width:50%">
       <h3 style="font-size:14px;margin:12px 0 4px">Systèmes</h3>
       <table style="font-size:13px">{_rows(d['systemes'])}</table>
-      <h3 style="font-size:14px;margin:16px 0 4px">Bâtiments les plus vus</h3>
+      <h3 style="font-size:14px;margin:16px 0 4px">Adresses les plus vues</h3>
       <table style="font-size:12px">{_rows(d['top_bat'])}</table>
     </td>
   </tr></table>
@@ -193,7 +207,7 @@ def main():
         if not os.environ.get(k):
             sys.exit(f"manque {k} dans l'environnement (source deploy/secrets.env)")
     d = collect()
-    img = render_map(d["points"])
+    img = render_map(d["zones"])
     cid = make_msgid(domain="ecobuilding.confinia.io")[1:-1]
 
     msg = EmailMessage()
