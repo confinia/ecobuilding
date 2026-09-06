@@ -888,6 +888,12 @@ def _normalize_building(r: dict) -> dict:
         "energy": {
             "dpe_class": r.get("classe_bilan_dpe"),
             "dpe_date": r.get("date_reception_dpe"),
+            # Fin de validité légale (réforme 2021, #399) servie ICI aussi,
+            # pas seulement dans official_dpe : la classe du groupe vient de
+            # ce DPE-là, et un client (dpe.html, #412) doit pouvoir dire
+            # « périmé » sans recoder la règle des dates.
+            "dpe_valid_until": (_dpe_valid_until(r["date_reception_dpe"])
+                                if r.get("date_reception_dpe") else None),
             "consumption_kwh_m2y": r.get("conso_5_usages_ep_m2"),
             "ghg_kgco2_m2y": r.get("emission_ges_5_usages_m2"),
             "dpe_class_counts": {
