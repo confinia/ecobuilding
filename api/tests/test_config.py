@@ -182,13 +182,39 @@ def test_dpe_validity_wording_is_shared_and_measured():
         assert meta in dpe, meta
     assert "ecobuilding.confinia.io/dpe.html" in (site / "sitemap.xml").read_text()
     # The ADEME number is the key to the lost official document.
-    assert "dpe_number" in dpe and "observatoire-dpe-audit.ademe.fr" in dpe
+    assert "dpe_number" in dpe and "ecoDpe.ademeUrl(" in dpe   # link built in dpe-validite.js (#418)
     # Honest empty state — many buildings have no DPE on record.
     assert "Aucun DPE n'est enregistré" in dpe
     # CTAs back into the product: full fiche (?b=) and the free PDF.
     assert "/?b=" in dpe and "/report/" in dpe
     # Reachable from the map.
     assert 'href="/dpe.html"' in (ROOT / "frontend/site/index.html").read_text()
+
+
+@needs_repo
+def test_fiche_is_never_mistaken_for_the_dpe():
+    """#418: wherever our PDF is offered, the page says it is not the DPE, in
+    one shared sentence; the official route goes first on dpe.html and every
+    DPE number links to the document at ADEME, by its number."""
+    site = ROOT / "frontend/site"
+    shared = (site / "dpe-validite.js").read_text()
+    assert "NOT_THE_DPE" in shared and "Ce n'est pas le diagnostic de performance énergétique" in shared
+    assert "diagnostiqueur certifié" in shared and "archivé par l'ADEME" in shared
+    assert "observatoire-dpe-audit.ademe.fr/afficher-dpe/" in shared
+    dpe = (site / "dpe.html").read_text()
+    assert "Consulter le DPE officiel (ADEME)" in dpe and "ecoDpe.ademeUrl(num)" in dpe
+    assert "Fiche EcoBuilding (PDF) — pas le DPE" in dpe and "ecoDpe.NOT_THE_DPE" in dpe
+    assert "Informations publiques du DPE" in dpe
+    assert "Télécharger la fiche PDF" not in dpe
+    # The ADEME button comes before our PDF button.
+    assert dpe.index("Consulter le DPE officiel") < dpe.index("Fiche EcoBuilding (PDF)")
+    app = (site / "app.js").read_text()
+    assert "Fiche EcoBuilding (PDF) — pas le DPE" in app and "ecoDpe.NOT_THE_DPE" in app
+    assert "Obtenir la fiche PDF" not in app
+    assert 'kv("N° DPE officiel", ademeLink(' in app and 'kv("N° DPE", ademeLink(' in app
+    # The map loads the shared file before app.js.
+    idx = (site / "index.html").read_text()
+    assert idx.index('src="dpe-validite.js"') < idx.index("s.src = 'app.js'")
 
 
 @needs_repo

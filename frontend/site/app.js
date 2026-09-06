@@ -833,6 +833,13 @@ function kv(k, v) {
     `<div class="kv"><span class="k">${k}</span><span>${v}</span></div>`;
 }
 
+// Le numéro de DPE mène au document officiel chez l'ADEME (#418) : le nôtre
+// n'est qu'une fiche d'information, et il faut que ça se voie.
+function ademeLink(num) {
+  return num ? `<a href="${window.ecoDpe.ademeUrl(num)}" target="_blank" rel="noopener"
+    title="Consulter le DPE officiel sur l'observatoire de l'ADEME">${num}</a>` : null;
+}
+
 
 // Section qui ne dépend QUE de la position — donc affichable même
 // sans bâtiment BDNB.
@@ -1003,9 +1010,9 @@ function sectionEventailDpe(data) {
       ${kv("Isolation", [l.isolation_enveloppe && "enveloppe " + l.isolation_enveloppe,
                          l.isolation_menuiseries && "menuiseries " + l.isolation_menuiseries]
                         .filter(Boolean).join(" · ") || null)}
-      ${kv("N° DPE", l.numero_dpe)}
+      ${kv("N° DPE", ademeLink(l.numero_dpe))}
       <p class="hint">${marque}</p>
-      ${l.numero_dpe ? `<button class="report-link fiche-logement" data-dpe="${l.numero_dpe}">📄 Fiche de ce logement</button>` : ""}</div>`;
+      ${l.numero_dpe ? `<button class="report-link fiche-logement" data-dpe="${l.numero_dpe}">📄 Fiche EcoBuilding de ce logement (PDF)</button>` : ""}</div>`;
   }).join("");
   return `<div class="dpe-spread"><p class="hint">${titre}
       La classe ci-dessus est celle du logement représentatif du bâtiment,
@@ -1102,7 +1109,7 @@ function renderPanel(s, data, opts) {
           ? ` (${Math.round(data.official_dpe.surface_habitable_m2 * 10) / 10} m²)` : ""}</h4>` : ""}
     ${kv("Date du DPE", b.energy?.dpe_date ? String(b.energy.dpe_date).slice(0, 10) : null)}
     ${kv("GES", b.energy?.ghg_kgco2_m2y ? Math.round(b.energy.ghg_kgco2_m2y) + " kgCO₂/m²/an" : null)}
-    ${kv("N° DPE officiel", data.official_dpe?.dpe_number)}
+    ${kv("N° DPE officiel", ademeLink(data.official_dpe?.dpe_number))}
     ${kv("Surface habitable", data.official_dpe?.surface_habitable_m2 ? Math.round(data.official_dpe.surface_habitable_m2 * 10) / 10 + " m²" : null)}
     ${kv("Coût annuel d'énergie", data.official_dpe?.annual_cost_eur ? Math.round(data.official_dpe.annual_cost_eur).toLocaleString("fr-FR") + " €/an (DPE)" : null)}`}
     <h3>Bâtiment</h3>
@@ -1136,7 +1143,9 @@ function renderPanel(s, data, opts) {
     ${kv("Productible photovoltaïque", data.solar_pv?.yield_kwh_per_kwc_y ? Math.round(data.solar_pv.yield_kwh_per_kwc_y) + " kWh/an par kWc (PVGIS)" : null)}
     ${sectionPrix(data)}
     ${sectionCommune(data)}
-    <p><button id="report-btn" class="report-link" data-url="${API}/report/${encodeURIComponent(b.bdnb_id)}.pdf${reportParams.length ? "?" + reportParams.join("&") : ""}">📄 Obtenir la fiche PDF</button></p>
+    <p><button id="report-btn" class="report-link" data-url="${API}/report/${encodeURIComponent(b.bdnb_id)}.pdf${reportParams.length ? "?" + reportParams.join("&") : ""}">📄 Fiche EcoBuilding (PDF) — pas le DPE</button></p>
+    <p class="hint notdpe">${window.ecoDpe.NOT_THE_DPE}${data.official_dpe?.dpe_number
+      ? ` <a href="${window.ecoDpe.ademeUrl(data.official_dpe.dpe_number)}" target="_blank" rel="noopener">Consulter le DPE officiel (ADEME)</a>.` : ""}</p>
     <p class="hint" id="report-quota" hidden></p>
     <div id="streetview"></div>
     ${pendingHtml}
