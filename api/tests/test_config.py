@@ -351,6 +351,18 @@ def test_maplibre_vendored_and_versions_match():
 
 
 @needs_repo
+def test_site_points_to_the_iphone_app():
+    """#422: the app is on the App Store; Safari iOS gets the Smart App Banner
+    on the two entry pages and every page links the listing."""
+    APP_ID = "id6803865290"
+    for page in ("index.html", "dpe.html"):
+        html = (ROOT / "frontend/site" / page).read_text()
+        assert '<meta name="apple-itunes-app" content="app-id=6803865290">' in html, page
+    for page in ("index.html", "dpe.html", "apropos.html"):
+        html = (ROOT / "frontend/site" / page).read_text()
+        assert f"https://apps.apple.com/fr/app/ecobuilding/{APP_ID}" in html, page
+
+@needs_repo
 def test_auth_buttons_never_depend_on_a_cdn():
     """#215: the sign-up path is the product's front door — it must survive a
     blocked CDN, a failed adapter import and an IdP hiccup."""
