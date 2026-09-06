@@ -36,15 +36,12 @@
     .dpe-A { background: #319a44; } .dpe-B { background: #52ac3a; } .dpe-C { background: #a8c63a; color:#26310a; }
     .dpe-D { background: #f4e01f; color:#3a3400; } .dpe-E { background: #f4b731; color:#3a2a00; }
     .dpe-F { background: #ec7d33; } .dpe-G { background: #d64025; } .dpe-none { background: #b8b8b8; font-size: 30px; }
-    /* DPE périmé : la lettre reste lisible mais n'a plus l'air d'un verdict
-       en vigueur — grisée, barrée d'une mention. */
-    .badgewrap { position: relative; flex: 0 0 auto; }
-    .badgewrap.expired .dpe-badge { filter: grayscale(1); opacity: .55; }
+    /* Le grisé et l'étiquette « DPE périmé » sont dans style.css (partagés avec
+       la fiche) ; ici seulement le tampon, le badge étant assez grand. */
+    .badgewrap { flex: 0 0 auto; }
     .badgewrap.expired::after { content: "périmé"; position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%) rotate(-18deg);
                                 background: #333; color: #fff; font-size: 11px; font-weight: 700; letter-spacing: .04em;
                                 text-transform: uppercase; padding: 2px 7px; border-radius: 4px; white-space: nowrap; }
-    .tag { display: inline-block; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
-           background: #eee; color: #555; border-radius: 4px; padding: 1px 6px; margin-left: 6px; vertical-align: middle; }
     .dpe-meta { flex: 1 1 220px; }
     .dpe-meta .line { font-size: 14px; margin: 3px 0; }
     .dpe-meta .line b { color: #222; }
@@ -90,6 +87,7 @@
     </p>
   </div>
 
+  <script src="dpe-validite.js"></script>
   <script>
     const API = "/api/v1";
     const addr = document.getElementById("addr");
@@ -99,8 +97,15 @@
     const TODAY = new Date().toISOString().slice(0, 10);
 
     const setStatus = (t) => { if (t) { statusEl.textContent = t; statusEl.hidden = false; } else { statusEl.hidden = true; } };
-    const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-    const frDate = (iso) => { if (!iso) return null; const [y, m, d] = iso.slice(0, 10).split("-"); return `${d}/${m}/${y}`; };
+    const { esc, frDate } = window.ecoDpe;
+    // Balise d'usage anonyme, même endpoint que la carte (#347) : sans elle,
+    // impossible de savoir si cette page sert à quelqu'un (#414).
+    function track(event, meta) {
+      const body = JSON.stringify({ event, meta: meta || null });
+      navigator.sendBeacon?.(`${API}/events`, new Blob([body], { type: "application/json" })) ||
+        fetch(`${API}/events`, { method: "POST", headers: { "Content-Type": "application/json" }, body });
+    }
+    track("dpe_page_view");
 
     // --- Autocomplete (BAN), même source que la carte -----------------------
     let seq = 0, timer = null;
@@ -164,6 +169,7 @@
       // méthode 2021) avec sa date : ce n'est pas « aucun DPE », c'est un DPE périmé.
       const enDate = b && b.energy && b.energy.dpe_date;
       if (!cls && !(od && od.dpe_number) && !enDate) {
+        track("dpe_page_lookup", "none");
         resultEl.innerHTML = `<div class="empty">
           <p><strong>Aucun DPE n'est enregistré pour ce bâtiment</strong> dans les bases publiques (BDNB, ADEME).</p>
           <p>Cela arrive souvent : le diagnostic n'a peut-être jamais été réalisé, ou il n'est pas encore publié.
@@ -173,50 +179,20 @@
         return;
       }
 
-      // Dates : le DPE officiel du logement représentatif d'abord, sinon celui
-      // du groupe (même règle de validité, servie par l'API — jamais recodée ici).
-      const en = (b && b.energy) || {};
-      const established = (od && od.established_on) || en.dpe_date || null;
-      const validUntil = (od && od.valid_until) || en.dpe_valid_until || null;
-      const expired = !!(validUntil && validUntil < TODAY);
-      // Avant la réforme du 1er juillet 2021 : autre méthode de calcul, validité
-      // écourtée par la loi (fin 2022 ou fin 2024) — la classe n'est plus opposable.
-      const preReform = !!(established && established.slice(0, 10) < "2021-07-01");
+      // Validité et interdiction de location : formulation PARTAGÉE avec la
+      // fiche (dpe-validite.js, #414) ; les dates viennent de l'API (#399).
+      const v = window.ecoDpe.validite({ cls, od, energy: b && b.energy, today: TODAY });
+      const { established, validUntil, expired, preReform } = v;
       const num = od && od.dpe_number;
-      const ban = en.rental_ban;
+      track("dpe_page_lookup", expired ? "lapsed" : "found");
 
       const reportParams = [];
       if (lon != null) reportParams.push(`lon=${lon}`);
       if (lat != null) reportParams.push(`lat=${lat}`);
       const pdf = bid ? `${API}/report/${encodeURIComponent(bid)}.pdf${reportParams.length ? "?" + reportParams.join("&") : ""}` : null;
 
-      let validHtml = "";
-      if (validUntil && expired && preReform) {
-        validHtml = `<div class="line valid ko">DPE de l'ancienne méthode (avant la réforme du 1<sup>er</sup> juillet 2021) :
-          il n'est plus valable depuis le ${frDate(validUntil)}. La classe ci-dessus n'est plus opposable —
-          un nouveau diagnostic est nécessaire pour vendre ou louer.</div>`;
-      } else if (validUntil && expired) {
-        validHtml = `<div class="line valid ko">Ce DPE n'est plus valable depuis le ${frDate(validUntil)} — un nouveau diagnostic est nécessaire pour vendre ou louer.</div>`;
-      } else if (validUntil) {
-        validHtml = `<div class="line valid ok">Valable jusqu'au ${frDate(validUntil)}.</div>`;
-      }
-
-      // Interdiction de location (loi Climat & Résilience) : G depuis 2025,
-      // F en 2028, E en 2034. Au passé une fois la date franchie ; et si le DPE
-      // est périmé, la classe n'est qu'indicative — on le dit, sans taire l'alerte.
-      let banHtml = "";
-      if (ban && ban.rental_ban_date) {
-        const d = ban.rental_ban_date.slice(0, 10);
-        const quand = d <= TODAY ? `interdite depuis le <strong>${frDate(d)}</strong>` : `interdite à partir du <strong>${frDate(d)}</strong>`;
-        banHtml = expired
-          ? `<p class="ban ko">⚠ Classe ${esc(cls)} : location ${quand} (loi Climat &amp; Résilience).
-               Ce DPE étant périmé, seul un nouveau diagnostic fixera la classe opposable — s'il confirme la classe ${esc(cls)}, l'interdiction s'applique.</p>`
-          : `<p class="ban ko">⚠ Location ${quand} (loi Climat &amp; Résilience).</p>`;
-      } else if (cls && "ABCDE".includes(cls)) {
-        banHtml = expired
-          ? `<p class="ban stale">Aucune interdiction de location prévue pour la classe ${esc(cls)} — sous réserve du nouveau DPE, celui-ci étant périmé.</p>`
-          : `<p class="ban ok">✓ Aucune interdiction de location prévue pour la classe ${esc(cls)}.</p>`;
-      }
+      const validHtml = v.validHtml ? `<div class="line valid ${expired ? "ko" : "ok"}">${v.validHtml}</div>` : "";
+      const banHtml = v.banHtml ? `<p class="ban ${v.banKind}">${v.banHtml}</p>` : "";
 
       const badgeCls = cls ? `dpe-${cls}` : "dpe-none";
       resultEl.innerHTML = `<div class="card">

@@ -1417,12 +1417,16 @@ def test_la_balise_publique_ne_prend_que_des_etiquettes_connues(monkeypatch):
     assert client.post("/v1/events", json={"event": "x" * 200}).status_code == 204
     assert client.post("/v1/events", json={"event": "report_click",
                                            "meta": "n'importe quoi"}).status_code == 204
+    # #414 : la page « DPE perdu » se mesure, avec ce qu'elle a trouvé.
+    assert client.post("/v1/events", json={"event": "dpe_page_lookup",
+                                           "meta": "lapsed"}).status_code == 204
 
     assert [(a["event"], a["scope"]) for a in vus] == [
         ("report_click", "dwelling"),
         ("report_click", "building"),
         ("other", "none"),
         ("report_click", "none"),
+        ("dpe_page_lookup", "lapsed"),
     ]
 
 
