@@ -133,6 +133,30 @@ def test_frontend_loading_feedback_is_wired():
 
 
 @needs_repo
+def test_dpe_perdu_entry_page():
+    """#412: the 'retrouver un DPE perdu' entry page reuses the existing
+    non-stream endpoints, is honest when no DPE exists, surfaces the ADEME
+    number as the key to the official document, and links back to the fiche +
+    PDF. Discoverable from the map topbar."""
+    dpe = (ROOT / "frontend/site/dpe.html").read_text()
+    # Reuses the public endpoints, not a new backend or the NDJSON stream.
+    assert "/suggest?" in dpe and "/lookup?ban_id=" in dpe
+    assert "/lookup/stream" not in dpe and "/buildings/" not in dpe
+    # Reads the DPE from the same fields the fiche uses.
+    assert "official_dpe" in dpe and "dpe_class" in dpe and "valid_until" in dpe
+    # Expiry recomputed client-side exactly like report.py (valid_until < today).
+    assert "TODAY" in dpe and "expired" in dpe
+    # The ADEME number is the key to the lost official document.
+    assert "dpe_number" in dpe and "observatoire-dpe-audit.ademe.fr" in dpe
+    # Honest empty state — many buildings have no DPE on record.
+    assert "Aucun DPE n'est enregistré" in dpe
+    # CTAs back into the product: full fiche (?b=) and the free PDF.
+    assert "/?b=" in dpe and "/report/" in dpe
+    # Reachable from the map.
+    assert 'href="/dpe.html"' in (ROOT / "frontend/site/index.html").read_text()
+
+
+@needs_repo
 def test_social_cards_and_favicon():
     """#169: shares must render as branded cards, tabs must carry the favicon."""
     idx = (ROOT / "frontend/site/index.html").read_text()

@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>EcoBuilding — Retrouver un DPE par l'adresse</title>
+  <meta name="description" content="DPE perdu ? Tapez l'adresse : classe énergie, numéro de DPE ADEME, date et validité s'affichent depuis les données publiques. Gratuit, sans compte.">
+  <link rel="icon" href="assets/logo.svg" type="image/svg+xml">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="EcoBuilding">
+  <meta property="og:title" content="Retrouver un DPE par l'adresse — EcoBuilding">
+  <meta property="og:description" content="DPE perdu ? Classe énergie, numéro ADEME, date et validité d'un logement, depuis les données publiques. Gratuit, sans compte.">
+  <meta property="og:url" content="https://ecobuilding.confinia.io/dpe.html">
+  <link rel="stylesheet" href="style.css">
+  <style>
+    /* Page de contenu (pas la carte) : mêmes conventions qu'offres.html. */
+    body { overflow: auto; background: #f7f6f3; }
+    .page { max-width: 720px; margin: 0 auto; padding: 24px 16px 64px; font-family: system-ui, sans-serif; }
+    .page h1 { font-size: 26px; margin: 14px 0 6px; }
+    .page .sub { color: #555; margin-bottom: 22px; line-height: 1.5; }
+    .back { font-size: 13px; }
+    .searchwrap { position: relative; }
+    #addr { width: 100%; padding: 13px 14px; border: 1px solid #ccc; border-radius: 10px; font-size: 16px; box-sizing: border-box; font-family: inherit; }
+    #sugg { list-style: none; margin: 4px 0 0; padding: 0; position: absolute; z-index: 5; left: 0; right: 0;
+            background: #fff; border: 1px solid #ddd; border-radius: 10px; box-shadow: 0 6px 18px rgba(0,0,0,.12); overflow: hidden; }
+    #sugg li { padding: 10px 14px; font-size: 14px; cursor: pointer; border-top: 1px solid #f0f0f0; }
+    #sugg li:first-child { border-top: 0; }
+    #sugg li:hover, #sugg li.on { background: #eef5f0; }
+    #sugg li .kind { color: #999; font-size: 12px; margin-left: 6px; }
+    #status { margin: 18px 0; color: #666; font-size: 14px; }
+    .card { background: #fff; border-radius: 12px; padding: 20px; margin-top: 18px; box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+    .card .addr { font-size: 14px; color: #666; margin: 0 0 14px; }
+    .dpe-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+    .dpe-badge { width: 66px; height: 66px; border-radius: 12px; color: #fff; font-size: 34px; font-weight: 800;
+                 display: flex; align-items: center; justify-content: center; flex: 0 0 auto; }
+    .dpe-A { background: #319a44; } .dpe-B { background: #52ac3a; } .dpe-C { background: #a8c63a; color:#26310a; }
+    .dpe-D { background: #f4e01f; color:#3a3400; } .dpe-E { background: #f4b731; color:#3a2a00; }
+    .dpe-F { background: #ec7d33; } .dpe-G { background: #d64025; } .dpe-none { background: #b8b8b8; font-size: 30px; }
+    .dpe-meta { flex: 1 1 220px; }
+    .dpe-meta .line { font-size: 14px; margin: 3px 0; }
+    .dpe-meta .line b { color: #222; }
+    .valid { font-weight: 600; }
+    .valid.ok { color: #2b7a4b; }
+    .valid.ko { color: #c0392b; }
+    .ademe { background: #f3f7f4; border-radius: 10px; padding: 12px 14px; margin: 14px 0 0; font-size: 13.5px; color: #33503f; }
+    .ademe b { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .ban { margin: 14px 0 0; font-size: 14px; }
+    .ban.ko { color: #c0392b; } .ban.ok { color: #2b7a4b; }
+    .ctas { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px; }
+    .cta { border-radius: 8px; padding: 10px 16px; font-size: 14px; text-decoration: none; border: 1px solid #2b7a4b; color: #2b7a4b; }
+    .cta.primary { background: #2b7a4b; color: #fff; }
+    .empty { background: #fff; border-radius: 12px; padding: 20px; margin-top: 18px; box-shadow: 0 2px 8px rgba(0,0,0,.08); font-size: 14px; color: #444; line-height: 1.5; }
+    .fineprint { font-size: 12px; color: #888; margin-top: 26px; line-height: 1.5; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <p class="back"><a href="/">← Retour à la carte</a></p>
+    <h1>🏢 DPE perdu ? Retrouvez-le par l'adresse.</h1>
+    <p class="sub">La classe énergie d'un logement, son numéro de DPE ADEME, sa date et sa validité sont des
+      <strong>données publiques</strong>. Tapez l'adresse : tout s'affiche aussitôt, sans recommander de diagnostic.</p>
+
+    <div class="searchwrap">
+      <input id="addr" type="text" autocomplete="off" placeholder="Adresse en France… (ex : 7 rue Pierre Corneille, Amiens)">
+      <ul id="sugg" hidden></ul>
+    </div>
+
+    <div id="status" hidden></div>
+    <div id="result"></div>
+
+    <p class="fineprint">
+      Données : DPE de la BDNB (CSTB) et de l'observatoire de l'ADEME, adresses de la Base Adresse Nationale.
+      Depuis la réforme du 1<sup>er</sup> juillet 2021, un DPE est valable dix ans, avec une validité écourtée
+      pour les diagnostics plus anciens ; les DPE réalisés avant 2021 ne sont plus valables. EcoBuilding affiche
+      les informations publiques du DPE — pas le document signé d'origine, que vous pouvez retrouver auprès de
+      l'ADEME grâce à son numéro. Une question ?
+      <a href="mailto:contact@confinia.io?subject=EcoBuilding%20-%20DPE">contact@confinia.io</a>.
+    </p>
+  </div>
+
+  <script>
+    const API = "/api/v1";
+    const addr = document.getElementById("addr");
+    const suggEl = document.getElementById("sugg");
+    const statusEl = document.getElementById("status");
+    const resultEl = document.getElementById("result");
+    const TODAY = new Date().toISOString().slice(0, 10);
+
+    const setStatus = (t) => { if (t) { statusEl.textContent = t; statusEl.hidden = false; } else { statusEl.hidden = true; } };
+    const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+    const frDate = (iso) => { if (!iso) return null; const [y, m, d] = iso.slice(0, 10).split("-"); return `${d}/${m}/${y}`; };
+
+    // --- Autocomplete (BAN), même source que la carte -----------------------
+    let seq = 0, timer = null;
+    addr.addEventListener("input", () => {
+      const q = addr.value.trim();
+      clearTimeout(timer);
+      if (q.length < 3) { suggEl.hidden = true; return; }
+      timer = setTimeout(() => runSuggest(q), 200);
+    });
+    async function runSuggest(q) {
+      const my = ++seq;
+      try {
+        const r = await fetch(`${API}/suggest?q=${encodeURIComponent(q)}`);
+        if (!r.ok || my !== seq) return;
+        const { suggestions = [] } = await r.json();
+        if (my !== seq) return;
+        if (!suggestions.length) { suggEl.hidden = true; return; }
+        suggEl.innerHTML = suggestions.map((s, i) => {
+          const numbered = s.type === "housenumber";
+          const kind = numbered ? "" : `<span class="kind">(précisez le numéro)</span>`;
+          return `<li data-i="${i}" data-num="${numbered ? 1 : 0}">${esc(s.label)}${kind}</li>`;
+        }).join("");
+        suggEl.hidden = false;
+        suggEl._items = suggestions;
+      } catch { suggEl.hidden = true; }
+    }
+    suggEl.addEventListener("click", (e) => {
+      const li = e.target.closest("li"); if (!li) return;
+      const s = suggEl._items[+li.dataset.i];
+      suggEl.hidden = true;
+      addr.value = s.label;
+      if (li.dataset.num === "1") lookup(s);
+      else { setStatus("Précisez le numéro de rue pour retrouver le DPE du bâtiment."); addr.focus(); }
+    });
+    document.addEventListener("click", (e) => { if (!e.target.closest(".searchwrap")) suggEl.hidden = true; });
+
+    // --- Lookup: adresse -> bâtiment (endpoint non-stream, comme la fiche) ---
+    async function lookup(s) {
+      resultEl.innerHTML = "";
+      setStatus("Recherche du bâtiment…");
+      try {
+        const r = await fetch(`${API}/lookup?ban_id=${encodeURIComponent(s.ban_id)}&lon=${s.lon}&lat=${s.lat}`);
+        if (!r.ok) throw new Error(r.status);
+        const data = await r.json();
+        render(data, s.label);
+      } catch (err) {
+        setStatus("Impossible d'interroger ce bâtiment pour le moment. Réessayez dans un instant.");
+      }
+    }
+
+    function render(data, label) {
+      setStatus(null);
+      const b = data.buildings && data.buildings[0];
+      const od = data.official_dpe || null;
+      const cls = b && b.energy && b.energy.dpe_class;
+      const bid = b && b.bdnb_id;
+      const lon = data.query && data.query.lon, lat = data.query && data.query.lat;
+
+      // Honnête : beaucoup de bâtiments n'ont aucun DPE enregistré.
+      if (!cls && !(od && od.dpe_number)) {
+        resultEl.innerHTML = `<div class="empty">
+          <p><strong>Aucun DPE n'est enregistré pour ce bâtiment</strong> dans les bases publiques (BDNB, ADEME).</p>
+          <p>Cela arrive souvent : le diagnostic n'a peut-être jamais été réalisé, ou il n'est pas encore publié.
+             Un DPE ne se « reconstitue » pas — s'il n'existe pas, il faut le faire réaliser.</p>
+          ${bid ? `<div class="ctas"><a class="cta" href="/?b=${encodeURIComponent(bid)}">Voir la fiche complète du bâtiment</a></div>` : ""}
+        </div>`;
+        return;
+      }
+
+      const established = od && od.established_on;
+      const validUntil = od && od.valid_until;
+      const expired = validUntil && validUntil < TODAY;
+      const num = od && od.dpe_number;
+      const ban = b && b.energy && b.energy.rental_ban;
+
+      const reportParams = [];
+      if (lon != null) reportParams.push(`lon=${lon}`);
+      if (lat != null) reportParams.push(`lat=${lat}`);
+      const pdf = bid ? `${API}/report/${encodeURIComponent(bid)}.pdf${reportParams.length ? "?" + reportParams.join("&") : ""}` : null;
+
+      let validHtml = "";
+      if (validUntil) {
+        validHtml = expired
+          ? `<div class="line valid ko">Ce DPE n'est plus valable depuis le ${frDate(validUntil)} — un nouveau diagnostic est nécessaire pour vendre ou louer.</div>`
+          : `<div class="line valid ok">Valable jusqu'au ${frDate(validUntil)}.</div>`;
+      }
+
+      let banHtml = "";
+      if (ban && ban.rental_ban_date) {
+        banHtml = `<p class="ban ko">⚠ Location interdite à partir de <strong>${esc(ban.rental_ban_date.slice(0, 4))}</strong> (loi Climat &amp; Résilience).</p>`;
+      } else if (cls && "ABCDE".includes(cls)) {
+        banHtml = `<p class="ban ok">✓ Aucune interdiction de location prévue pour la classe ${esc(cls)}.</p>`;
+      }
+
+      const badgeCls = cls ? `dpe-${cls}` : "dpe-none";
+      resultEl.innerHTML = `<div class="card">
+        <p class="addr">${esc(label)}</p>
+        <div class="dpe-row">
+          <div class="dpe-badge ${badgeCls}">${cls ? esc(cls) : "?"}</div>
+          <div class="dpe-meta">
+            ${cls ? `<div class="line"><b>Classe énergie ${esc(cls)}</b></div>` : `<div class="line"><b>Classe non renseignée</b></div>`}
+            ${established ? `<div class="line">DPE établi le ${frDate(established)}.</div>` : ""}
+            ${validHtml}
+          </div>
+        </div>
+        ${num ? `<p class="ademe">N° de DPE (ADEME) : <b>${esc(num)}</b><br>
+           Avec ce numéro, le DPE officiel est consultable sur
+           <a href="https://observatoire-dpe-audit.ademe.fr/" target="_blank" rel="noopener">l'observatoire de l'ADEME</a>.</p>` : ""}
+        ${banHtml}
+        <div class="ctas">
+          ${bid ? `<a class="cta primary" href="/?b=${encodeURIComponent(bid)}">Voir la fiche complète</a>` : ""}
+          ${pdf ? `<a class="cta" href="${pdf}">Télécharger la fiche PDF</a>` : ""}
+        </div>
+      </div>`;
+    }
+  </script>
+</body>
+</html>
