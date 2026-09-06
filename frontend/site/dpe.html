@@ -159,8 +159,11 @@
       const bid = b && b.bdnb_id;
       const lon = data.query && data.query.lon, lat = data.query && data.query.lat;
 
-      // Honnête : beaucoup de bâtiments n'ont aucun DPE enregistré.
-      if (!cls && !(od && od.dpe_number)) {
+      // Honnête : beaucoup de bâtiments n'ont aucun DPE enregistré. Mais un
+      // DPE d'avant juillet 2021 arrive SANS classe (la BDNB ne reprend que la
+      // méthode 2021) avec sa date : ce n'est pas « aucun DPE », c'est un DPE périmé.
+      const enDate = b && b.energy && b.energy.dpe_date;
+      if (!cls && !(od && od.dpe_number) && !enDate) {
         resultEl.innerHTML = `<div class="empty">
           <p><strong>Aucun DPE n'est enregistré pour ce bâtiment</strong> dans les bases publiques (BDNB, ADEME).</p>
           <p>Cela arrive souvent : le diagnostic n'a peut-être jamais été réalisé, ou il n'est pas encore publié.
@@ -221,7 +224,10 @@
         <div class="dpe-row">
           <div class="badgewrap${expired ? " expired" : ""}"><div class="dpe-badge ${badgeCls}">${cls ? esc(cls) : "?"}</div></div>
           <div class="dpe-meta">
-            ${cls ? `<div class="line"><b>Classe énergie ${esc(cls)}</b>${expired ? `<span class="tag">DPE périmé</span>` : ""}</div>` : `<div class="line"><b>Classe non renseignée</b></div>`}
+            ${cls ? `<div class="line"><b>Classe énergie ${esc(cls)}</b>${expired ? `<span class="tag">DPE périmé</span>` : ""}</div>`
+                  : preReform ? `<div class="line"><b>Classe non reprise dans les bases publiques</b><span class="tag">DPE périmé</span></div>
+                                 <div class="line">Les bases ne conservent la classe que pour les DPE de la méthode 2021.</div>`
+                  : `<div class="line"><b>Classe non renseignée</b></div>`}
             ${established ? `<div class="line">DPE établi le ${frDate(established)}.</div>` : ""}
             ${validHtml}
           </div>

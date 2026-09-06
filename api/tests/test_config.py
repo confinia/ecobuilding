@@ -151,6 +151,8 @@ def test_dpe_perdu_entry_page():
     # the rental ban stays visible but conditional on a fresh diagnostic.
     assert "badgewrap.expired" in dpe and "DPE périmé" in dpe
     assert "preReform" in dpe and "ancienne méthode" in dpe
+    # A pre-2021 DPE has a date but no class in BDNB: never the empty state.
+    assert "!enDate" in dpe and "Classe non reprise" in dpe
     assert "interdite depuis le" in dpe and "interdite à partir du" in dpe
     assert "s'il confirme la classe" in dpe
     # The ADEME number is the key to the lost official document.
