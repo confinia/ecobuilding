@@ -144,8 +144,15 @@ def test_dpe_perdu_entry_page():
     assert "/lookup/stream" not in dpe and "/buildings/" not in dpe
     # Reads the DPE from the same fields the fiche uses.
     assert "official_dpe" in dpe and "dpe_class" in dpe and "valid_until" in dpe
-    # Expiry recomputed client-side exactly like report.py (valid_until < today).
-    assert "TODAY" in dpe and "expired" in dpe
+    # Expiry recomputed client-side exactly like report.py (valid_until < today),
+    # the validity date itself coming from the API (never the 2021 rule recoded).
+    assert "TODAY" in dpe and "expired" in dpe and "dpe_valid_until" in dpe
+    # An expired DPE is greyed + labelled, pre-2021 ones are named as such, and
+    # the rental ban stays visible but conditional on a fresh diagnostic.
+    assert "badgewrap.expired" in dpe and "DPE périmé" in dpe
+    assert "preReform" in dpe and "ancienne méthode" in dpe
+    assert "interdite depuis le" in dpe and "interdite à partir du" in dpe
+    assert "s'il confirme la classe" in dpe
     # The ADEME number is the key to the lost official document.
     assert "dpe_number" in dpe and "observatoire-dpe-audit.ademe.fr" in dpe
     # Honest empty state — many buildings have no DPE on record.

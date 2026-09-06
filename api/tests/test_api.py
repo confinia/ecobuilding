@@ -479,6 +479,13 @@ def test_dpe_validity_2021_reform():
     assert "expiré" in perime
     valide = _official_dpe_html({"dpe_number": "X", "valid_until": "2099-12-31"})
     assert "expiré" not in valide and "10 ans" in valide
+    # #412 : la validité est aussi servie sur le bloc energy du groupe, pour que
+    # dpe.html dise « périmé » sans recoder la règle.
+    en = main._normalize_building({"classe_bilan_dpe": "G",
+                                   "date_reception_dpe": "2019-03-04"})["energy"]
+    assert en["dpe_valid_until"] == "2024-12-31"
+    assert en["rental_ban"]["rental_ban_date"] == "2025-01-01"
+    assert main._normalize_building({})["energy"]["dpe_valid_until"] is None
 
 
 def test_local_taxes_block(monkeypatch):
