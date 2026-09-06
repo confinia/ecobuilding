@@ -3,8 +3,9 @@
 # 127.0.0.1:13080; bridged consumers use the ecobuilding-internal alias render.
 services:
   render:
-    build: .
-    image: ecobuilding-render:latest
+    # Image built off the VM and pushed to GHCR (#409); render-up.sh pulls it.
+    # ECOBUILDING_TAG is the deploying commit's sha; `latest` is the fallback.
+    image: ghcr.io/confinia/ecobuilding-render:${ECOBUILDING_TAG:-latest}
     shm_size: 1g
     # Le profil/temp que Chromium écrit à chaque rendu va en RAM (compté sur
     # mem_limit), pas sur le disque PARTAGÉ — le disque est le goulot de la VM.

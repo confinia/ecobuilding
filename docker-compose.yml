@@ -22,8 +22,10 @@ services:
     restart: unless-stopped
 
   api:
-    build: ./api
-    image: ecobuilding-api:latest
+    # Image built off the VM by the build-images workflow and pushed to GHCR
+    # (#409); the VM only pulls. ECOBUILDING_TAG is the deploying commit's sha,
+    # set by stack-up.sh; `latest` is the break-glass fallback.
+    image: ghcr.io/confinia/ecobuilding-api:${ECOBUILDING_TAG:-latest}
     env_file:
       - ./deploy/secrets.env   # KC_BOOTSTRAP_ADMIN_* for the identity gauges
     environment:
@@ -85,8 +87,7 @@ services:
     restart: unless-stopped
 
   frontend:
-    build: ./frontend
-    image: ecobuilding-frontend:latest
+    image: ghcr.io/confinia/ecobuilding-frontend:${ECOBUILDING_TAG:-latest}
     mem_limit: 128m
     cpus: 0.5
     restart: unless-stopped

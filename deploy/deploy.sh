@@ -28,7 +28,11 @@ rsync -az --delete \
 # staging.ecobuilding.confinia.io -> 127.0.0.1:13000 (our router). Managed once,
 # out of band (needs sudo); this deploy does not touch it.
 
-echo "== remote: stacks (deploy/stack-up.sh)"
+# Images now come from GHCR (#409): this break-glass path deploys the `latest`
+# tag (built on the last push to main). The VM must have logged in once:
+#   ssh ecobuilding 'podman login ghcr.io'   (a PAT with read:packages)
+# To pin a specific build instead, pass its sha: ECOBUILDING_TAG=<sha> ./stack-up.sh
+echo "== remote: stacks (deploy/stack-up.sh, GHCR :latest)"
 ssh "$HOST" 'cd ~/projects/ecobuilding && ./deploy/stack-up.sh'
 
 echo "== public smoke (staging)"

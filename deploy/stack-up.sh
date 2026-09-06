@@ -7,6 +7,17 @@
 set -eu
 cd "$(dirname "$0")/.."
 
+# App images are built off the VM and pulled from GHCR (#409) — the VM never
+# runs `podman build`. ECOBUILDING_TAG is the deploying commit's sha (set by the
+# staging workflow); `latest` is the manual break-glass default and needs a
+# prior `podman login ghcr.io`. Pull up front so a bad tag fails before we touch
+# any stack; both the active-bootstrap and the candidate consume these images.
+export ECOBUILDING_TAG="${ECOBUILDING_TAG:-latest}"
+for img in api frontend; do
+  podman pull -q "ghcr.io/confinia/ecobuilding-$img:$ECOBUILDING_TAG" >/dev/null \
+    || { echo "ERROR: cannot pull ecobuilding-$img:$ECOBUILDING_TAG (login to ghcr.io first for the manual path)"; exit 1; }
+done
+
 if [ ! -f deploy/secrets.env ]; then
   echo "GF_SECURITY_ADMIN_PASSWORD=$(openssl rand -base64 18)" > deploy/secrets.env
   chmod 600 deploy/secrets.env
@@ -93,8 +104,7 @@ else
   echo "   active stack $ACTIVE left untouched"
 fi
 
-# Build fresh images and fully recreate the CANDIDATE stack.
-podman-compose -p "ecobuilding-$CANDIDATE" -f docker-compose.yml -f "deploy/$CANDIDATE.override.yml" build
+# Fully recreate the CANDIDATE stack from the GHCR images pulled above (#409).
 podman-compose -p "ecobuilding-$CANDIDATE" -f docker-compose.yml -f "deploy/$CANDIDATE.override.yml" up -d --force-recreate
 
 # Purge du cache PDF à CHAQUE déploiement (#382). La clé de cache ne porte pas

@@ -46,8 +46,9 @@ services:
     restart: unless-stopped
 
   sandbox-api:
-    build: ../api
-    image: ecobuilding-api:latest      # reuse the prod-built image
+    # Same GHCR image as prod (#409), pulled by deploy/sandbox.sh; ECOBUILDING_TAG
+    # is the PR commit's sha. No build on the VM.
+    image: ghcr.io/confinia/ecobuilding-api:${ECOBUILDING_TAG:-latest}
     # `api.confinia.io` pointe sur l'ADRESSE PUBLIQUE DE CETTE MACHINE : Confinia
     # tourne sur la même VM. Un conteneur sans privilèges ne sait pas revenir
     # sur l'IP publique de son propre hôte (pas de retour en épingle), et
@@ -87,8 +88,7 @@ services:
     restart: unless-stopped
 
   sandbox-frontend:
-    build: ../frontend
-    image: ecobuilding-frontend:latest
+    image: ghcr.io/confinia/ecobuilding-frontend:${ECOBUILDING_TAG:-latest}
     volumes:
       # Point the shared image at the sandbox realm (overrides /srv/env.js).
       - ./env.sandbox.js:/srv/env.js:ro

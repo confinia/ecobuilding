@@ -10,13 +10,32 @@ concurrency:
   group: vm-deploy            # one VM, one deploy at a time (shared with sandbox)
   cancel-in-progress: false
 
+permissions:
+  contents: read
+  packages: write             # build-images pushes to GHCR (#409)
+
 jobs:
+  # Build the app images OFF the VM (#409), then the VM only pulls them.
+  build:
+    uses: ./.github/workflows/build-images.yml
+
+  # Pytest suite OFF the VM too (#411). It is the promotion gate (rule 9): a
+  # red run here means do not promote. Runs on a GitHub-hosted runner.
+  test:
+    uses: ./.github/workflows/test.yml
+
   staging:
+    needs: build
     runs-on: [self-hosted, vm, ecobuilding]
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 2          # pour savoir si render_stack/ a changé
+
+      # The VM pulls the GHCR images built above; login with the run's token so
+      # the packages can stay private (public repo, but no need to expose them).
+      - name: Log the VM into GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | ssh -o BatchMode=yes localhost 'podman login ghcr.io -u ${{ github.actor }} --password-stdin'
 
       - name: Sync main tree to ~/projects/ecobuilding
         run: |
@@ -30,7 +49,7 @@ jobs:
       # ssh localhost: see #144 — helpers must run in a logind session (not
       # the job cgroup, not a transient unit) to survive job end.
       - name: Deploy the candidate stack
-        run: ssh -o BatchMode=yes localhost 'cd ~/projects/ecobuilding && ./deploy/stack-up.sh'
+        run: ssh -o BatchMode=yes localhost 'cd ~/projects/ecobuilding && ECOBUILDING_TAG=${{ github.sha }} ./deploy/stack-up.sh'
 
       # La pile de RENDU est partagée (hors bleu/vert) et n'avait aucun
       # déploiement automatique (#341) : #338 a cassé le rendu en prod pendant
@@ -39,13 +58,13 @@ jobs:
       - name: Deploy the render stack (if changed)
         run: |
           if git diff --name-only HEAD~1 HEAD -- render_stack/ deploy/render-up.sh | grep -q .; then
-            ssh -o BatchMode=yes localhost 'cd ~/projects/ecobuilding && ./deploy/render-up.sh'
+            ssh -o BatchMode=yes localhost 'cd ~/projects/ecobuilding && ECOBUILDING_TAG=${{ github.sha }} ./deploy/render-up.sh'
           else
             echo "render_stack/ inchangé — rien à redéployer"
           fi
 
-      - name: Test suite (promotion gate, rule 9)
-        run: cd ~/projects/ecobuilding && ./deploy/test.sh
+      # Le pytest hermétique (jeu de tests = porte de promotion, règle 9) tourne
+      # désormais dans le job `test` sur un runner GitHub (#411), plus sur la VM.
 
       # Un healthz seul laissait passer des pannes bien réelles : carte 3D vidée
       # en silence, panneau qui attendait la source la plus lente, fiche PDF

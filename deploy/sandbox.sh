@@ -5,6 +5,16 @@
 set -eu
 cd "$(dirname "$0")/.."
 S=sandbox_stack
+
+# Images are built off the VM and pulled from GHCR (#409) — never built here.
+# ECOBUILDING_TAG is the deploying commit's sha (set by the workflow); `latest`
+# is the break-glass default (needs a prior `podman login ghcr.io`).
+export ECOBUILDING_TAG="${ECOBUILDING_TAG:-latest}"
+for img in api frontend; do
+  podman pull -q "ghcr.io/confinia/ecobuilding-$img:$ECOBUILDING_TAG" >/dev/null \
+    || { echo "ERROR: cannot pull ecobuilding-$img:$ECOBUILDING_TAG (login to ghcr.io first for the manual path)"; exit 1; }
+done
+
 podman network exists ecobuilding-internal || podman network create ecobuilding-internal   # (#173)
 HOSTHDR='Host: sandbox.ecobuilding.confinia.io'
 
@@ -27,10 +37,10 @@ EOF
 fi
 mkdir -p "$S/data/leads"
 
-# 2. build + start the isolated stack. --force-recreate matters: podman-compose
-#    1.3 rebuilds the image but keeps the RUNNING container unless forced, so
-#    the sandbox silently served stale code (#152 validation caught it).
-( cd "$S" && podman-compose -p ecobuilding-sandbox -f docker-compose.yml up -d --build --force-recreate )
+# 2. start the isolated stack from the pulled GHCR images (#409). --force-recreate
+#    matters: podman-compose 1.3 keeps the RUNNING container unless forced, so the
+#    sandbox silently served the previous image (#152 validation caught it).
+( cd "$S" && podman-compose -p ecobuilding-sandbox -f docker-compose.yml up -d --force-recreate )
 
 # Purge du cache PDF à chaque déploiement sandbox (#382) : la clé de cache ne
 # porte pas la version du code, donc une fiche mise en cache avant un changement
