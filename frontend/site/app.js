@@ -283,17 +283,32 @@ const SHOWCASE = {
 const hadHash = !!location.hash;
 const urlBuilding = new URLSearchParams(location.search).get("b");
 
-const map = new maplibregl.Map({
-  container: "map",
-  style: "https://tiles.openfreemap.org/styles/liberty",
-  // Default camera = the showcase building (a #hash in the URL overrides it).
-  center: [SHOWCASE.lon, SHOWCASE.lat],
-  zoom: SHOWCASE.zoom,
-  pitch: SHOWCASE.pitch,
-  bearing: SHOWCASE.bearing,
-  hash: true,   // position in URL (#zoom/lat/lng/bearing/pitch), shareable & restored on load
-  attributionControl: { compact: true },
-});
+// Depuis MapLibre 6.7 (#420), le constructeur LÈVE GPUInitializationError
+// sans WebGL2 (avant : un événement error et une carte à moitié construite).
+// Sans ce garde-fou, app.js s'arrêtait ici : plus de recherche, plus de fiche.
+// La carte devient un objet inerte (chaque méthode ne fait rien, aucun
+// événement ne part), le reste du site fonctionne, et un bandeau le dit.
+let mapDead = null;
+function createMap() {
+  try {
+    return new maplibregl.Map({
+      container: "map",
+      style: "https://tiles.openfreemap.org/styles/liberty",
+      // Default camera = the showcase building (a #hash in the URL overrides it).
+      center: [SHOWCASE.lon, SHOWCASE.lat],
+      zoom: SHOWCASE.zoom,
+      pitch: SHOWCASE.pitch,
+      bearing: SHOWCASE.bearing,
+      hash: true,   // position in URL (#zoom/lat/lng/bearing/pitch), shareable & restored on load
+      attributionControl: { compact: true },
+    });
+  } catch (e) {
+    mapDead = e;
+    console.warn("Carte 3D indisponible :", e);
+    return new Proxy({}, { get: () => () => undefined });
+  }
+}
+const map = createMap();
 
 // Selected building in the URL (?b=<bdnb_id>, hash preserved): a shared URL
 // reproduces both the view and the open info panel.
@@ -657,6 +672,19 @@ function hideTileNotice() {
   if (tileNoticeEl) { tileNoticeEl.remove(); tileNoticeEl = null; }
 }
 
+// Carte morte au démarrage (#420) : le dire, et ouvrir quand même la fiche
+// d'un lien partagé (?b=… avec la position dans le #hash) — sans carte, le
+// « load » qui la déclenche ne viendra jamais.
+if (mapDead) {
+  const el = document.createElement("div");
+  el.id = "tile-notice";
+  el.textContent = "Votre navigateur ne permet pas d'afficher la carte 3D (WebGL2). " +
+    "La recherche d'adresse et les fiches restent disponibles.";
+  document.body.appendChild(el);
+  const h = location.hash.slice(1).split("/");   // #zoom/lat/lon/bearing/pitch
+  if (urlBuilding && h.length >= 3) openBuildingById(urlBuilding, +h[2], +h[1]);
+}
+
 async function select(s) {
   list.hidden = true;
   input.value = s.label;
@@ -733,8 +761,8 @@ async function loadStreetview(lon, lat) {
 }
 
 async function openBuildingById(id, lon, lat) {
-  placeMarker(lon, lat);
-  anchorMarkerToBuilding(id);   // id is the tile's batiment_groupe_id -> pin on the footprint
+  safeMap(() => placeMarker(lon, lat));
+  safeMap(() => anchorMarkerToBuilding(id));   // id is the tile's batiment_groupe_id -> pin on the footprint
   window.ecoStartLoadingFx?.(id, lon, lat);
   showLoadingPanel('Chargement des données du bâtiment…');
   try {
