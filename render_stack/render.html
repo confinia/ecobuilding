@@ -29,11 +29,20 @@ try { points = JSON.parse(q.get('points') || '[]').slice(0, 40); } catch {}
 const DPE = ["match", ["get", "classe_bilan_dpe"],
   "A", "#009036", "B", "#52b153", "C", "#a5cc74", "D", "#f4e70f",
   "E", "#f0b40f", "F", "#eb8235", "G", "#d7221f", "#d5cdc0"];
-const map = new maplibregl.Map({
-  container: 'map', style: 'https://tiles.openfreemap.org/styles/liberty',
-  center: [lon, lat], zoom, pitch, bearing,
-  interactive: false, attributionControl: false, fadeDuration: 0, preserveDrawingBuffer: true,
-});
+// MapLibre 6.7 THROWS (GPUInitializationError) when the WebGL2 context cannot
+// be created (#420). Report it through window.__error like any other failure,
+// or puppeteer would sit out its 30 s timeout on a page that died at line one.
+let map;
+try {
+  map = new maplibregl.Map({
+    container: 'map', style: 'https://tiles.openfreemap.org/styles/liberty',
+    center: [lon, lat], zoom, pitch, bearing,
+    interactive: false, attributionControl: false, fadeDuration: 0, preserveDrawingBuffer: true,
+  });
+} catch (e) {
+  window.__error = String(e);
+  throw e;
+}
 map.on('load', () => {
   for (const l of map.getStyle().layers) {
     if (/building/i.test(l.id)) map.removeLayer(l.id);   // only BDNB extrudes

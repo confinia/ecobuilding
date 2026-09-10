@@ -403,6 +403,29 @@ def test_maplibre_vendored_and_versions_match():
 
 
 @needs_repo
+def test_map_constructor_guarded_since_maplibre_6_7():
+    """#420: MapLibre >= 6.7 THROWS GPUInitializationError from the Map
+    constructor without WebGL2. The web app must survive it (search and fiche
+    still work, a notice says why) and the render page must report it
+    through window.__error instead of sitting out puppeteer's timeout."""
+    vendored = (ROOT / "frontend/site/assets/maplibre/VERSION").read_text().strip()
+    assert tuple(int(x) for x in vendored.split(".")) >= (6, 7, 0), vendored
+    app = (ROOT / "frontend/site/app.js").read_text()
+    assert "function createMap()" in app and "const map = createMap();" in app
+    guard = app[app.index("function createMap()"):app.index("const map = createMap();")]
+    assert "try {" in guard and "new maplibregl.Map({" in guard and "catch (e)" in guard
+    assert "mapDead = e" in guard and "new Proxy(" in guard      # inert map, no throws later
+    assert "ne permet pas d'afficher la carte 3D" in app          # the notice
+    assert "openBuildingById(urlBuilding, +h[2], +h[1])" in app  # ?b= link still opens
+    # The fiche path never touches the map unguarded.
+    body = app[app.index("async function openBuildingById"):]
+    body = body[:body.index("\n}\n")]
+    assert "safeMap(() => placeMarker(lon, lat))" in body
+    render = (ROOT / "render_stack/render.html").read_text()
+    assert "map = new maplibregl.Map({" in render
+    assert "window.__error = String(e);" in render
+
+@needs_repo
 def test_auth_buttons_never_depend_on_a_cdn():
     """#215: the sign-up path is the product's front door — it must survive a
     blocked CDN, a failed adapter import and an IdP hiccup."""
