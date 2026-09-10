@@ -283,17 +283,32 @@ const SHOWCASE = {
 const hadHash = !!location.hash;
 const urlBuilding = new URLSearchParams(location.search).get("b");
 
-const map = new maplibregl.Map({
-  container: "map",
-  style: "https://tiles.openfreemap.org/styles/liberty",
-  // Default camera = the showcase building (a #hash in the URL overrides it).
-  center: [SHOWCASE.lon, SHOWCASE.lat],
-  zoom: SHOWCASE.zoom,
-  pitch: SHOWCASE.pitch,
-  bearing: SHOWCASE.bearing,
-  hash: true,   // position in URL (#zoom/lat/lng/bearing/pitch), shareable & restored on load
-  attributionControl: { compact: true },
-});
+// Depuis MapLibre 6.7 (#420), le constructeur LÈVE GPUInitializationError
+// sans WebGL2 (avant : un événement error et une carte à moitié construite).
+// Sans ce garde-fou, app.js s'arrêtait ici : plus de recherche, plus de fiche.
+// La carte devient un objet inerte (chaque méthode ne fait rien, aucun
+// événement ne part), le reste du site fonctionne, et un bandeau le dit.
+let mapDead = null;
+function createMap() {
+  try {
+    return new maplibregl.Map({
+      container: "map",
+      style: "https://tiles.openfreemap.org/styles/liberty",
+      // Default camera = the showcase building (a #hash in the URL overrides it).
+      center: [SHOWCASE.lon, SHOWCASE.lat],
+      zoom: SHOWCASE.zoom,
+      pitch: SHOWCASE.pitch,
+      bearing: SHOWCASE.bearing,
+      hash: true,   // position in URL (#zoom/lat/lng/bearing/pitch), shareable & restored on load
+      attributionControl: { compact: true },
+    });
+  } catch (e) {
+    mapDead = e;
+    console.warn("Carte 3D indisponible :", e);
+    return new Proxy({}, { get: () => () => undefined });
+  }
+}
+const map = createMap();
 
 // Selected building in the URL (?b=<bdnb_id>, hash preserved): a shared URL
 // reproduces both the view and the open info panel.
@@ -657,6 +672,19 @@ function hideTileNotice() {
   if (tileNoticeEl) { tileNoticeEl.remove(); tileNoticeEl = null; }
 }
 
+// Carte morte au démarrage (#420) : le dire, et ouvrir quand même la fiche
+// d'un lien partagé (?b=… avec la position dans le #hash) — sans carte, le
+// « load » qui la déclenche ne viendra jamais.
+if (mapDead) {
+  const el = document.createElement("div");
+  el.id = "tile-notice";
+  el.textContent = "Votre navigateur ne permet pas d'afficher la carte 3D (WebGL2). " +
+    "La recherche d'adresse et les fiches restent disponibles.";
+  document.body.appendChild(el);
+  const h = location.hash.slice(1).split("/");   // #zoom/lat/lon/bearing/pitch
+  if (urlBuilding && h.length >= 3) openBuildingById(urlBuilding, +h[2], +h[1]);
+}
+
 async function select(s) {
   list.hidden = true;
   input.value = s.label;
@@ -733,8 +761,8 @@ async function loadStreetview(lon, lat) {
 }
 
 async function openBuildingById(id, lon, lat) {
-  placeMarker(lon, lat);
-  anchorMarkerToBuilding(id);   // id is the tile's batiment_groupe_id -> pin on the footprint
+  safeMap(() => placeMarker(lon, lat));
+  safeMap(() => anchorMarkerToBuilding(id));   // id is the tile's batiment_groupe_id -> pin on the footprint
   window.ecoStartLoadingFx?.(id, lon, lat);
   showLoadingPanel('Chargement des données du bâtiment…');
   try {
@@ -831,6 +859,13 @@ function humanizeRisk(r) {
 function kv(k, v) {
   return v === null || v === undefined || v === "" ? "" :
     `<div class="kv"><span class="k">${k}</span><span>${v}</span></div>`;
+}
+
+// Le numéro de DPE mène au document officiel chez l'ADEME (#418) : le nôtre
+// n'est qu'une fiche d'information, et il faut que ça se voie.
+function ademeLink(num) {
+  return num ? `<a href="${window.ecoDpe.ademeUrl(num)}" target="_blank" rel="noopener"
+    title="Consulter le DPE officiel sur l'observatoire de l'ADEME">${num}</a>` : null;
 }
 
 
@@ -1003,9 +1038,9 @@ function sectionEventailDpe(data) {
       ${kv("Isolation", [l.isolation_enveloppe && "enveloppe " + l.isolation_enveloppe,
                          l.isolation_menuiseries && "menuiseries " + l.isolation_menuiseries]
                         .filter(Boolean).join(" · ") || null)}
-      ${kv("N° DPE", l.numero_dpe)}
+      ${kv("N° DPE", ademeLink(l.numero_dpe))}
       <p class="hint">${marque}</p>
-      ${l.numero_dpe ? `<button class="report-link fiche-logement" data-dpe="${l.numero_dpe}">📄 Fiche de ce logement</button>` : ""}</div>`;
+      ${l.numero_dpe ? `<button class="report-link fiche-logement" data-dpe="${l.numero_dpe}">📄 Fiche EcoBuilding de ce logement (PDF)</button>` : ""}</div>`;
   }).join("");
   return `<div class="dpe-spread"><p class="hint">${titre}
       La classe ci-dessus est celle du logement représentatif du bâtiment,
@@ -1046,7 +1081,6 @@ function renderPanel(s, data, opts) {
     return;
   }
   const cls = b.energy?.dpe_class;
-  const ban = b.energy?.rental_ban;
   // Le badge dit l'ÉVENTAIL quand les logements diffèrent (#287).
   //
   // Une lettre unique est l'élément le plus visible de la fiche, et elle a
@@ -1056,14 +1090,18 @@ function renderPanel(s, data, opts) {
   // Le dégradé va de la couleur de la meilleure classe à celle de la pire.
   const spread = data.dpe_spread;
   const eventail = spread && !spread.identiques && spread.classe_min && spread.classe_max;
-  const dpeBadge = eventail
+  const badgeSeul = eventail
     ? `<span class="dpe-badge dpe-range" style="background:linear-gradient(100deg,
          var(--dpe-${spread.classe_min}) 0%, var(--dpe-${spread.classe_max}) 100%)"
        >${spread.classe_min}&nbsp;–&nbsp;${spread.classe_max}</span>`
     : `<span class="dpe-badge dpe-${cls || "unknown"}">${cls || "?"}</span>`;
-  const banHtml = !cls ? "" : ban?.rental_ban_date
-    ? `<div class="ban-warning">⚠ Location interdite à partir de <strong>${ban.rental_ban_date.slice(0, 4)}</strong> (loi Climat &amp; Résilience)</div>`
-    : `<div class="ban-warning ban-ok">✓ Aucune interdiction de location prévue pour cette classe</div>`;
+  // Validité et interdiction de location : formulation PARTAGÉE avec la page
+  // « DPE perdu » (dpe-validite.js, #414). Un DPE périmé ne s'affiche plus
+  // comme un verdict en vigueur : badge grisé, étiquette, phrase au passé.
+  const v = window.ecoDpe.validite({ cls, od: data.official_dpe, energy: b.energy });
+  const dpeBadge = `<span class="badgewrap${v.expired ? " expired" : ""}">${badgeSeul}</span>${v.expired ? `<span class="tag">DPE périmé</span>` : ""}`;
+  const validHtml = v.validHtml ? `<p class="dpe-validity ${v.expired ? "ko" : "ok"}">${v.validHtml}</p>` : "";
+  const banHtml = v.banHtml ? `<div class="ban-warning${v.banKind === "ko" ? "" : ` ban-${v.banKind}`}">${v.banHtml}</div>` : "";
 
   const risksHtml = sectionRisques(data);
 
@@ -1084,6 +1122,7 @@ function renderPanel(s, data, opts) {
     ${b.address && b.address !== searched ? kv(`Adresse principale (groupe BDNB${b.dwellings ? `, ${b.dwellings} logements` : ""})`, b.address) : ""}
     <h3>Énergie (DPE)</h3>
     <p>${dpeBadge} ${b.energy?.consumption_kwh_m2y ? `&nbsp;${Math.round(b.energy.consumption_kwh_m2y)} kWh/m²/an` : ""}</p>
+    ${validHtml}
     ${banHtml}
     ${sectionEventailDpe(data)}
     ${/* Ces lignes décrivent le logement représentatif. Quand les blocs par
@@ -1098,7 +1137,7 @@ function renderPanel(s, data, opts) {
           ? ` (${Math.round(data.official_dpe.surface_habitable_m2 * 10) / 10} m²)` : ""}</h4>` : ""}
     ${kv("Date du DPE", b.energy?.dpe_date ? String(b.energy.dpe_date).slice(0, 10) : null)}
     ${kv("GES", b.energy?.ghg_kgco2_m2y ? Math.round(b.energy.ghg_kgco2_m2y) + " kgCO₂/m²/an" : null)}
-    ${kv("N° DPE officiel", data.official_dpe?.dpe_number)}
+    ${kv("N° DPE officiel", ademeLink(data.official_dpe?.dpe_number))}
     ${kv("Surface habitable", data.official_dpe?.surface_habitable_m2 ? Math.round(data.official_dpe.surface_habitable_m2 * 10) / 10 + " m²" : null)}
     ${kv("Coût annuel d'énergie", data.official_dpe?.annual_cost_eur ? Math.round(data.official_dpe.annual_cost_eur).toLocaleString("fr-FR") + " €/an (DPE)" : null)}`}
     <h3>Bâtiment</h3>
@@ -1132,7 +1171,9 @@ function renderPanel(s, data, opts) {
     ${kv("Productible photovoltaïque", data.solar_pv?.yield_kwh_per_kwc_y ? Math.round(data.solar_pv.yield_kwh_per_kwc_y) + " kWh/an par kWc (PVGIS)" : null)}
     ${sectionPrix(data)}
     ${sectionCommune(data)}
-    <p><button id="report-btn" class="report-link" data-url="${API}/report/${encodeURIComponent(b.bdnb_id)}.pdf${reportParams.length ? "?" + reportParams.join("&") : ""}">📄 Obtenir la fiche PDF</button></p>
+    <p><button id="report-btn" class="report-link" data-url="${API}/report/${encodeURIComponent(b.bdnb_id)}.pdf${reportParams.length ? "?" + reportParams.join("&") : ""}">📄 Fiche EcoBuilding (PDF) — pas le DPE</button></p>
+    <p class="hint notdpe">${window.ecoDpe.NOT_THE_DPE}${data.official_dpe?.dpe_number
+      ? ` <a href="${window.ecoDpe.ademeUrl(data.official_dpe.dpe_number)}" target="_blank" rel="noopener">Consulter le DPE officiel (ADEME)</a>.` : ""}</p>
     <p class="hint" id="report-quota" hidden></p>
     <div id="streetview"></div>
     ${pendingHtml}

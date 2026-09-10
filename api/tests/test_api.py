@@ -582,6 +582,37 @@ def test_report_cover_page():
     assert '<div class="cover-hero"><img src="data:' not in plain
 
 
+def test_report_is_never_mistaken_for_the_dpe():
+    """#418: the fiche says, in readable size, that it is NOT the DPE — on the
+    cover under the brand, in the running footer of every page (@page margin
+    box, so a torn-out page still says it), and the DPE section names itself
+    as data taken from the official document, whose number links to ADEME."""
+    from app.report import NOT_THE_DPE, _official_dpe_html, _report_html
+    od = {"dpe_number": "2331E0149513U", "established_on": "2023-01-17",
+          "valid_until": "2033-01-16"}
+    html = _report_html({**BUILDING_FIXTURE, "official_dpe": od})
+    assert "n'est pas un diagnostic de performance énergétique (DPE)" in NOT_THE_DPE
+    assert f'<div class="cover-notdpe">{NOT_THE_DPE}</div>' in html
+    assert f'@bottom-center {{ content: "{NOT_THE_DPE}"' in html
+    assert "Classe énergie reprise des données publiques du DPE" in html
+    assert "fiche d'information bâtiment" in html
+    assert "<h2>Données du DPE officiel (ADEME)</h2>" in html
+    assert ('href="https://observatoire-dpe-audit.ademe.fr/afficher-dpe/2331E0149513U">'
+            "2331E0149513U</a>") in html
+    assert "DPE officiel (logement représentatif)" not in html
+    # Without a DPE: no badge, no caption, the sentence still there.
+    no_dpe = _report_html({**BUILDING_FIXTURE, "official_dpe": None,
+                           "buildings": [{**BUILDING_FIXTURE["buildings"][0], "energy": {}}]})
+    assert '<div class="cover-badge-cap">' not in no_dpe and NOT_THE_DPE in no_dpe
+    assert '<div class="cover-badge-cap">' in html
+    assert _official_dpe_html({}) == ""
+    # English: the sentence is translated, not left in French.
+    en = _report_html({**BUILDING_FIXTURE, "official_dpe": od}, lang="en")
+    assert "this document is not an energy performance certificate (DPE)" in en
+    assert NOT_THE_DPE not in en
+    assert "Data from the official DPE" in en
+
+
 def test_report_endpoint_accepts_searched_address(monkeypatch):
     async def fake_upstream(url, params, ttl):
         if "api-adresse" in url:
@@ -1417,12 +1448,16 @@ def test_la_balise_publique_ne_prend_que_des_etiquettes_connues(monkeypatch):
     assert client.post("/v1/events", json={"event": "x" * 200}).status_code == 204
     assert client.post("/v1/events", json={"event": "report_click",
                                            "meta": "n'importe quoi"}).status_code == 204
+    # #414 : la page « DPE perdu » se mesure, avec ce qu'elle a trouvé.
+    assert client.post("/v1/events", json={"event": "dpe_page_lookup",
+                                           "meta": "lapsed"}).status_code == 204
 
     assert [(a["event"], a["scope"]) for a in vus] == [
         ("report_click", "dwelling"),
         ("report_click", "building"),
         ("other", "none"),
         ("report_click", "none"),
+        ("dpe_page_lookup", "lapsed"),
     ]
 
 
