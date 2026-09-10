@@ -1,0 +1,34 @@
+EcoBuilding
+Copyright (c) 2026 Clément Igonet <clement@igonet.fr>
+
+L'intégralité du code source original de ce dépôt est la propriété de
+Clément Igonet, auteur unique et seul titulaire des droits. Voir AUTHORS
+pour les identités git présentes dans l'historique, qui désignent toutes
+la même personne.
+
+DOUBLE LICENCE
+--------------
+
+EcoBuilding est publié sous licence GNU Affero General Public License
+v3.0 (voir LICENSE). L'AGPL impose à quiconque exécute une version
+modifiée accessible par le réseau d'en publier les sources.
+
+Si cette obligation ne convient pas à votre usage, par exemple si vous
+souhaitez intégrer EcoBuilding à un produit propriétaire, le livrer à
+vos clients, ou exploiter une version modifiée en service sans publier
+vos modifications, une licence commerciale est disponible.
+
+Clément Igonet détenant les droits sur l'ensemble de l'œuvre, il peut
+accorder des conditions différentes de l'AGPL. C'est le modèle employé
+par MySQL, Qt et Sirius/Capella.
+
+Licence commerciale, conditions OEM et instances privées :
+clement@igonet.fr
+
+DONNÉES ET COMPOSANTS TIERS
+---------------------------
+
+Ce produit s'appuie sur des données publiques ouvertes (BAN, BDNB,
+Géorisques) et sur des composants tiers, chacun régi par sa propre
+licence. Ces licences ne sont ni modifiées, ni sous-licenciées par les
+conditions ci-dessus.
