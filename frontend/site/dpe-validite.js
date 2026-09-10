@@ -56,5 +56,15 @@
     return { established, validUntil, expired, preReform, validHtml, banHtml, banKind, frDate, esc };
   }
 
-  window.ecoDpe = { validite, frDate, esc };
+  // Notre fiche n'est PAS le DPE (#418) : une seule phrase, dite partout où
+  // l'on propose le PDF, et le lien vers le document officiel, par son numéro
+  // (l'observatoire ouvre directement /afficher-dpe/<numéro>).
+  const NOT_THE_DPE = "La fiche EcoBuilding rassemble des données ouvertes sur le bâtiment. " +
+    "Ce n'est pas le diagnostic de performance énergétique : celui-ci est établi par un " +
+    "diagnostiqueur certifié et archivé par l'ADEME.";
+  const ademeUrl = (num) => num
+    ? `https://observatoire-dpe-audit.ademe.fr/afficher-dpe/${encodeURIComponent(String(num).trim())}`
+    : "https://observatoire-dpe-audit.ademe.fr/";
+
+  window.ecoDpe = { validite, frDate, esc, NOT_THE_DPE, ademeUrl };
 })();

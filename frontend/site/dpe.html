@@ -29,6 +29,7 @@
     #sugg li .kind { color: #999; font-size: 12px; margin-left: 6px; }
     #status { margin: 18px 0; color: #666; font-size: 14px; }
     .card { background: #fff; border-radius: 12px; padding: 20px; margin-top: 18px; box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+    .card .card-title { font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: #2b7a4b; font-weight: 600; margin: 0 0 4px; }
     .card .addr { font-size: 14px; color: #666; margin: 0 0 14px; }
     .dpe-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
     .dpe-badge { width: 66px; height: 66px; border-radius: 12px; color: #fff; font-size: 34px; font-weight: 800;
@@ -55,6 +56,9 @@
     .ctas { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px; }
     .cta { border-radius: 8px; padding: 10px 16px; font-size: 14px; text-decoration: none; border: 1px solid #2b7a4b; color: #2b7a4b; }
     .cta.primary { background: #2b7a4b; color: #fff; }
+    /* Notre PDF n'est PAS le DPE (#418) : bouton discret, phrase en clair dessous. */
+    .cta.muted { border-color: #bbb; color: #555; }
+    .notdpe { font-size: 12.5px; color: #666; margin: 8px 0 0; line-height: 1.45; }
     .empty { background: #fff; border-radius: 12px; padding: 20px; margin-top: 18px; box-shadow: 0 2px 8px rgba(0,0,0,.08); font-size: 14px; color: #444; line-height: 1.5; }
     .fineprint { font-size: 12px; color: #888; margin-top: 26px; line-height: 1.5; }
   </style>
@@ -196,6 +200,7 @@
 
       const badgeCls = cls ? `dpe-${cls}` : "dpe-none";
       resultEl.innerHTML = `<div class="card">
+        <p class="card-title">Informations publiques du DPE</p>
         <p class="addr">${esc(label)}</p>
         <div class="dpe-row">
           <div class="badgewrap${expired ? " expired" : ""}"><div class="dpe-badge ${badgeCls}">${cls ? esc(cls) : "?"}</div></div>
@@ -209,13 +214,14 @@
           </div>
         </div>
         ${num ? `<p class="ademe">N° de DPE (ADEME) : <b>${esc(num)}</b><br>
-           Avec ce numéro, le DPE officiel est consultable sur
-           <a href="https://observatoire-dpe-audit.ademe.fr/" target="_blank" rel="noopener">l'observatoire de l'ADEME</a>.</p>` : ""}
+           Le document officiel, signé par le diagnostiqueur, se retrouve avec ce numéro sur l'observatoire de l'ADEME.</p>` : ""}
         ${banHtml}
         <div class="ctas">
-          ${bid ? `<a class="cta primary" href="/?b=${encodeURIComponent(bid)}">Voir la fiche complète</a>` : ""}
-          ${pdf ? `<a class="cta" href="${pdf}">Télécharger la fiche PDF</a>` : ""}
+          ${num ? `<a class="cta primary" href="${window.ecoDpe.ademeUrl(num)}" target="_blank" rel="noopener">Consulter le DPE officiel (ADEME)</a>` : ""}
+          ${bid ? `<a class="cta" href="/?b=${encodeURIComponent(bid)}">Voir la fiche complète</a>` : ""}
+          ${pdf ? `<a class="cta muted" href="${pdf}">Fiche EcoBuilding (PDF) — pas le DPE</a>` : ""}
         </div>
+        ${pdf ? `<p class="notdpe">${window.ecoDpe.NOT_THE_DPE}</p>` : ""}
       </div>`;
     }
   </script>

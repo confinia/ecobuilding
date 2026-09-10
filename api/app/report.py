@@ -21,6 +21,13 @@ from weasyprint import HTML
 _LANGUE: ContextVar[str] = ContextVar("langue", default="fr")
 
 
+# Dit sur la couverture ET dans le pied de chaque page (#418) : la fiche
+# EcoBuilding ne doit jamais être prise pour le DPE, document réglementaire
+# établi par un diagnostiqueur certifié et archivé par l'ADEME.
+NOT_THE_DPE = ("Fiche d'information EcoBuilding — ce document n'est pas un diagnostic "
+               "de performance énergétique (DPE).")
+
+
 def T(fr: str) -> str:
     """The French template string itself, or its English translation when the
     report is being rendered in English. Unknown keys fall back to French."""
@@ -546,10 +553,15 @@ def _official_dpe_html(od: dict) -> str:
     note = T("Données du DPE officiel du logement représentatif du bâtiment (Observatoire\n"
              "DPE, ADEME). Dans un immeuble, les autres logements peuvent différer. Coûts estimés\n"
              "aux prix de l'énergie en vigueur à la date du diagnostic.")
+    # Le numéro est un LIEN vers le document officiel, chez l'ADEME (#418) :
+    # cette section reprend des données du DPE, elle n'est pas le DPE.
+    num = str(od["dpe_number"]).strip()
+    num_link = (f'<a href="https://observatoire-dpe-audit.ademe.fr/afficher-dpe/{quote(num)}">'
+                f'{num}</a>')
     return f"""
-<h2>{T("DPE officiel (logement représentatif)")}</h2>
+<h2>{T("Données du DPE officiel (ADEME)")}</h2>
 <table>
-  {_row(T("N° DPE (ADEME)"), od.get("dpe_number"))}
+  {_row(T("N° DPE (ADEME)"), num_link)}
   {_row(T("Établi le"), od.get("established_on"))}
   {_row(T("Valable jusqu'au"), vu, valid_suffix)}
   {_row(T("Surface habitable"), od.get("surface_habitable_m2"), " m²")}
@@ -716,6 +728,9 @@ def _cover_html(data: dict, aerial_img: str | None = None,
             badge = ('<span class="dpe cover-dpe" style="background:' + color + dark
                      + '">' + cls + '</span>')
         badge = '<div class="cover-badge">' + badge + '</div>'
+    # Un badge de 42 pt ressemble à une étiquette DPE : on dit ce qu'il est (#418).
+    badge_cap = (f'<div class="cover-badge-cap">{T("Classe énergie reprise des données publiques du DPE")}</div>'
+                 if badge else "")
     address = (data.get("query", {}).get("address")
                or b.get("address") or T("Adresse inconnue"))
     commune = (data.get("area_risks") or {}).get("commune")
@@ -747,6 +762,8 @@ def _cover_html(data: dict, aerial_img: str | None = None,
   .cover-brand .n {{ font-size: 15pt; font-weight: bold; color: #2b7a4b; }}
   .cover-brand .s {{ font-size: 10.5pt; color: #666; }}
   .cover-brand .d {{ font-size: 8.5pt; color: #999; margin-top: 2pt; }}
+  .cover-badge-cap {{ font-size: 8.5pt; color: #666; margin-top: 3pt; }}
+  .cover-notdpe {{ font-size: 10pt; color: #333; margin-top: 6pt; }}
 </style>
 <div class="cover">
   {hero}
@@ -754,9 +771,11 @@ def _cover_html(data: dict, aerial_img: str | None = None,
     {commune_html}
     <div class="cover-title">{address}</div>
     {badge}
+    {badge_cap}
     <div class="cover-brand">
-      <span class="n">EcoBuilding</span> <span class="s">· {T("fiche bâtiment")}</span>
+      <span class="n">EcoBuilding</span> <span class="s">· {T("fiche d'information bâtiment")}</span>
       <div class="d">{now}</div>
+      <div class="cover-notdpe">{T(NOT_THE_DPE)}</div>
     </div>
   </div>
 </div>
@@ -922,7 +941,12 @@ def _report_html(data: dict, photos: list | None = None, map_img: str | None = N
 
     html = f"""
 <style>
-  @page {{ size: A4; margin: 18mm 16mm; }}
+  @page {{ size: A4; margin: 18mm 16mm;
+           /* Pied de CHAQUE page (#418) : une page arrachée reste identifiable. */
+           @bottom-center {{ content: "{T(NOT_THE_DPE)}"; font-family: 'DejaVu Sans', sans-serif;
+                             font-size: 7.5pt; color: #777; }}
+           @bottom-right {{ content: counter(page); font-family: 'DejaVu Sans', sans-serif;
+                            font-size: 7.5pt; color: #777; }} }}
   body {{ font-family: 'DejaVu Sans', sans-serif; font-size: 10.5pt; color: #222;
          line-height: 1.45; }}
   header {{ border-bottom: 2px solid #2b7a4b; padding-bottom: 6px; margin-bottom: 14px; }}
@@ -1346,8 +1370,8 @@ _EN = {
         "Straight-line distances (national school directory). Proximity does not imply "
         "catchment: school assignment depends on the municipality.",
     # — Official DPE
-    "DPE officiel (logement représentatif)":
-        "Official DPE (energy performance certificate) — representative dwelling",
+    "Données du DPE officiel (ADEME)":
+        "Data from the official DPE (energy performance certificate, ADEME)",
     "N° DPE (ADEME)": "DPE no. (ADEME)",
     "Valable jusqu'au": "Valid until",
     " (validité légale: 10 ans)": " (legal validity: 10 years)",
@@ -1388,7 +1412,11 @@ _EN = {
     "Piézomètre le plus proche": "Nearest piezometer",
     "Distance du bâtiment": "Distance from the building",
     # — Cover page
-    "fiche bâtiment": "building record",
+    "fiche d'information bâtiment": "building information sheet",
+    "Classe énergie reprise des données publiques du DPE":
+        "Energy class taken from the public DPE data",
+    NOT_THE_DPE: "EcoBuilding information sheet — this document is not an energy "
+                 "performance certificate (DPE).",
     # — Main page
     "Adresse inconnue": "Address unknown",
     "⚠ Location interdite à partir de <strong>{y}</strong> (loi Climat &amp; Résilience)":
