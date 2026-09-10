@@ -1046,7 +1046,6 @@ function renderPanel(s, data, opts) {
     return;
   }
   const cls = b.energy?.dpe_class;
-  const ban = b.energy?.rental_ban;
   // Le badge dit l'ÉVENTAIL quand les logements diffèrent (#287).
   //
   // Une lettre unique est l'élément le plus visible de la fiche, et elle a
@@ -1056,14 +1055,18 @@ function renderPanel(s, data, opts) {
   // Le dégradé va de la couleur de la meilleure classe à celle de la pire.
   const spread = data.dpe_spread;
   const eventail = spread && !spread.identiques && spread.classe_min && spread.classe_max;
-  const dpeBadge = eventail
+  const badgeSeul = eventail
     ? `<span class="dpe-badge dpe-range" style="background:linear-gradient(100deg,
          var(--dpe-${spread.classe_min}) 0%, var(--dpe-${spread.classe_max}) 100%)"
        >${spread.classe_min}&nbsp;–&nbsp;${spread.classe_max}</span>`
     : `<span class="dpe-badge dpe-${cls || "unknown"}">${cls || "?"}</span>`;
-  const banHtml = !cls ? "" : ban?.rental_ban_date
-    ? `<div class="ban-warning">⚠ Location interdite à partir de <strong>${ban.rental_ban_date.slice(0, 4)}</strong> (loi Climat &amp; Résilience)</div>`
-    : `<div class="ban-warning ban-ok">✓ Aucune interdiction de location prévue pour cette classe</div>`;
+  // Validité et interdiction de location : formulation PARTAGÉE avec la page
+  // « DPE perdu » (dpe-validite.js, #414). Un DPE périmé ne s'affiche plus
+  // comme un verdict en vigueur : badge grisé, étiquette, phrase au passé.
+  const v = window.ecoDpe.validite({ cls, od: data.official_dpe, energy: b.energy });
+  const dpeBadge = `<span class="badgewrap${v.expired ? " expired" : ""}">${badgeSeul}</span>${v.expired ? `<span class="tag">DPE périmé</span>` : ""}`;
+  const validHtml = v.validHtml ? `<p class="dpe-validity ${v.expired ? "ko" : "ok"}">${v.validHtml}</p>` : "";
+  const banHtml = v.banHtml ? `<div class="ban-warning${v.banKind === "ko" ? "" : ` ban-${v.banKind}`}">${v.banHtml}</div>` : "";
 
   const risksHtml = sectionRisques(data);
 
@@ -1084,6 +1087,7 @@ function renderPanel(s, data, opts) {
     ${b.address && b.address !== searched ? kv(`Adresse principale (groupe BDNB${b.dwellings ? `, ${b.dwellings} logements` : ""})`, b.address) : ""}
     <h3>Énergie (DPE)</h3>
     <p>${dpeBadge} ${b.energy?.consumption_kwh_m2y ? `&nbsp;${Math.round(b.energy.consumption_kwh_m2y)} kWh/m²/an` : ""}</p>
+    ${validHtml}
     ${banHtml}
     ${sectionEventailDpe(data)}
     ${/* Ces lignes décrivent le logement représentatif. Quand les blocs par

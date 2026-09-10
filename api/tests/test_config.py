@@ -142,19 +142,45 @@ def test_dpe_perdu_entry_page():
     # Reuses the public endpoints, not a new backend or the NDJSON stream.
     assert "/suggest?" in dpe and "/lookup?ban_id=" in dpe
     assert "/lookup/stream" not in dpe and "/buildings/" not in dpe
-    # Reads the DPE from the same fields the fiche uses.
-    assert "official_dpe" in dpe and "dpe_class" in dpe and "valid_until" in dpe
+    # Reads the DPE from the same fields the fiche uses (validity wording is
+    # shared with the fiche since #414, see the test below).
+    assert "official_dpe" in dpe and "dpe_class" in dpe
     # Expiry recomputed client-side exactly like report.py (valid_until < today),
     # the validity date itself coming from the API (never the 2021 rule recoded).
-    assert "TODAY" in dpe and "expired" in dpe and "dpe_valid_until" in dpe
-    # An expired DPE is greyed + labelled, pre-2021 ones are named as such, and
-    # the rental ban stays visible but conditional on a fresh diagnostic.
-    assert "badgewrap.expired" in dpe and "DPE périmé" in dpe
-    assert "preReform" in dpe and "ancienne méthode" in dpe
+    assert "TODAY" in dpe and "expired" in dpe
     # A pre-2021 DPE has a date but no class in BDNB: never the empty state.
     assert "!enDate" in dpe and "Classe non reprise" in dpe
-    assert "interdite depuis le" in dpe and "interdite à partir du" in dpe
-    assert "s'il confirme la classe" in dpe
+    # Reachable from the map.
+    assert 'href="/dpe.html"' in (ROOT / "frontend/site/index.html").read_text()
+
+
+@needs_repo
+def test_dpe_validity_wording_is_shared_and_measured():
+    """#414: the fiche and dpe.html say the same thing about a lapsed DPE
+    (one shared file), the fiche actually shows validity, the DPE page is
+    measured and indexed."""
+    site = ROOT / "frontend/site"
+    shared = (site / "dpe-validite.js").read_text()
+    # One wording, from API-served dates: greyed badge, pre-2021 named,
+    # ban in the past tense once passed and conditional on a lapsed DPE.
+    assert "dpe_valid_until" in shared and "valid_until" in shared
+    assert "ancienne méthode" in shared and "2021-07-01" in shared
+    assert "interdite depuis le" in shared and "interdite à partir du" in shared
+    assert "s'il confirme la classe" in shared
+    for page in ("index.html", "dpe.html"):
+        assert 'src="dpe-validite.js"' in (site / page).read_text(), page
+    app = (site / "app.js").read_text()
+    assert "ecoDpe.validite(" in app and "DPE périmé" in app and "dpe-validity" in app
+    assert "à partir de <strong>" not in app         # the 2026 "à partir de 2025"
+    dpe = (site / "dpe.html").read_text()
+    assert "ecoDpe.validite(" in dpe and "DPE périmé" in dpe
+    assert "DPE de l'ancienne méthode" not in dpe   # card wording lives in ONE place
+    assert "badgewrap.expired .dpe-badge" in (site / "style.css").read_text()
+    # Measured (#347 beacon, known labels only) and indexed.
+    assert 'track("dpe_page_view")' in dpe and '"dpe_page_lookup"' in dpe
+    for meta in ('"lapsed"', '"found"', '"none"'):
+        assert meta in dpe, meta
+    assert "ecobuilding.confinia.io/dpe.html" in (site / "sitemap.xml").read_text()
     # The ADEME number is the key to the lost official document.
     assert "dpe_number" in dpe and "observatoire-dpe-audit.ademe.fr" in dpe
     # Honest empty state — many buildings have no DPE on record.

@@ -4291,9 +4291,13 @@ EVENEMENTS_CONNUS = frozenset((
     "signin_click", "signup_click", "signup_autostart", "signup_completed",
     "login_autostart", "session_expired_shown", "api_key_created",
     "gopro_click", "gopro_paid_embed", "tier_switch", "pro_interest",
+    # Page « DPE perdu » (#412) : sans ces deux-là, on ne saurait jamais si
+    # elle sert à quelqu'un (#414).
+    "dpe_page_view", "dpe_page_lookup",
 ))
-# Two values, so the label stays cheap: whose document was asked for.
-PORTEES_CONNUES = frozenset(("building", "dwelling"))
+# A few values, so the label stays cheap: whose document was asked for
+# (building/dwelling), or what the DPE page found (found/lapsed/none).
+PORTEES_CONNUES = frozenset(("building", "dwelling", "found", "lapsed", "none"))
 
 
 class FrontendEvent(BaseModel):
