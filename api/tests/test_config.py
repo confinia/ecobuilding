@@ -403,6 +403,19 @@ def test_maplibre_vendored_and_versions_match():
 
 
 @needs_repo
+def test_site_points_to_the_iphone_app():
+    """#422: the app is on the App Store; Safari iOS gets the Smart App Banner
+    on the two entry pages and every page links the listing."""
+    APP_ID = "id6803865290"
+    for page in ("index.html", "dpe.html"):
+        html = (ROOT / "frontend/site" / page).read_text()
+        assert '<meta name="apple-itunes-app" content="app-id=6803865290">' in html, page
+    for page in ("index.html", "dpe.html", "apropos.html"):
+        html = (ROOT / "frontend/site" / page).read_text()
+        assert f"https://apps.apple.com/fr/app/ecobuilding/{APP_ID}" in html, page
+
+
+@needs_repo
 def test_map_constructor_guarded_since_maplibre_6_7():
     """#420: MapLibre >= 6.7 THROWS GPUInitializationError from the Map
     constructor without WebGL2. The web app must survive it (search and fiche
@@ -424,6 +437,7 @@ def test_map_constructor_guarded_since_maplibre_6_7():
     render = (ROOT / "render_stack/render.html").read_text()
     assert "map = new maplibregl.Map({" in render
     assert "window.__error = String(e);" in render
+
 
 @needs_repo
 def test_auth_buttons_never_depend_on_a_cdn():
