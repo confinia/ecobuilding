@@ -10,8 +10,8 @@
 #  - own secrets (./secrets.env, gitignored), own volumes;
 #  - single bridged caddy published on 127.0.0.1:13400; the platform edge routes
 #    sandbox.ecobuilding.confinia.io + sandbox.api.ecobuilding.confinia.io here.
-# Shared (read-only, no duplication): the BDNB backend — sandbox-api defaults to
-# public api.bdnb.io and can be repointed to the local PostgREST (#28) via env.
+# Shared (read-only, no duplication): the BDNB backend — sandbox-api reads the
+# local BDNB mirror via the bdnb-open PostgREST (#28), same as prod.
 services:
   sandbox-kc-db:
     image: docker.io/library/postgres:16
@@ -69,6 +69,11 @@ services:
       OIDC_REALM: sandbox-ecobuilding
       # Shared services via ecobuilding-internal DNS aliases (#173).
       DVF_RPC_URL: http://bdnb-rest:3005/rpc/prices_for_building
+      # Per-building data from the local BDNB mirror (#28), like prod.
+      BDNB_URL: http://bdnb-open:3006/batiment_groupe_complet_adresse
+      BDNB_BASE_URL: http://bdnb-open:3006/batiment_groupe_complet
+      BDNB_REL_ADR_URL: http://bdnb-open:3006/rel_batiment_groupe_adresse
+      BDNB_REP_DPE_URL: http://bdnb-open:3006/batiment_groupe_dpe_representatif_logement
       # Journal des vues, lu par la carte Grafana (#349).
       VUES_URL: http://bdnb-rest:3005/vue_batiment
       # DPE-3D map render for the PDF (#88) via the shared render service (alias).

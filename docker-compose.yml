@@ -51,6 +51,14 @@ services:
       MOBILE_BETA_IDS: "${MOBILE_BETA_IDS:-}"
       RENDER_URL: http://render:8040/shot
       DVF_RPC_URL: http://bdnb-rest:3005/rpc/prices_for_building
+      # Per-building data from the LOCAL BDNB mirror (#28) — api.bdnb.io was
+      # globally down 2026-09-10/11 and every lookup 500'd while bdnb-db held
+      # the same data. Views built by deploy/bdnb-local-api.sh, served by the
+      # bdnb-open PostgREST (bdnb_stack). Tiles stay on api.bdnb.io.
+      BDNB_URL: http://bdnb-open:3006/batiment_groupe_complet_adresse
+      BDNB_BASE_URL: http://bdnb-open:3006/batiment_groupe_complet
+      BDNB_REL_ADR_URL: http://bdnb-open:3006/rel_batiment_groupe_adresse
+      BDNB_REP_DPE_URL: http://bdnb-open:3006/batiment_groupe_dpe_representatif_logement
       # Journal des vues, lu par la carte Grafana (#349).
       VUES_URL: http://bdnb-rest:3005/vue_batiment
       # Reach Keycloak internally over the shared network (see auth_stack).
