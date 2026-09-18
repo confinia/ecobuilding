@@ -867,8 +867,10 @@ async def _rnb_lookup(lon, lat):
             if best_d2 is None or d2 < best_d2:
                 best, best_d2 = r, d2
         if best:
+            # /batiments/<id> disparu du site RNB (404 constaté 2026-09-13,
+            # #430) ; la carte avec l'identifiant en recherche reste stable.
             return {"rnb_id": best["rnb_id"],
-                    "url": f"https://rnb.beta.gouv.fr/batiments/{best['rnb_id']}"}
+                    "url": f"https://rnb.beta.gouv.fr/carte?q={best['rnb_id']}"}
     except Exception as e:
         log.warning("RNB lookup failed (%s,%s): %s", lon, lat, e)
     return None
