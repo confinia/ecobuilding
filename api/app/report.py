@@ -695,7 +695,9 @@ def _urbanisme_html(data: dict, ppri_img: str | None = None) -> str:
 
 
 def _cover_html(data: dict, aerial_img: str | None = None,
-                map_img: str | None = None) -> str:
+                map_img: str | None = None,
+                aerial_parcels: str | None = None,
+                aerial_outline: str | None = None) -> str:
     """Cover page (#PDF restyle): a full-width hero image, the building address
     as a large title, a big DPE badge and an EcoBuilding brand line.
 
@@ -736,8 +738,26 @@ def _cover_html(data: dict, aerial_img: str | None = None,
     commune = (data.get("area_risks") or {}).get("commune")
     commune_html = f'<div class="cover-commune">{commune}</div>' if commune else ""
     now = datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M UTC")
+    hero_cap = ""
     if aerial_img:
-        hero = f'<div class="cover-hero"><img src="{aerial_img}"/></div>'
+        # La couverture porte le cadastre (#440) : une seule carte, tout en
+        # haut, au lieu d'une photo nue ici et de la même photo annotée en
+        # page contexte. Ratio NATUREL 16/9 (960×540 côté serveur) : recadrer
+        # via object-fit décalerait le calque cadastral et le tracé cyan,
+        # dont les coordonnées couvrent l'image entière.
+        hero = ('<div class="cover-hero cover-hero-aerial">'
+                f'<img src="{aerial_img}"/>'
+                + (f'<img class="parcels" src="{aerial_parcels}"/>' if aerial_parcels else '')
+                + _target_overlay(aerial_outline) + '</div>')
+        # L'attribution est une obligation de la Licence Ouverte : elle reste
+        # collée à l'image, donc sur la couverture désormais.
+        hero_cap = ('<div class="cover-hero-cap">'
+                    + (T("Photo aérienne IGN (BD ORTHO) et limites de parcelles (Parcellaire Express)")
+                       if aerial_parcels else T("Photo aérienne IGN (BD ORTHO)"))
+                    + T(" — Licence Ouverte. ")
+                    + (T("Le bâtiment concerné est entouré en cyan. ") if aerial_outline
+                       else T("Le bâtiment concerné est au centre du repère. "))
+                    + '</div>')
     elif map_img:
         hero = f'<div class="cover-hero"><img src="{map_img}"/></div>'
     else:
@@ -748,6 +768,14 @@ def _cover_html(data: dict, aerial_img: str | None = None,
   .cover-hero {{ width: 100%; height: 90mm; border-radius: 8pt; overflow: hidden;
                  line-height: 0; background: #2b7a4b; }}
   .cover-hero img {{ width: 100%; height: 90mm; object-fit: cover; }}
+  /* Composite annoté (#440) : ratio naturel, calques alignés sur l'image. */
+  .cover-hero-aerial {{ position: relative; height: auto; }}
+  .cover-hero-aerial img {{ height: auto; object-fit: unset; }}
+  .cover-hero-aerial .parcels {{ position: absolute; top: 0; left: 0; width: 100%;
+                                 height: 100%; opacity: 0.85; }}
+  .cover-hero-aerial svg {{ position: absolute; top: 0; left: 0; width: 100%;
+                            height: 100%; }}
+  .cover-hero-cap {{ font-size: 7.5pt; color: #888; margin-top: 3pt; }}
   .cover-hero-fallback {{ background: linear-gradient(135deg, #2b7a4b 0%, #1f5c38 100%); }}
   .cover-body {{ padding: 16mm 2mm 0; }}
   .cover-commune {{ font-size: 12pt; color: #2b7a4b; font-weight: bold;
@@ -767,6 +795,7 @@ def _cover_html(data: dict, aerial_img: str | None = None,
 </style>
 <div class="cover">
   {hero}
+  {hero_cap}
   <div class="cover-body">
     {commune_html}
     <div class="cover-title">{address}</div>
@@ -992,7 +1021,7 @@ def _report_html(data: dict, photos: list | None = None, map_img: str | None = N
   .scale .bar.active {{ outline: 1.5pt solid #333; font-size: 10pt; }}
   .scale .bar .val {{ float: right; font-weight: bold; }}
 </style>
-{_cover_html(data, aerial_img, map_img)}
+{_cover_html(data, aerial_img, map_img, aerial_parcels, aerial_outline)}
 <header>
   <div class="brand">EcoBuilding</div>
   <!-- « normalisée » promettait une norme qui n'existe pas : ce document est
@@ -1058,7 +1087,7 @@ def _report_html(data: dict, photos: list | None = None, map_img: str | None = N
 <footer>
   {footer_txt}
 </footer>
-{_context_page(data, photos, map_img, aerial_img, aerial_parcels, aerial_outline)}
+{_context_page(data, photos, map_img)}
 {_traceability_annex(data, photos)}
 """
     return html
@@ -1087,12 +1116,13 @@ def _target_overlay(outline: str | None) -> str:
     return (f'<svg viewBox="0 0 100 100" preserveAspectRatio="none">{shape}</svg>')
 
 
-def _context_page(data: dict, photos: list | None, map_img: str | None = None,
-                  aerial_img: str | None = None, aerial_parcels: str | None = None,
-                  aerial_outline: str | None = None) -> str:
+def _context_page(data: dict, photos: list | None,
+                  map_img: str | None = None) -> str:
     """Second PDF page: third-party context — a rendered DPE-3D map of the
     building (#88) + Panoramax imagery. Falls back to an OSM link when the map
-    render is unavailable."""
+    render is unavailable. The annotated aerial moved to the COVER (#440):
+    one map carries photo, cadastre and the cyan outline, first thing in the
+    document, instead of a bare cover photo duplicated here."""
     q = data.get("query", {})
     lon, lat = q.get("lon"), q.get("lat")
     address = q.get("address") or T("ce bâtiment")
@@ -1120,19 +1150,6 @@ def _context_page(data: dict, photos: list | None, map_img: str | None = None,
         return ""
     osm = (f'<a href="https://www.openstreetmap.org/#map=19/{lat}/{lon}">'
            f'openstreetmap.org (19/{lat}/{lon})</a>' if lon is not None else "—")
-    aerial_html = ""
-    if aerial_img:
-        cap = ((T("Photo aérienne IGN (BD ORTHO) et limites de parcelles (Parcellaire Express)")
-                if aerial_parcels else T("Photo aérienne IGN (BD ORTHO)"))
-               + T(" — Licence Ouverte. ")
-               + (T("Le bâtiment concerné est entouré en cyan. ") if aerial_outline
-                  else T("Le bâtiment concerné est au centre du repère. "))
-               + T("Le terrain, les arbres, les annexes et les accès, que nulle donnée "
-                   "structurée ne décrit."))
-        aerial_html = (f'<h2>{T("Vue aérienne")}</h2><div class="aerial"><img class="map3d" src="{aerial_img}"/>'
-                       + (f'<img class="parcels" src="{aerial_parcels}"/>' if aerial_parcels else '')
-                       + _target_overlay(aerial_outline) + '</div>'
-                       + f'<div class="cap">{cap}</div>')
     if map_img:
         map_html = (f'<img class="map3d" src="{map_img}"/>'
                     '<div class="cap">'
@@ -1154,7 +1171,6 @@ def _context_page(data: dict, photos: list | None, map_img: str | None = None,
   <div class="doctitle">{T("Contexte — sources tierces")}</div>
 </header>
 <h1>{address}</h1>
-{aerial_html}
 {(f'<section class="bloc"><h2>{T("Photos du lieu")}</h2>'
    f'<div class="pics">{pics}</div></section>') if pics else ''}
 <h2>{T("Localisation — carte 3D (DPE)") if map_img else "OpenStreetMap"}</h2>
@@ -1164,16 +1180,6 @@ def _context_page(data: dict, photos: list | None, map_img: str | None = None,
 </footer>
 <style>
   .map3d {{ width: 100%; border-radius: 4pt; margin-bottom: 3pt; }}
-  /* Le contour est POSÉ sur la photo : sans lui, cinq pavillons d'un
-     lotissement se ressemblent et le lecteur ne sait pas lequel est le sien. */
-  .aerial {{ position: relative; line-height: 0; }}
-  .aerial svg {{ position: absolute; top: 0; left: 0; width: 100%; height: 100%; }}
-  /* Les limites de parcelles, posées sur la photo : « où s'arrête le terrain »
-     est une des premières questions d'un acheteur. Sur le document, le numéro
-     de parcelle a du sens — c'est la référence cadastrale, celle qu'un notaire
-     emploie. À l'écran il ne servait à rien et masquait le reste. */
-  .aerial .parcels {{ position: absolute; top: 0; left: 0; width: 100%;
-                      height: 100%; border-radius: 4pt; opacity: 0.85; }}
   .map3d + .cap {{ font-size: 7.5pt; color: #888; margin-bottom: 4pt; }}
   .pics {{ display: flex; gap: 8pt; flex-wrap: wrap; }}
   /* Titre et photos SOLIDAIRES. `.pics` est un conteneur flex, que WeasyPrint

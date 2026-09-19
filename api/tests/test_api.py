@@ -688,6 +688,21 @@ MAP_URI = ("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1Pe"
            "AAAADElEQVR4nGP4z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==")
 
 
+def test_cover_carries_the_annotated_aerial_once():
+    """#440: ONE map with photo + cadastre + cyan outline, on the cover; the
+    old standalone « Vue aérienne » page is gone, nothing is shown twice."""
+    from app.report import _report_html
+    aerial = "data:image/jpeg;base64,AAAA"
+    parcels = "data:image/png;base64,BBBB"
+    html = _report_html(BUILDING_FIXTURE, aerial_img=aerial,
+                        aerial_parcels=parcels, aerial_outline="1,2 3,4 5,6")
+    assert "cover-hero-aerial" in html
+    assert html.count(aerial) == 1 and html.count(parcels) == 1
+    assert 'polygon points="1,2 3,4 5,6"' in html
+    assert "Vue aérienne" not in html
+    assert "Parcellaire Express" in html    # attribution moved with the image
+
+
 def test_context_page_embeds_map_when_provided():
     from app.report import _context_page
     h = _context_page(BUILDING_FIXTURE, [], map_img=MAP_URI)
