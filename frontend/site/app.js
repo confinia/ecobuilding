@@ -825,7 +825,15 @@ async function consumeBuildingStream(response, searched) {
       let ev;
       try { ev = JSON.parse(line); } catch { continue; }
       if (ev.type === "error") throw new Error(ev.status || "stream");
-      if (ev.type === "core") { Object.assign(data, ev); }
+      if (ev.type === "core") {
+        Object.assign(data, ev);
+        // Sélection au CLIC (ou lien ?b=) : la barre de recherche affichait
+        // encore l'adresse cherchée avant, pas celle du bâtiment ouvert
+        // (#431). On y met l'adresse arbitrée côté serveur (#152) — jamais
+        // pendant une saisie en cours, la barre appartient alors à l'usager.
+        const adr = ev.query && ev.query.address;
+        if (!searched && adr && document.activeElement !== input) input.value = adr;
+      }
       else if (ev.type === "block") {
         data[ev.name] = ev.value;
         data.pending = data.pending.filter((n) => n !== ev.name);
