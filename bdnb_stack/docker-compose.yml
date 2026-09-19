@@ -30,6 +30,13 @@ services:
       - "127.0.0.1:13030:5432"
     mem_limit: 2g
     cpus: 2.0
+    # Rule 25 (#437): health readable by podman, hence by the podman exporter
+    # the shared prometheus already scrapes.
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "bdnb"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     restart: unless-stopped
 
   # PostgREST mirrors the BDNB REST interface. db-schema is set after restore
@@ -50,8 +57,13 @@ services:
       PGRST_DB_SCHEMAS: dvf,vues
       PGRST_DB_POOL: "20"
       PGRST_SERVER_PORT: "3005"
+      # Admin server (#437): /live, /ready and Prometheus /metrics. The image
+      # is distroless (no shell), so health goes through this port and the
+      # monitoring stack, not through a compose healthcheck.
+      PGRST_ADMIN_SERVER_PORT: "3015"
     ports:
       - "127.0.0.1:13020:3005"   # 1PESI (#173); consumers use alias bdnb-rest
+      - "127.0.0.1:13022:3015"   # admin: scraped by the shared prometheus
     depends_on:
       - bdnb-db
     networks:
@@ -78,16 +90,40 @@ services:
       PGRST_DB_SCHEMAS: bdnb
       PGRST_DB_POOL: "10"
       PGRST_SERVER_PORT: "3006"
+      # Admin server (#437): /live, /ready, /metrics — see bdnb-rest.
+      PGRST_ADMIN_SERVER_PORT: "3016"
     ports:
       # 1PESI (#173): second instance of the PostgREST service (13020 being
       # bdnb-rest). NOT 13040: the monitoring edge already listens there.
       - "127.0.0.1:13021:3006"   # consumers use alias bdnb-open
+      - "127.0.0.1:13023:3016"   # admin: scraped by the shared prometheus
+    mem_limit: 256m
+    cpus: 0.5
     depends_on:
       - bdnb-db
     networks:
       default:
       internal:
         aliases: [bdnb-open]
+    restart: unless-stopped
+
+  # Postgres metrics for bdnb-db (#437, rule 25): size, connections, activity.
+  # Lives IN this stack (rule 24) and publishes on loopback for the shared
+  # prometheus, like every 13xxx service. DATA_SOURCE_PASS is appended to
+  # deploy/secrets.env by deploy/bdnb-local-api.sh (never committed).
+  bdnb-exporter:
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.16.0
+    env_file:
+      - ../deploy/secrets.env    # DATA_SOURCE_PASS (= BDNB_DB_PASSWORD)
+    environment:
+      DATA_SOURCE_URI: bdnb-db:5432/bdnb?sslmode=disable
+      DATA_SOURCE_USER: bdnb
+    ports:
+      - "127.0.0.1:13031:9187"
+    mem_limit: 128m
+    cpus: 0.25
+    depends_on:
+      - bdnb-db
     restart: unless-stopped
 
 networks:

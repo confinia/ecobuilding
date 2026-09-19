@@ -27,3 +27,18 @@ scrape_configs:
   - job_name: prometheus
     static_configs:
       - targets: ["127.0.0.1:13050"]
+
+  # BDNB local mirror (#437, rule 25): the database through postgres-exporter,
+  # the two PostgREST instances through their admin servers (/metrics, and
+  # `up` doubles as their liveness on the dashboard).
+  - job_name: bdnb-db
+    static_configs:
+      - targets: ["127.0.0.1:13031"]
+  - job_name: bdnb-rest
+    static_configs:
+      - targets: ["127.0.0.1:13022"]
+        labels: { schemas: dvf-vues }
+  - job_name: bdnb-open
+    static_configs:
+      - targets: ["127.0.0.1:13023"]
+        labels: { schemas: bdnb }
