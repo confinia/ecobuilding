@@ -120,14 +120,34 @@ for T in batiment_groupe batiment_groupe_adresse batiment_groupe_risques \
   podman exec ecobuilding-bdnb_bdnb-db_1 psql -U bdnb -d bdnb -qc "ANALYZE ${S}.${T}"
 done
 
-echo "== 4. start bdnb-open (PostgREST on schema bdnb)"
+echo "== 4. secrets: postgres-exporter credentials (#437)"
+grep -q '^DATA_SOURCE_PASS=' deploy/secrets.env || {
+  P=$(grep '^BDNB_DB_PASSWORD=' deploy/secrets.env | head -1 | cut -d= -f2-)
+  [ -n "$P" ] && echo "DATA_SOURCE_PASS=$P" >> deploy/secrets.env \
+    || echo "   WARN: BDNB_DB_PASSWORD absent — bdnb-exporter will not authenticate"
+}
+
+echo "== 5. start bdnb-open, bdnb-rest (admin port) and bdnb-exporter"
 # --no-deps: never let a config drift recreate the 219 GB bdnb-db under us.
-( cd bdnb_stack && podman-compose -p ecobuilding-bdnb -f docker-compose.yml up -d --no-deps bdnb-open )
+( cd bdnb_stack && podman-compose -p ecobuilding-bdnb -f docker-compose.yml \
+    up -d --no-deps bdnb-open bdnb-rest bdnb-exporter )
 sleep 5
 # Schema was possibly (re)built while the container ran: reload its cache.
 podman kill --signal SIGUSR1 ecobuilding-bdnb_bdnb-open_1 2>/dev/null || true
 
-echo "== 5. smoke: one real address end to end"
+echo "== 6. prometheus: pick up the bdnb scrape jobs (config is volume-mounted)"
+podman kill --signal HUP ecobuilding-monitoring_prometheus_1 2>/dev/null \
+  || echo "   (prometheus not running — jobs will load with the monitoring stack)"
+
+echo "== 7. monitoring smoke"
+for T in 13022 13023; do
+  printf "   admin :%s /ready -> " "$T"
+  curl -sS -m 5 -o /dev/null -w "%{http_code}\n" "http://127.0.0.1:${T}/ready" || true
+done
+printf "   exporter :13031 pg_up -> "
+curl -sS -m 5 "http://127.0.0.1:13031/metrics" | grep -m1 '^pg_up' || echo "no pg_up metric"
+
+echo "== 8. smoke: one real address end to end"
 BAN=$(podman exec ecobuilding-bdnb_bdnb-db_1 psql -U bdnb -d bdnb -tAc \
   "select cle_interop_adr from ${S}.rel_batiment_groupe_adresse limit 1")
 echo "   cle_interop_adr: $BAN"

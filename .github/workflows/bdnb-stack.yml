@@ -1,0 +1,38 @@
+# Rule 24 (#437): the bdnb stack is applied through CI, never by hand.
+# Rebuilds the api.bdnb.io-compatible views, (re)starts bdnb-open / bdnb-rest /
+# bdnb-exporter with the compose config from main, and reloads the prometheus
+# scrape jobs. Read-mostly and idempotent: bdnb-db itself is never recreated
+# (deploy/bdnb-local-api.sh ups with --no-deps).
+name: bdnb-stack
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: vm-deploy            # one VM, one deploy at a time
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  apply:
+    runs-on: [self-hosted, vm, ecobuilding]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sync main tree to ~/projects/ecobuilding
+        run: |
+          rsync -az --delete \
+            --exclude .git --exclude __pycache__ --exclude .venv --exclude node_modules \
+            --exclude deploy/secrets.env --exclude deploy/.active \
+            --exclude caddy_server/Caddyfile --exclude data/ \
+            --exclude sandbox_stack/secrets.env --exclude sandbox_stack/data/ \
+            ./ ~/projects/ecobuilding/
+
+      # ssh localhost: see #144 — helpers must run in a logind session.
+      - name: Apply the bdnb stack (views, services, monitoring)
+        run: ssh -o BatchMode=yes localhost 'cd ~/projects/ecobuilding && ./deploy/bdnb-local-api.sh'
+
+      - name: Notify failure by e-mail
+        if: failure()
+        run: ssh -o BatchMode=yes localhost 'cd ~/projects/ecobuilding && ./deploy/ci-notify.sh "bdnb-stack" "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" "${{ github.ref_name }}"'

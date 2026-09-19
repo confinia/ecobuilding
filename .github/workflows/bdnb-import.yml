@@ -1,0 +1,50 @@
+# Rule 24 (#437): the BDNB full-France restore, drivable from CI instead of a
+# hand-run ssh session. DESTRUCTIVE AND HEAVY (~40 GB download already on the
+# VM, ~200 GB restored, hours of IO on the shared disk): the dispatch demands
+# the literal confirmation "restore" and should be run OFF-HOURS ONLY
+# (deploy/bdnb-import.sh expects ~/bdnb/bdnb_pgdump.tar.gz to be present).
+name: bdnb-import
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "restore" to confirm the ~200 GB off-hours restore'
+        required: true
+
+concurrency:
+  group: vm-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  restore:
+    runs-on: [self-hosted, vm, ecobuilding]
+    timeout-minutes: 360
+    steps:
+      - name: Refuse without the exact confirmation
+        if: ${{ inputs.confirm != 'restore' }}
+        run: |
+          echo 'confirmation is not "restore" — aborting'; exit 1
+
+      - uses: actions/checkout@v4
+
+      - name: Sync main tree to ~/projects/ecobuilding
+        run: |
+          rsync -az --delete \
+            --exclude .git --exclude __pycache__ --exclude .venv --exclude node_modules \
+            --exclude deploy/secrets.env --exclude deploy/.active \
+            --exclude caddy_server/Caddyfile --exclude data/ \
+            --exclude sandbox_stack/secrets.env --exclude sandbox_stack/data/ \
+            ./ ~/projects/ecobuilding/
+
+      - name: Restore the BDNB dump into bdnb-db
+        run: ssh -o BatchMode=yes localhost 'cd ~/projects/ecobuilding && ./deploy/bdnb-import.sh'
+
+      - name: Rebuild the serving views on the fresh millésime
+        run: ssh -o BatchMode=yes localhost 'cd ~/projects/ecobuilding && ./deploy/bdnb-local-api.sh'
+
+      - name: Notify failure by e-mail
+        if: failure()
+        run: ssh -o BatchMode=yes localhost 'cd ~/projects/ecobuilding && ./deploy/ci-notify.sh "bdnb-import" "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" "${{ github.ref_name }}"'
