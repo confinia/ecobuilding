@@ -214,16 +214,17 @@ def test_commons_failure_never_breaks_the_photos(monkeypatch):
 def test_aerial_view_reaches_the_pdf(monkeypatch):
     """#200 : le rendu 3D dit la classe énergétique, la photo aérienne dit ce
     qu'on achète — terrain, arbres, annexes, accès. Elle doit atteindre la
-    fiche, et son absence ne doit jamais empêcher de la produire."""
+    fiche — en COUVERTURE depuis #440 — et son absence ne doit jamais
+    empêcher de la produire."""
     from app.report import _report_html
     data = {"query": {"address": "1 rue de Test", "lon": 1.44, "lat": 43.61},
             "buildings": [{"bdnb_id": "b", "energy": {}}], "sources": []}
     html = _report_html(data, photos=[], map_img=None,
                         aerial_img="data:image/jpeg;base64,AAAA")
-    assert "Vue aérienne" in html and "data:image/jpeg;base64,AAAA" in html
+    assert "cover-hero-aerial" in html and "data:image/jpeg;base64,AAAA" in html
     assert "IGN" in html and "Licence Ouverte" in html      # attribution due
     # Sans photo aérienne, la fiche se produit quand même.
-    assert "Vue aérienne" not in _report_html(data, photos=[], map_img=None)
+    assert "cover-hero-aerial" not in _report_html(data, photos=[], map_img=None)
 
 
 # --- Adresse sans bâtiment : dire pourquoi, et servir ce qu'on a --------------
