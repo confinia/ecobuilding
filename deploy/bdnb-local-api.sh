@@ -121,11 +121,19 @@ for T in batiment_groupe batiment_groupe_adresse batiment_groupe_risques \
 done
 
 echo "== 4. secrets: postgres-exporter credentials (#437)"
-grep -q '^DATA_SOURCE_PASS=' deploy/secrets.env || {
-  P=$(grep '^BDNB_DB_PASSWORD=' deploy/secrets.env | head -1 | cut -d= -f2-)
-  [ -n "$P" ] && echo "DATA_SOURCE_PASS=$P" >> deploy/secrets.env \
-    || echo "   WARN: BDNB_DB_PASSWORD absent — bdnb-exporter will not authenticate"
-}
+# The LIVE password is the one embedded in PGRST_DB_URI (what PostgREST uses
+# every day) — NOT BDNB_DB_PASSWORD: bdnb-import.sh regenerates that pair on
+# re-runs, but an already-initialized pgdata volume keeps its original
+# password, so the two drift apart (seen 2026-09-19: pg_up 0, auth failed).
+# Idempotent rewrite so a drift is corrected on every run.
+P=$(grep '^PGRST_DB_URI=' deploy/secrets.env | head -1 | sed -E 's|.*://[^:]+:([^@]+)@.*|\1|')
+if [ -n "$P" ]; then
+  grep -q '^DATA_SOURCE_PASS=' deploy/secrets.env \
+    && sed -i "s|^DATA_SOURCE_PASS=.*|DATA_SOURCE_PASS=${P}|" deploy/secrets.env \
+    || echo "DATA_SOURCE_PASS=${P}" >> deploy/secrets.env
+else
+  echo "   WARN: PGRST_DB_URI absent — bdnb-exporter will not authenticate"
+fi
 
 echo "== 5. start bdnb-open, bdnb-rest (admin port) and bdnb-exporter"
 # --no-deps: never let a config drift recreate the 219 GB bdnb-db under us.
