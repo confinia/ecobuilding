@@ -1578,10 +1578,43 @@ SCHOOLS_URL = ("https://data.education.gouv.fr/api/explore/v2.1/catalog/datasets
                "fr-en-annuaire-education/records")
 
 
+def _tax_level(rank_pct):
+    """Three plain words for a France-wide rank (#439): the bottom quarter of
+    communes is 'low', the top quarter 'high', the half between 'average'."""
+    if rank_pct is None:
+        return None
+    return "low" if rank_pct < 25 else "high" if rank_pct > 75 else "average"
+
+
+async def _tax_rank(field, rate, year):
+    """Share (0-100) of the communes of the exercice whose rate is BELOW
+    `rate` (#439). A taux voté means nothing to a reader on its own — it
+    applies to half a valeur locative cadastrale nobody knows — but 'higher
+    than in 99 % of communes' does. Two counts on the DGFiP dataset, cached
+    a week like the rates. TEOM: only communes that levy one count (a third
+    finance waste through a REOM or the general budget, rate absent)."""
+    if not rate or not year:
+        return None
+    base = f'exercice="{year}" and {field}>0'
+    total, below = await asyncio.gather(
+        _cached_get_json(FISCALITE_URL, {"select": "count(*) as n", "where": base},
+                         ttl=7 * 86400),
+        _cached_get_json(FISCALITE_URL, {"select": "count(*) as n",
+                                         "where": f"{base} and {field}<{rate}"},
+                         ttl=7 * 86400))
+    n = (total.get("results") or [{}])[0].get("n") or 0
+    b = (below.get("results") or [{}])[0].get("n") or 0
+    return round(100 * b / n) if n else None
+
+
 async def _local_taxes(commune_insee):
     """Local recurring taxes (#193): DGFiP fiscalité directe locale — the
     buyer's other cost sheet next to the DPE €/an. Latest exercice; global
-    rates (commune + interco + syndicats). None on any miss."""
+    rates (commune + interco + syndicats). None on any miss.
+
+    Headline is the France-wide rank of each rate (#439); the raw taux votés
+    stay as provenance. No €/an: the dataset publishes rates only (no base,
+    no produit, no article count), so a typical bill cannot be derived."""
     if not commune_insee:
         return None
     try:
@@ -1591,12 +1624,21 @@ async def _local_taxes(commune_insee):
         r = (d.get("results") or [{}])[0]
         if not r.get("taux_global_tfb"):
             return None
+        year = r.get("exercice")
+        tfb_rank, teom_rank = await asyncio.gather(
+            _tax_rank("taux_global_tfb", r.get("taux_global_tfb"), year),
+            _tax_rank("taux_plein_teom", r.get("taux_plein_teom"), year))
         return {
-            "year": r.get("exercice"),
+            "year": year,
             "property_tax_built_pct": r.get("taux_global_tfb"),
             "property_tax_unbuilt_pct": r.get("taux_global_tfnb"),
             "waste_tax_pct": r.get("taux_plein_teom"),
             "intercommunalite": r.get("q03"),
+            # Rank among French communes (share with a LOWER rate) + the word.
+            "property_tax_rank_pct": tfb_rank,
+            "property_tax_level": _tax_level(tfb_rank),
+            "waste_tax_rank_pct": teom_rank,
+            "waste_tax_level": _tax_level(teom_rank),
         }
     except Exception as e:
         log.warning("local taxes failed for %s: %s", commune_insee, e)

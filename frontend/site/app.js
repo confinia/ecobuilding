@@ -896,10 +896,22 @@ function sectionNappe(data) {
 
 // Section qui ne dépend QUE de la position — donc affichable même
 // sans bâtiment BDNB.
+// Le taux voté seul ne parle à personne (#439) : il s'applique à la moitié
+// d'une valeur locative cadastrale que nul ne connaît. La position parmi les
+// communes de France, si ; le taux reste en dessous, comme provenance.
+function taxHeadline(level, rank) {
+  if (level == null || rank == null) return null;
+  const word = { low: "Modérée", average: "Dans la moyenne", high: "Élevée" }[level];
+  return word ? `${word} — plus haute que dans ${rank} % des communes` : null;
+}
 function sectionFiscalite(data) {
-  return data.local_taxes ? `<h3>Fiscalité locale${data.local_taxes.year ? ` (${data.local_taxes.year})` : ""}</h3>
-    ${kv("Taxe foncière (bâti), taux global", data.local_taxes.property_tax_built_pct != null ? data.local_taxes.property_tax_built_pct + " %" : null)}
-    ${kv("Ordures ménagères (TEOM)", data.local_taxes.waste_tax_pct != null ? data.local_taxes.waste_tax_pct + " %" : null)}` : "";
+  const t = data.local_taxes;
+  return t ? `<h3>Fiscalité locale${t.year ? ` (${t.year})` : ""}</h3>
+    ${kv("Taxe foncière", taxHeadline(t.property_tax_level, t.property_tax_rank_pct))}
+    ${kv("Ordures ménagères (TEOM)", taxHeadline(t.waste_tax_level, t.waste_tax_rank_pct))}
+    ${kv("Taxe foncière (bâti), taux global voté", t.property_tax_built_pct != null ? t.property_tax_built_pct + " %" : null)}
+    ${kv("TEOM, taux voté", t.waste_tax_pct != null ? t.waste_tax_pct + " %" : null)}
+    <p class="hint">Comparaison entre toutes les communes de France (DGFiP). Le montant dû dépend de la valeur locative cadastrale du bien.</p>` : "";
 }
 
 

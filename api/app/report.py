@@ -464,17 +464,36 @@ def _local_taxes_html(t: dict) -> str:
     if not t:
         return ""
     yr = f" ({t['year']})" if t.get("year") else ""
-    note = T("Taux globaux (commune + intercommunalité + syndicats), dernier exercice\n"
-             "publié (DGFiP). La taxe due dépend de la valeur locative cadastrale du bien.")
+    # Le taux voté seul ne dit rien à un lecteur (#439) : il s'applique à la
+    # moitié d'une valeur locative cadastrale que personne ne connaît. La
+    # position parmi les communes de France, si.
+    tfb = _row(T("Taxe foncière"), _tax_headline(t.get("property_tax_level"),
+                                                 t.get("property_tax_rank_pct")))
+    teom = _row(T("Ordures ménagères (TEOM)"), _tax_headline(t.get("waste_tax_level"),
+                                                              t.get("waste_tax_rank_pct")))
+    note = T("Comparaison des taux globaux (commune + intercommunalité + syndicats)\n"
+             "entre toutes les communes de France, dernier exercice publié (DGFiP).\n"
+             "Le montant dû dépend de la valeur locative cadastrale du bien : les\n"
+             "données publiées ne permettent pas d'en donner un ordre de grandeur en euros.")
     return f"""
 <h2>{T("Fiscalité locale")}{yr}</h2>
 <table>
-  {_row(T("Taxe foncière (bâti), taux global"), t.get("property_tax_built_pct"), " %")}
-  {_row(T("Taxe ordures ménagères (TEOM)"), t.get("waste_tax_pct"), " %")}
-  {_row(T("Taxe foncière (non bâti)"), t.get("property_tax_unbuilt_pct"), " %")}
+  {tfb}
+  {teom}
+  {_row(T("Taxe foncière (bâti), taux global voté"), t.get("property_tax_built_pct"), " %")}
+  {_row(T("TEOM, taux voté"), t.get("waste_tax_pct"), " %")}
+  {_row(T("Taxe foncière (non bâti), taux voté"), t.get("property_tax_unbuilt_pct"), " %")}
   {_row(T("Intercommunalité"), t.get("intercommunalite"))}
 </table>
 <p class="meta">{note}</p>"""
+
+
+def _tax_headline(level, rank_pct):
+    """'Élevée — plus haute que dans 99 % des communes', or '' without a rank."""
+    if level is None or rank_pct is None:
+        return ""
+    word = {"low": T("Modérée"), "average": T("Dans la moyenne"), "high": T("Élevée")}[level]
+    return T("{word} — plus haute que dans {pct} % des communes").format(word=word, pct=rank_pct)
 
 
 def _commune_html(c: dict) -> str:
@@ -1351,14 +1370,25 @@ _EN = {
         "Breakdown — {parts}. Source: ADEME, DPE observatory. Only dwellings with a certificate "
         "are listed: this is an observed minimum, not a full inventory of the building.",
     # — Local taxes
-    "Taxe foncière (bâti), taux global": "Property tax (built land), combined rate",
-    "Taxe ordures ménagères (TEOM)": "Household waste tax (TEOM)",
-    "Taxe foncière (non bâti)": "Property tax (unbuilt land)",
+    "Taxe foncière": "Property tax",
+    "Ordures ménagères (TEOM)": "Household waste tax (TEOM)",
+    "Modérée": "Moderate",
+    "Dans la moyenne": "Average",
+    "Élevée": "High",
+    "{word} — plus haute que dans {pct} % des communes":
+        "{word} — higher than in {pct} % of French municipalities",
+    "Taxe foncière (bâti), taux global voté": "Property tax (built land), combined voted rate",
+    "TEOM, taux voté": "TEOM, voted rate",
+    "Taxe foncière (non bâti), taux voté": "Property tax (unbuilt land), voted rate",
     "Intercommunalité": "Inter-municipal body",
-    "Taux globaux (commune + intercommunalité + syndicats), dernier exercice\n"
-    "publié (DGFiP). La taxe due dépend de la valeur locative cadastrale du bien.":
-        "Combined rates (municipality + inter-municipal body + syndicates), latest published "
-        "tax year (DGFiP). The tax due depends on the property's cadastral rental value.",
+    "Comparaison des taux globaux (commune + intercommunalité + syndicats)\n"
+    "entre toutes les communes de France, dernier exercice publié (DGFiP).\n"
+    "Le montant dû dépend de la valeur locative cadastrale du bien : les\n"
+    "données publiées ne permettent pas d'en donner un ordre de grandeur en euros.":
+        "Combined rates (municipality + inter-municipal body + syndicates) compared across "
+        "every French municipality, latest published tax year (DGFiP). The amount due depends "
+        "on the property's cadastral rental value: the published data does not allow an "
+        "estimate in euros.",
     # — Municipality
     "Commune": "Municipality",
     "Auparavant": "Formerly",
