@@ -221,10 +221,13 @@ def test_aerial_view_reaches_the_pdf(monkeypatch):
             "buildings": [{"bdnb_id": "b", "energy": {}}], "sources": []}
     html = _report_html(data, photos=[], map_img=None,
                         aerial_img="data:image/jpeg;base64,AAAA")
-    assert "cover-hero-aerial" in html and "data:image/jpeg;base64,AAAA" in html
+    # Le marqueur est la DIV, pas la classe : les règles CSS .cover-hero-aerial
+    # sont émises dans tous les cas, seule la div dit qu'une photo est là.
+    div = '<div class="cover-hero cover-hero-aerial">'
+    assert div in html and "data:image/jpeg;base64,AAAA" in html
     assert "IGN" in html and "Licence Ouverte" in html      # attribution due
     # Sans photo aérienne, la fiche se produit quand même.
-    assert "cover-hero-aerial" not in _report_html(data, photos=[], map_img=None)
+    assert div not in _report_html(data, photos=[], map_img=None)
 
 
 # --- Adresse sans bâtiment : dire pourquoi, et servir ce qu'on a --------------
