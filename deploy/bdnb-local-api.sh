@@ -136,6 +136,12 @@ else
 fi
 
 echo "== 5. start bdnb-open, bdnb-rest (admin port) and bdnb-exporter"
+# The exporter is STATELESS and reads DATA_SOURCE_PASS at creation only: a
+# rewritten secrets.env changes nothing for a running container (`up` skips
+# recreation when the compose config itself is unchanged — seen 2026-09-20,
+# pg_up stayed 0 after the credential fix). Removing it first forces a fresh
+# read; bdnb-db and the PostgRESTs are left alone.
+podman rm -f ecobuilding-bdnb_bdnb-exporter_1 2>/dev/null || true
 # --no-deps: never let a config drift recreate the 219 GB bdnb-db under us.
 ( cd bdnb_stack && podman-compose -p ecobuilding-bdnb -f docker-compose.yml \
     up -d --no-deps bdnb-open bdnb-rest bdnb-exporter )
