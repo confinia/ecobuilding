@@ -19,3 +19,16 @@ assert.strictEqual(featuresCenter([]), null);
 assert.strictEqual(featuresCenter([{ geometry: null }]), null);
 
 console.log('geo.test.js: all assertions passed');
+
+// #441: a multi-body groupe — the pin goes to the body nearest the point,
+// never to the global bbox centre (mid-lot, on the lawn).
+const { nearestRingCenter } = require('./geo');
+const ilot = [{ geometry: { type: 'MultiPolygon', coordinates: [
+  [[[0, 0], [2, 0], [2, 2], [0, 2], [0, 0]]],
+  [[[10, 10], [12, 10], [12, 12], [10, 12], [10, 10]]]] } }];
+assert.deepStrictEqual(nearestRingCenter(ilot, [0.5, 0.5]), [1, 1]);
+assert.deepStrictEqual(nearestRingCenter(ilot, [11, 11]), [11, 11]);
+// Without a point, the historical behaviour stands (largest-extent framing).
+assert.deepStrictEqual(nearestRingCenter(ilot, null), featuresCenter(ilot));
+
+console.log('geo.test.js: #441 assertions passed');

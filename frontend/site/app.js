@@ -480,7 +480,7 @@ map.on("load", () => {
     stopHover();
     hoverId = id;
     setHover(id, { hover: true });
-    const c = ecoGeo.featuresCenter([f]);
+    const c = ecoGeo.nearestRingCenter([f], [e.lngLat.lng, e.lngLat.lat]);
     if (c) placeHoverMarker(c[0], c[1]);
   });
   map.on("mouseleave", "bdnb-dpe-3d", stopHover);
@@ -530,7 +530,10 @@ map.on("load", () => {
     // mètres DERRIÈRE le volume cliqué, et ce lon/lat sert à l'arbitrage
     // d'adresse côté serveur (#152) — la fiche se titrerait avec la mauvaise
     // adresse. Le bâtiment fait foi, pas le sol.
-    const c = ecoGeo.featuresCenter([f]) || [e.lngLat.lng, e.lngLat.lat];
+    // Corps de bâtiment le plus proche du clic (#441) : sur un groupe
+    // multi-corps, le centre global tombait au milieu du lot.
+    const c = ecoGeo.nearestRingCenter([f], [e.lngLat.lng, e.lngLat.lat])
+      || [e.lngLat.lng, e.lngLat.lat];
     openBuildingById(id, c[0], c[1]);
   });
   map.on("mouseenter", "bdnb-dpe-3d", () => { map.getCanvas().style.cursor = "pointer"; });
@@ -599,12 +602,14 @@ function updateMarkerVisibility() {
   }
 }
 map.on("move", updateMarkerVisibility);
-function anchorMarkerToBuilding(id) {
+function anchorMarkerToBuilding(id, near) {
   if (!marker || !id) return;
   const tryAnchor = () => {
     const feats = map.querySourceFeatures("bdnb",
       { sourceLayer: "sql_statement", filter: ["==", ["get", "batiment_groupe_id"], id] });
-    const c = ecoGeo.featuresCenter(feats);
+    // Le corps le plus proche du point demandé (#441) — le centre global d'un
+    // groupe multi-corps posait l'épingle au milieu du lot, sur la pelouse.
+    const c = ecoGeo.nearestRingCenter(feats, near);
     if (c) { marker.setLngLat(c); return true; }
     return false;
   };
@@ -710,7 +715,8 @@ async function select(s) {
     const r = await fetch(`${API}/lookup/stream?ban_id=${encodeURIComponent(s.ban_id)}&lon=${s.lon}&lat=${s.lat}`);
     if (!r.ok) throw new Error(r.status);
     const data = await consumeBuildingStream(r, s);
-    safeMap(() => anchorMarkerToBuilding(data.buildings?.[0]?.bdnb_id));   // pin onto the building footprint
+    // Pin onto the addressed body's footprint — the BAN point says which (#441).
+    safeMap(() => anchorMarkerToBuilding(data.buildings?.[0]?.bdnb_id, [s.lon, s.lat]));
     track("lookup", data.buildings?.length ? "ok" : "no_building");
   } catch {
     showPanel('<p class="hint">Erreur de chargement. Réessayez.</p>');
@@ -762,7 +768,7 @@ async function loadStreetview(lon, lat) {
 
 async function openBuildingById(id, lon, lat) {
   safeMap(() => placeMarker(lon, lat));
-  safeMap(() => anchorMarkerToBuilding(id));   // id is the tile's batiment_groupe_id -> pin on the footprint
+  safeMap(() => anchorMarkerToBuilding(id, [lon, lat]));   // pin on the body at the given point (#441)
   window.ecoStartLoadingFx?.(id, lon, lat);
   showLoadingPanel('Chargement des données du bâtiment…');
   try {
