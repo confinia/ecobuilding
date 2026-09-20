@@ -476,6 +476,12 @@ async def _building_map_png(lon, lat, bdnb_id, bearing: float = -30.0):
     report always generates."""
     if not RENDER_URL or lon is None or lat is None:
         return None
+    # Épingle et cadrage sur le CORPS DE BÂTIMENT de l'adresse (#441) : le
+    # point BAN vit souvent au portail, et sur un groupe multi-corps (îlot de
+    # lotissement) il flottait au milieu du lot. Repli : le point demandé.
+    ring = await _building_ring(bdnb_id, near=(lon, lat))
+    if ring:
+        lon, lat = _ring_centre(ring)
     chemin = os.path.join(
         TILES_DIR, "render",
         hashlib.sha256(f"{round(lon, 5)}|{round(lat, 5)}|{bdnb_id}|{bearing}"
@@ -631,11 +637,22 @@ async def _ppri_overlay(base_bytes: bytes, bounds_json: str | None) -> bytes:
 IGN_WMS_URL = "https://data.geopf.fr/wms-r/wms"
 
 
-async def _building_ring(bdnb_id) -> list[tuple[float, float]] | None:
+def _ring_centre(ring) -> tuple[float, float]:
+    return (sum(c[0] for c in ring) / len(ring),
+            sum(c[1] for c in ring) / len(ring))
+
+
+async def _building_ring(bdnb_id, near=None) -> list[tuple[float, float]] | None:
     """L'emprise du bâtiment en WGS84, ou None.
 
     Les géométries BDNB sont en Lambert-93 (EPSG:2154) ; tout le reste de la
     fiche raisonne en degrés.
+
+    Un « bâtiment groupe » peut réunir plusieurs corps — un îlot de
+    lotissement en compte parfois quatorze (#441). Avec `near=(lon, lat)`,
+    on rend le corps le plus PROCHE du point demandé : c'est l'adresse (ou
+    le clic) qui dit quelle maison est la sienne, pas la taille. Sans point,
+    l'ancien repli : le corps le plus étendu.
     """
     if not bdnb_id:
         return None
@@ -662,9 +679,17 @@ async def _building_ring(bdnb_id) -> list[tuple[float, float]] | None:
             ring = polygon[0] if polygon else None
             if ring and len(ring) > 3:
                 rings.append([to_wgs84.transform(c[0], c[1]) for c in ring])
-        # Un « bâtiment groupe » peut réunir plusieurs corps : on garde le plus
-        # étendu, celui que le lecteur identifiera comme « la maison ».
-        return max(rings, key=len) if rings else None
+        if not rings:
+            return None
+        if near and near[0] is not None and near[1] is not None:
+            import math
+            klat = math.cos(math.radians(near[1]))
+
+            def d2(ring):
+                cx, cy = _ring_centre(ring)
+                return ((cx - near[0]) * klat) ** 2 + (cy - near[1]) ** 2
+            return min(rings, key=d2)
+        return max(rings, key=len)
     except Exception as e:
         log.warning("emprise indisponible (%s): %s", bdnb_id, e)
         return None
@@ -689,7 +714,8 @@ async def _aerial_view(bdnb_id, lon, lat, span: float = 0.0009) -> dict:
     if lon is None or lat is None:
         return {}
 
-    ring = await _building_ring(bdnb_id)
+    # Le corps de bâtiment de L'ADRESSE, pas le plus grand du groupe (#441).
+    ring = await _building_ring(bdnb_id, near=(lon, lat))
     centre_lon, centre_lat = lon, lat
     if ring:
         xs = [p[0] for p in ring]

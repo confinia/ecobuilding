@@ -1153,7 +1153,9 @@ def _context_page(data: dict, photos: list | None,
     if map_img:
         map_html = (f'<img class="map3d" src="{map_img}"/>'
                     '<div class="cap">'
-                    + T('Bâtiment ciblé en pleine opacité (voisins atténués), coloré par classe DPE. '
+                    + T('Groupe de bâtiments BDNB ciblé en pleine opacité (voisins atténués), '
+                        'coloré par classe DPE — un groupe peut réunir plusieurs corps, '
+                        "l'épingle marque celui de l'adresse. "
                         'Limites de parcelles en orange. '
                         'Zoom 18, inclinaison 60°. Fond : OpenStreetMap et contributeurs (ODbL) · Bâtiments &amp; DPE : BDNB (CSTB) '
                         '· Parcelles : IGN Parcellaire Express (Licence Ouverte).')
@@ -1550,11 +1552,15 @@ _EN = {
         "The grounds, trees, outbuildings and access ways, which no structured dataset describes.",
     "Photos du lieu": "Photos of the site",
     "Localisation — carte 3D (DPE)": "Location — 3D map (DPE)",
-    "Bâtiment ciblé en pleine opacité (voisins atténués), coloré par classe DPE. "
+    "Groupe de bâtiments BDNB ciblé en pleine opacité (voisins atténués), "
+    "coloré par classe DPE — un groupe peut réunir plusieurs corps, "
+    "l'épingle marque celui de l'adresse. "
     "Limites de parcelles en orange. "
     "Zoom 18, inclinaison 60°. Fond : OpenStreetMap et contributeurs (ODbL) · Bâtiments &amp; DPE : BDNB (CSTB) "
     "· Parcelles : IGN Parcellaire Express (Licence Ouverte).":
-        "Targeted building at full opacity (neighbours dimmed), coloured by DPE class. "
+        "Targeted BDNB building group at full opacity (neighbours dimmed), "
+        "coloured by DPE class — a group can span several bodies, "
+        "the pin marks the one at the address. "
         "Parcel boundaries in orange. "
         "Zoom 18, tilt 60°. Basemap: OpenStreetMap and contributors (ODbL) · Buildings &amp; DPE: BDNB (CSTB) "
         "· Parcels: IGN Parcellaire Express (Licence Ouverte).",
