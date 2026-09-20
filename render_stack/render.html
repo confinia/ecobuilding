@@ -88,7 +88,10 @@ map.on('load', () => {
     if (bid) {
       const feats = map.querySourceFeatures('bdnb',
         { sourceLayer: 'sql_statement', filter: ['==', ['get', 'batiment_groupe_id'], bid] });
-      center = ecoGeo.featuresCenter(feats);   // building footprint centre
+      // Le corps de bâtiment le plus proche du point demandé — l'API envoie
+      // depuis #441 le centroïde du corps de l'adresse. Le centre GLOBAL du
+      // groupe tombait au milieu du lot sur un îlot multi-corps.
+      center = ecoGeo.nearestRingCenter(feats, [lon, lat]);
     }
     // Pin identifying the target building (issue #113): its tip sits on the
     // footprint centroid, so the printed 3D map clearly points at the building.
