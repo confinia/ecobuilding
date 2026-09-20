@@ -489,15 +489,36 @@ def test_dpe_validity_2021_reform():
 
 
 def test_local_taxes_block(monkeypatch):
+    # Rank (#439): the commune's rate against every commune of the exercice —
+    # two counts per tax, only communes that levy it (rate > 0).
     async def fake(url, params, ttl):
-        assert 'insee_com="78575"' in params["where"]
-        return {"results": [{"exercice": "2025", "taux_global_tfb": 29.58,
-                             "taux_global_tfnb": 89.91, "taux_plein_teom": 5.51,
-                             "q03": "CC de la Haute Vallée de Chevreuse"}]}
+        w = params["where"]
+        if "insee_com" in w:
+            assert 'insee_com="78575"' in w
+            return {"results": [{"exercice": "2025", "taux_global_tfb": 29.58,
+                                 "taux_global_tfnb": 89.91, "taux_plein_teom": 5.51,
+                                 "q03": "CC de la Haute Vallée de Chevreuse"}]}
+        assert 'exercice="2025"' in w and params["select"] == "count(*) as n"
+        if "taux_global_tfb<29.58" in w:
+            return {"results": [{"n": 3487}]}
+        if "taux_plein_teom<5.51" in w:
+            return {"results": [{"n": 1220}]}
+        return {"results": [{"n": 34874 if "tfb" in w else 24404}]}
     monkeypatch.setattr(main, "_cached_get_json", fake)
     t = asyncio.run(main._local_taxes("78575"))
     assert t["property_tax_built_pct"] == 29.58 and t["waste_tax_pct"] == 5.51
+    assert t["property_tax_rank_pct"] == 10 and t["property_tax_level"] == "low"
+    assert t["waste_tax_rank_pct"] == 5 and t["waste_tax_level"] == "low"
     assert asyncio.run(main._local_taxes(None)) is None
+
+
+def test_tax_level_words():
+    assert main._tax_level(None) is None
+    assert main._tax_level(24) == "low" and main._tax_level(25) == "average"
+    assert main._tax_level(75) == "average" and main._tax_level(76) == "high"
+    # No TEOM (REOM commune): no rank at all, never 'low'.
+    assert asyncio.run(main._tax_rank("taux_plein_teom", 0, "2025")) is None
+    assert asyncio.run(main._tax_rank("taux_plein_teom", None, "2025")) is None
 
 
 def test_nearby_schools_sorted(monkeypatch):
@@ -518,8 +539,15 @@ def test_nearby_schools_sorted(monkeypatch):
 def test_taxes_and_schools_html():
     from app.report import _local_taxes_html, _schools_html
     h = _local_taxes_html({"year": "2025", "property_tax_built_pct": 29.58,
-                           "waste_tax_pct": 5.51, "intercommunalite": "CC X"})
+                           "waste_tax_pct": 5.51, "intercommunalite": "CC X",
+                           "property_tax_rank_pct": 99, "property_tax_level": "high",
+                           "waste_tax_rank_pct": None, "waste_tax_level": None})
     assert "29.58 %" in h and "TEOM" in h and "(2025)" in h
+    # The headline (#439) reads as a sentence; the taux voté stays as provenance.
+    assert "Élevée — plus haute que dans 99 % des communes" in h
+    assert h.index("Élevée") < h.index("29.58 %")
+    assert "taux global voté" in h
+    assert "Ordures ménagères (TEOM)</td>" not in h     # no rank, no headline row
     assert _local_taxes_html({}) == ""
     h2 = _schools_html({"within_2km": 8, "nearest": [
         {"name": "Jean Moulin", "type": "Ecole", "statut": "Public", "distance_m": 240}]})
