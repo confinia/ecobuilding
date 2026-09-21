@@ -552,6 +552,50 @@ def _schools_html(sc: dict) -> str:
 <p class="meta">{note}</p>"""
 
 
+def _construction_rows(c: dict | None, fallback_year) -> str:
+    """Rows « Année de construction » of the « Bâtiment » table (#432).
+
+    L'année vient des Fichiers fonciers (DGFiP), au niveau de la PARCELLE : une
+    extension ou une surélévation déclarée la remplace, et elle peut donc être
+    à des décennies du bâtiment d'origine. On dit d'où elle vient, on montre ce
+    que disent les diagnostiqueurs, et on nomme le permis quand c'est lui qui
+    explique l'écart."""
+    if not c:
+        return _row(T("Année de construction"), fallback_year)
+    year = c.get("year")
+    rows = []
+    if year:
+        rows.append(_row(T("Année de construction"),
+                         f'{year} <small>{T("(Fichiers fonciers, DGFiP)")}</small>'))
+    years = c.get("dpe_years")
+    if years:
+        span = str(years[0]) if years[0] == years[1] else f"{years[0]}–{years[1]}"
+        n = c.get("dpe_count") or 0
+        who = (T("selon {n} diagnostics").format(n=n) if n > 1
+               else T("selon le diagnostiqueur"))
+        if c.get("dpe_period") and years[0] == years[1]:
+            span = f"{c['dpe_period']}"
+        label = T("Période de construction déclarée aux DPE")
+        if c.get("caveat") == "dpe_disagrees":
+            rows.append(_row(label, f"{span} ({who}) — "
+                             + T("en désaccord avec les Fichiers fonciers")))
+        else:
+            rows.append(_row(label, f"{span} ({who})"))
+    p = c.get("permit") or {}
+    if c.get("caveat") == "works":
+        kind = (T("Une surélévation déclarée") if p.get("raised")
+                else T("Une extension déclarée") if p.get("extension")
+                else T("Des travaux sur l'existant déclarés"))
+        rows.append(_row(T("Permis de construire (Sitadel)"),
+                         T("{kind} en {y} : l'année ci-dessus peut être "
+                           "celle des travaux, pas du bâtiment d'origine.")
+                         .format(kind=kind, y=p.get("first_year"))))
+    elif c.get("works_since"):
+        rows.append(_row(T("Permis de construire (Sitadel)"),
+                         T("Travaux déclarés en {y}").format(y=c["works_since"])))
+    return "".join(rows)
+
+
 def _official_dpe_html(od: dict) -> str:
     """Official-DPE substance (#189): the fiche carries what the legal document
     carries — number, validity, surface, ANNUAL € COSTS, insulation quality,
@@ -1069,7 +1113,7 @@ def _report_html(data: dict, photos: list | None = None, map_img: str | None = N
 <h2>{T("Bâtiment")}</h2>
 <table>
   {_row(T("ID-RNB (référentiel national)"), b.get("rnb_id"))}
-  {_row(T("Année de construction"), b.get("construction_year"))}
+  {_construction_rows(data.get("construction"), b.get("construction_year"))}
   {_row(T("Hauteur moyenne"), b.get("height_m"), " m")}
   {_row(T("Logements"), b.get("dwellings"))}
   {_row(T("Matériaux des murs"), b.get("wall_material"))}
@@ -1495,6 +1539,18 @@ _EN = {
     "Bâtiment": "Building",
     "ID-RNB (référentiel national)": "RNB ID (national building registry)",
     "Année de construction": "Year built",
+    "(Fichiers fonciers, DGFiP)": "(cadastral files, DGFiP)",
+    "selon {n} diagnostics": "per {n} energy audits",
+    "selon le diagnostiqueur": "per the energy auditor",
+    "Période de construction déclarée aux DPE": "Construction period stated on the EPCs",
+    "en désaccord avec les Fichiers fonciers": "disagrees with the cadastral files",
+    "Une surélévation déclarée": "A raised storey filed",
+    "Une extension déclarée": "An extension filed",
+    "Des travaux sur l'existant déclarés": "Works on the existing building filed",
+    "{kind} en {y} : l'année ci-dessus peut être celle des travaux, pas du bâtiment d'origine.":
+        "{kind} in {y}: the year above may be that of the works, not of the original building.",
+    "Permis de construire (Sitadel)": "Building permit (Sitadel)",
+    "Travaux déclarés en {y}": "Works filed in {y}",
     "Hauteur moyenne": "Average height",
     "Logements": "Dwellings",
     "Matériaux des murs": "Wall materials",

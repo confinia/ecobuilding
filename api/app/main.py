@@ -170,6 +170,10 @@ SISPEA_URL = "https://hubeau.eaufrance.fr/api/v0/indicateurs_services/communes"
 BDNB_REP_DPE_URL = os.environ.get(
     "BDNB_REP_DPE_URL",
     "https://api.bdnb.io/v1/bdnb/donnees/batiment_groupe_dpe_representatif_logement")
+# Construction years side by side (#432): a view of the LOCAL mirror only
+# (deploy/bdnb-local-api.sh); unset when serving from api.bdnb.io, and the
+# block is simply absent.
+BDNB_YEARS_URL = os.environ.get("BDNB_YEARS_URL")
 ADEME_DPE_URL = "https://data.ademe.fr/data-fair/api/v1/datasets/dpe03existant/lines"
 ADEME_DPE_SELECT = ",".join((
     "cout_total_5_usages", "cout_chauffage", "cout_ecs", "cout_eclairage",
@@ -1505,7 +1509,8 @@ async def lookup_stream(
             # que les risques de la zone étaient déjà en main.
             for nom in ("area_risks", "groundwater", "solar_pv",
                         "water_network", "official_dpe", "local_taxes",
-                        "schools", "commune", "urbanisme", "ppri"):
+                        "schools", "commune", "urbanisme", "ppri",
+                        "construction"):
                 yield json.dumps({"type": "block", "name": nom,
                                   "value": data.get(nom)}) + "\n"
             yield json.dumps(dict(data, type="done")) + "\n"
@@ -1710,6 +1715,68 @@ def _dpe_valid_until(established: str) -> str:
     if d >= "2013-01-01":
         return "2022-12-31"
     return str(int(d[:4]) + 10) + d[4:]   # pré-2013 : 10 ans, déjà expiré
+
+
+def _construction_block(r: dict):
+    """Shape the years view row (#432) and say when the headline year is not
+    to be trusted. The Fichiers-Fonciers year is parcel-level: it can name the
+    latest works on the parcel (Tournefeuille: 2019 for a 1980s house with a
+    2017 extension permit) or the parcel's first building (Gruissan: 1962 for
+    an îlot whose DPEs say 2001-2005). Two caveats, both from BDNB itself:
+    `works` when a Sitadel permit on the EXISTING building precedes the year
+    by at most two years and no new building was declared; `dpe_disagrees`
+    when every DPE year of the groupe sits more than ten years away."""
+    year = r.get("annee_ffo")
+    if year is None and r.get("annee_dpe_representatif") is None:
+        return None
+    first, last = r.get("annee_premiere_dau"), r.get("annee_derniere_dau")
+    on_existing = bool(r.get("travaux_sur_existant") or r.get("extension")
+                       or r.get("surelevation"))
+    permit = None
+    if first:
+        permit = {"first_year": first, "last_year": last,
+                  "works_on_existing": on_existing,
+                  "extension": bool(r.get("extension")),
+                  "raised": bool(r.get("surelevation")),
+                  "new_building": bool(r.get("nouvelle_construction"))}
+    dpe_min, dpe_max = r.get("annee_dpe_min"), r.get("annee_dpe_max")
+    rep = r.get("annee_dpe_representatif")
+    if dpe_min is None and rep is not None:
+        dpe_min = dpe_max = rep
+    caveat = None
+    if (year and permit and on_existing and not permit["new_building"]
+            and first - 2 <= year and last >= year - 2):
+        caveat = "works"
+    elif year and dpe_min is not None and (dpe_max < year - 10 or dpe_min > year + 10):
+        caveat = "dpe_disagrees"
+    return {
+        "year": year,
+        "source": "Fichiers fonciers (DGFiP), via BDNB",
+        "dpe_period": r.get("periode_dpe_representatif"),
+        "dpe_years": [dpe_min, dpe_max] if dpe_min is not None else None,
+        "dpe_count": r.get("nb_dpe_annee") or (1 if rep is not None else 0),
+        "permit": permit,
+        # Works declared AFTER the year: BDNB's own flag, or a later permit.
+        "works_since": (first if (year and first and first > year) else None),
+        "caveat": caveat,
+    }
+
+
+async def _construction_years(bdnb_id: str):
+    """Construction block (#432) from the local mirror's years view; None when
+    the mirror is not configured (api.bdnb.io serving) or on any miss."""
+    if not BDNB_YEARS_URL or not bdnb_id:
+        return None
+    try:
+        rows = await _cached_get_json(
+            BDNB_YEARS_URL, {"batiment_groupe_id": f"eq.{bdnb_id}", "limit": "1"},
+            ttl=86400)
+        if not isinstance(rows, list) or not rows:
+            return None
+        return _construction_block(rows[0])
+    except Exception as e:
+        log.warning("construction years failed for %s: %s", bdnb_id, e)
+        return None
 
 
 async def _official_dpe(bdnb_id: str):
@@ -1977,7 +2044,7 @@ async def building(
 # toutes, le flux (/v1/buildings/{id}/stream) les émet au fil de l'eau.
 _BLOCK_NAMES = ("prices", "area_risks", "groundwater", "solar_pv", "click_addr",
                 "water_network", "official_dpe", "local_taxes", "schools", "rnb",
-                "commune", "dpe_spread", "urbanisme", "ppri")
+                "commune", "dpe_spread", "urbanisme", "ppri", "construction")
 
 
 def _building_block_coros(bdnb_id, lon, lat, row):
@@ -1989,7 +2056,8 @@ def _building_block_coros(bdnb_id, lon, lat, row):
             _local_taxes(commune), _nearby_schools(lon, lat),
             _rnb_lookup(lon, lat), _commune_history(commune, lon, lat, bdnb_id),
             _dpe_spread(bdnb_id, lon, lat, row.get("nb_log")),
-            _plu_zone(lon, lat), _ppri_zone(lon, lat))
+            _plu_zone(lon, lat), _ppri_zone(lon, lat),
+            _construction_years(bdnb_id))
 
 
 
@@ -2020,6 +2088,7 @@ def _assemble_building(bdnb_id, lon, lat, row, v):
     dpe_spread = v.get("dpe_spread")
     urbanisme = v.get("urbanisme")
     ppri = v.get("ppri")
+    construction = v.get("construction")
     sources = ["BDNB (CSTB) — Licence Ouverte v2.0", "Géorisques — Licence Ouverte"]
     if prices:
         sources.append("DVF (DGFiP) / Etalab — Licence Ouverte")
@@ -2039,6 +2108,8 @@ def _assemble_building(bdnb_id, lon, lat, row, v):
         sources.append("Géoportail de l'Urbanisme (GPU) — Licence Ouverte")
     if ppri:
         sources.append("Géorisques — PPR zonage réglementaire — Licence Ouverte")
+    if construction and construction.get("permit"):
+        sources.append("Sitadel (SDES) — permis de construire — Licence Ouverte")
     market_dia = _dia_market(lon, lat, row.get("code_commune_insee"))
     if rnb:
         sources.append("Référentiel National des Bâtiments (RNB) — Licence Ouverte")
@@ -2067,6 +2138,7 @@ def _assemble_building(bdnb_id, lon, lat, row, v):
         "dpe_spread": dpe_spread,
         "urbanisme": urbanisme,
         "ppri": ppri,
+        "construction": construction,
         "sources": sources,
     }
     return result
@@ -2141,7 +2213,8 @@ async def _building_events(bdnb_id, lon, lat, query_extra=None, extra_rows=()):
                           "buildings": done["buildings"] + list(extra_rows)}) + "\n"
         for name in ("area_risks", "groundwater", "solar_pv", "water_network",
                      "official_dpe", "local_taxes", "schools", "prices", "rnb",
-                     "commune", "dpe_spread", "urbanisme", "ppri"):
+                     "commune", "dpe_spread", "urbanisme", "ppri",
+                     "construction"):
             yield json.dumps({"type": "block", "name": name,
                               "value": done.get(name)}) + "\n"
         yield json.dumps({"type": "done", "sources": done["sources"],
