@@ -521,6 +521,79 @@ def test_tax_level_words():
     assert asyncio.run(main._tax_rank("taux_plein_teom", None, "2025")) is None
 
 
+TOURNEFEUILLE_YEARS = {"annee_ffo": 2019, "annee_dpe_representatif": None,
+                       "periode_dpe_representatif": None, "annee_dpe_min": None,
+                       "annee_dpe_max": None, "nb_dpe_annee": 0,
+                       "travaux_sur_existant": True, "extension": True,
+                       "surelevation": False, "nouvelle_construction": False,
+                       "annee_premiere_dau": 2017, "annee_derniere_dau": 2017}
+GRUISSAN_YEARS = {"annee_ffo": 1962, "annee_dpe_representatif": 2004,
+                  "periode_dpe_representatif": "2001-2005", "annee_dpe_min": 2004,
+                  "annee_dpe_max": 2004, "nb_dpe_annee": 1,
+                  "travaux_sur_existant": None, "extension": None,
+                  "surelevation": None, "nouvelle_construction": None,
+                  "annee_premiere_dau": None, "annee_derniere_dau": None}
+
+
+def test_construction_block_names_the_permit_behind_the_year():
+    """#432: 45 chemin de Pahin, Tournefeuille. The cadastral year (2019) is
+    the parcel's, refreshed by a 2017 extension permit; the house is older."""
+    c = main._construction_block(TOURNEFEUILLE_YEARS)
+    assert c["year"] == 2019 and "Fichiers fonciers" in c["source"]
+    assert c["caveat"] == "works"
+    assert c["permit"] == {"first_year": 2017, "last_year": 2017,
+                           "works_on_existing": True, "extension": True,
+                           "raised": False, "new_building": False}
+    assert c["dpe_years"] is None and c["dpe_count"] == 0
+
+
+def test_construction_block_flags_a_dpe_decades_away():
+    """Gruissan: cadastre says 1962, the auditor wrote 2001-2005."""
+    c = main._construction_block(GRUISSAN_YEARS)
+    assert c["year"] == 1962 and c["caveat"] == "dpe_disagrees"
+    assert c["dpe_years"] == [2004, 2004] and c["dpe_period"] == "2001-2005"
+    assert c["dpe_count"] == 1 and c["permit"] is None
+    # Agreement within ten years is no caveat; a new-build permit neither.
+    ok = main._construction_block({**GRUISSAN_YEARS, "annee_dpe_min": 1960,
+                                   "annee_dpe_max": 1970, "nb_dpe_annee": 3})
+    assert ok["caveat"] is None and ok["dpe_years"] == [1960, 1970]
+    neuf = main._construction_block({**TOURNEFEUILLE_YEARS, "nouvelle_construction": True,
+                                     "annee_premiere_dau": 2018, "annee_derniere_dau": 2018})
+    assert neuf["caveat"] is None and neuf["works_since"] is None
+    assert main._construction_block({"annee_ffo": None, "annee_dpe_representatif": None}) is None
+
+
+def test_construction_years_needs_the_mirror(monkeypatch):
+    monkeypatch.setattr(main, "BDNB_YEARS_URL", None)
+    assert asyncio.run(main._construction_years("bdnb-bg-X")) is None
+    monkeypatch.setattr(main, "BDNB_YEARS_URL", "http://bdnb-open:3006/batiment_groupe_annees")
+    seen = {}
+    async def fake(url, params, ttl):
+        seen.update(params)
+        return [GRUISSAN_YEARS]
+    monkeypatch.setattr(main, "_cached_get_json", fake)
+    assert asyncio.run(main._construction_years("bdnb-bg-X"))["year"] == 1962
+    assert seen["batiment_groupe_id"] == "eq.bdnb-bg-X"
+    assert asyncio.run(main._construction_years(None)) is None
+
+
+def test_construction_rows_in_the_report():
+    from app.report import _report_html
+    fr = _report_html({**BUILDING_FIXTURE,
+                       "construction": main._construction_block(TOURNEFEUILLE_YEARS)})
+    assert "2019 <small>(Fichiers fonciers, DGFiP)</small>" in fr
+    assert "Une extension déclarée en 2017 : l'année ci-dessus peut être celle des travaux" in fr
+    assert "Sitadel" in fr
+    en = _report_html({**BUILDING_FIXTURE,
+                       "construction": main._construction_block(GRUISSAN_YEARS)}, lang="en")
+    assert "1962 <small>(cadastral files, DGFiP)</small>" in en
+    assert "2001-2005 (per the energy auditor) — disagrees with the cadastral files" in en
+    assert "Building permit" not in en
+    # No mirror: the plain year as before.
+    plain = _report_html({**BUILDING_FIXTURE, "construction": None})
+    assert "<td>1900</td>" in plain
+
+
 def test_nearby_schools_sorted(monkeypatch):
     async def fake(url, params, ttl):
         return {"results": [

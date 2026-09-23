@@ -96,6 +96,45 @@ LEFT JOIN ${S}.adresse ad USING (cle_interop_adr);
 CREATE OR REPLACE VIEW bdnb.batiment_groupe_dpe_representatif_logement AS
 SELECT * FROM ${S}.batiment_groupe_dpe_representatif_logement;
 
+-- Every construction year BDNB knows for a groupe, side by side (#432). The
+-- Fichiers-Fonciers year alone is parcel-level and can name an extension
+-- (Tournefeuille: 2019 for a 1980s house with a 2017 extension permit) or
+-- the parcel's first building (Gruissan: 1962 for an îlot whose DPEs say
+-- 2001-2005). Local only: api.bdnb.io has no such view. ~0.4 s per groupe
+-- through the two lateral aggregates; the API caches it a day.
+CREATE OR REPLACE VIEW bdnb.batiment_groupe_annees AS
+SELECT g.batiment_groupe_id,
+       f.annee_construction              AS annee_ffo,
+       d.annee_construction_dpe          AS annee_dpe_representatif,
+       d.periode_construction_dpe        AS periode_dpe_representatif,
+       dl.annee_dpe_min, dl.annee_dpe_max, dl.nb_dpe_annee,
+       n.periode_construction_max        AS periode_rnc,
+       sit.travaux_sur_existant, sit.extension, sit.surelevation,
+       sit.nouvelle_construction, sit.annee_construction_obsolete,
+       sit.annee_premiere_dau, sit.annee_derniere_dau
+FROM ${S}.batiment_groupe g
+LEFT JOIN ${S}.batiment_groupe_ffo_bat f USING (batiment_groupe_id)
+LEFT JOIN ${S}.batiment_groupe_dpe_representatif_logement d USING (batiment_groupe_id)
+LEFT JOIN ${S}.batiment_groupe_rnc n USING (batiment_groupe_id)
+LEFT JOIN LATERAL (
+  SELECT min(l.annee_construction_dpe)   AS annee_dpe_min,
+         max(l.annee_construction_dpe)   AS annee_dpe_max,
+         count(l.annee_construction_dpe) AS nb_dpe_annee
+  FROM ${S}.rel_batiment_groupe_dpe_logement r
+  JOIN ${S}.dpe_logement l USING (identifiant_dpe)
+  WHERE r.batiment_groupe_id = g.batiment_groupe_id) dl ON true
+LEFT JOIN LATERAL (
+  SELECT bool_or(ps.travaux_sur_construction_existante)     AS travaux_sur_existant,
+         bool_or(ps.indicateur_extension)                   AS extension,
+         bool_or(ps.indicateur_surelevation_ou_nivsupp)     AS surelevation,
+         bool_or(ps.nouvelle_construction IS NOT NULL)      AS nouvelle_construction,
+         bool_or(ps.annee_construction_obsolete)            AS annee_construction_obsolete,
+         min(ps.annee_premiere_dau_identifiee)              AS annee_premiere_dau,
+         max(ps.annee_derniere_dau_identifiee)              AS annee_derniere_dau
+  FROM ${S}.rel_batiment_groupe_parcelle rp
+  JOIN ${S}.parcelle_sitadel ps USING (parcelle_id)
+  WHERE rp.batiment_groupe_id = g.batiment_groupe_id) sit ON true;
+
 GRANT USAGE ON SCHEMA bdnb TO bdnb_anon;
 GRANT SELECT ON ALL TABLES IN SCHEMA bdnb TO bdnb_anon;
 ALTER DEFAULT PRIVILEGES IN SCHEMA bdnb GRANT SELECT ON TABLES TO bdnb_anon;
@@ -167,4 +206,7 @@ BAN=$(podman exec ecobuilding-bdnb_bdnb-db_1 psql -U bdnb -d bdnb -tAc \
 echo "   cle_interop_adr: $BAN"
 curl -sS -m 15 "http://127.0.0.1:13021/batiment_groupe_complet_adresse?cle_interop_adr=eq.${BAN}&limit=5" | head -c 400; echo
 curl -sS -m 15 "http://127.0.0.1:13021/rel_batiment_groupe_adresse?cle_interop_adr=eq.${BAN}&limit=2" | head -c 300; echo
+# The years view (#432) on the Tournefeuille groupe of the report: FFO 2019
+# next to a 2017 extension permit.
+curl -sS -m 15 "http://127.0.0.1:13021/batiment_groupe_annees?batiment_groupe_id=eq.bdnb-bg-SPW3-4YZ9-Y7RR" | head -c 400; echo
 echo "== done. Repoint the API with the BDNB_*_URL vars (docker-compose.yml)."

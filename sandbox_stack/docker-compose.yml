@@ -74,6 +74,7 @@ services:
       BDNB_BASE_URL: http://bdnb-open:3006/batiment_groupe_complet
       BDNB_REL_ADR_URL: http://bdnb-open:3006/rel_batiment_groupe_adresse
       BDNB_REP_DPE_URL: http://bdnb-open:3006/batiment_groupe_dpe_representatif_logement
+      BDNB_YEARS_URL: http://bdnb-open:3006/batiment_groupe_annees
       # Journal des vues, lu par la carte Grafana (#349).
       VUES_URL: http://bdnb-rest:3005/vue_batiment
       # DPE-3D map render for the PDF (#88) via the shared render service (alias).

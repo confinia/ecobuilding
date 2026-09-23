@@ -870,6 +870,32 @@ function humanizeRisk(r) {
   return RISK_LABELS[r] || r.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/^./, (c) => c.toUpperCase());
 }
 
+// Année de construction (#432) : elle vient des Fichiers fonciers, au niveau
+// de la parcelle, et une extension déclarée la remplace. On dit d'où elle
+// vient, ce que disent les diagnostiqueurs, et le permis quand c'est lui qui
+// explique l'écart.
+function constructionHtml(c, fallbackYear) {
+  if (!c) return kv("Année de construction", fallbackYear);
+  let out = "";
+  if (c.year) out += kv("Année de construction", `${c.year} <small class="hint">(Fichiers fonciers, DGFiP)</small>`);
+  if (c.dpe_years) {
+    const [a, b] = c.dpe_years;
+    let span = a === b ? (c.dpe_period || String(a)) : `${a}–${b}`;
+    const who = c.dpe_count > 1 ? `selon ${c.dpe_count} diagnostics` : "selon le diagnostiqueur";
+    if (c.caveat === "dpe_disagrees") span += ` (${who}) — en désaccord avec les Fichiers fonciers`;
+    else span += ` (${who})`;
+    out += kv("Période déclarée aux DPE", span);
+  }
+  const p = c.permit || {};
+  if (c.caveat === "works") {
+    const kind = p.raised ? "Une surélévation déclarée" : p.extension ? "Une extension déclarée" : "Des travaux sur l'existant déclarés";
+    out += `<p class="hint">${kind} en ${p.first_year} (permis Sitadel) : l'année ci-dessus peut être celle des travaux, pas du bâtiment d'origine.</p>`;
+  } else if (c.works_since) {
+    out += kv("Permis de construire (Sitadel)", `Travaux déclarés en ${c.works_since}`);
+  }
+  return out;
+}
+
 function kv(k, v) {
   return v === null || v === undefined || v === "" ? "" :
     `<div class="kv"><span class="k">${k}</span><span>${v}</span></div>`;
@@ -1174,7 +1200,7 @@ function renderPanel(s, data, opts) {
     ${kv("Prix médian demandé", data.market_dia.median_asking_eur ? `${data.market_dia.median_asking_eur.toLocaleString("fr-FR")} €${data.market_dia.median_asking_eur_m2 ? ` (${data.market_dia.median_asking_eur_m2.toLocaleString("fr-FR")} €/m²)` : ""}` : null)}
     <p class="hint">${data.market_dia.note} Données ${data.market_dia.updated}.</p>` : ""}
     ${data.rnb ? kv("ID-RNB", `<a href="${data.rnb.url}" target="_blank" rel="noopener" title="Fiche du bâtiment dans le Référentiel National des Bâtiments">${data.rnb.rnb_id}</a>`) : ""}
-    ${kv("Année de construction", b.construction_year)}
+    ${constructionHtml(data.construction, b.construction_year)}
     ${kv("Hauteur moyenne", b.height_m ? b.height_m + " m" : null)}
     ${kv("Logements", b.dwellings)}
     ${kv("Murs", b.wall_material)}
