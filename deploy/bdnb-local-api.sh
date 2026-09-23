@@ -193,7 +193,7 @@ sleep 5
 # Schema was possibly (re)built while the container ran: reload its cache.
 podman kill --signal SIGUSR1 ecobuilding-bdnb_bdnb-open_1 2>/dev/null || true
 podman inspect ecobuilding-bdnb_bdnb-db_1 --format \
-  '   bdnb-db healthcheck: interval={{.Config.Healthcheck.Interval}} timeout={{.Config.Healthcheck.Timeout}} start={{.Config.Healthcheck.StartPeriod}} stop-timeout={{.Config.StopTimeout}}s'
+  '   bdnb-db healthcheck: interval={{.Config.Healthcheck.Interval}} timeout={{.Config.Healthcheck.Timeout}} start={{.Config.Healthcheck.StartPeriod}}'
 
 echo "== 6. prometheus: pick up the bdnb scrape jobs (config is volume-mounted)"
 podman kill --signal HUP ecobuilding-monitoring_prometheus_1 2>/dev/null \

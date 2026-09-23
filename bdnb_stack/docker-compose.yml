@@ -44,7 +44,9 @@ services:
       retries: 3
     # Every compose edit recreates this container (deploy/bdnb-local-api.sh,
     # step 5). fsync is off: the shutdown checkpoint must never be cut short
-    # by podman's default 10 s SIGKILL.
+    # by a SIGKILL. podman-compose 1.3.0 honours this only in its own
+    # down/stop (`-t 60`); the container's StopTimeout stays podman's 10 s,
+    # so never `podman stop` bdnb-db by hand, go through compose.
     stop_grace_period: 60s
     restart: unless-stopped
 
