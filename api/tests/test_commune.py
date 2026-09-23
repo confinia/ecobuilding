@@ -138,6 +138,49 @@ def test_une_date_du_premier_du_mois_prend_l_ordinal():
 
 
 @pytest.mark.anyio
+async def test_en_anglais_le_bloc_entier_change_de_langue(confinia):
+    """#450 : une application anglaise lisait « 1ᵉʳ janvier 1943 » et les
+    réserves en français. `?lang=en` fait tout basculer : Confinia est
+    interrogée en anglais, les dates sont écrites à l'anglaise."""
+    jeton = main._LANG.set("en")
+    try:
+        b = await _bloc()
+    finally:
+        main._LANG.reset(jeton)
+    assert b["lang"] == "en"
+    assert b["depuis_fr"] == "1 January 2019"
+    assert b["arret_des_donnees_fr"] == "1 January 2026"
+    assert b["precedent"]["jusqu_au_fr"] == "1 January 2019"
+    assert [p for u, p in confinia if "/facts" in u][0]["lang"] == "en"
+    # Une date ISO qui traînerait dans la prose anglaise se lit aussi.
+    assert b["limites"] == ["Notre image s'arrête au 1 January 2026."]
+    # Et par défaut, rien ne change : le site est en français seul.
+    b = await _bloc()
+    assert b["lang"] == "fr" and b["depuis_fr"] == "1ᵉʳ janvier 2019"
+    assert [p for u, p in confinia if "/facts" in u][-1]["lang"] == "fr"
+
+
+def test_lang_en_est_explicite_jamais_deduit_du_navigateur():
+    """Pas de repli sur Accept-Language : le site est en français, et un
+    navigateur anglais y lirait une fiche française aux dates anglaises."""
+    from fastapi.testclient import TestClient
+    client = TestClient(main.app)
+    seen = {}
+
+    @main.app.get("/_test/lang")
+    async def _lang():
+        seen["lang"] = main._LANG.get()
+        return {}
+
+    client.get("/_test/lang", headers={"Accept-Language": "en-US,en;q=0.9"})
+    assert seen["lang"] == "fr"
+    client.get("/_test/lang?lang=en")
+    assert seen["lang"] == "en"
+    client.get("/_test/lang?lang=de")
+    assert seen["lang"] == "fr"
+
+
+@pytest.mark.anyio
 async def test_sans_coordonnees_aucun_nom_d_avant_n_est_affirme(confinia):
     """Mieux vaut se taire que nommer le prédécesseur du CODE : il peut n'avoir
     jamais contenu ce bâtiment."""

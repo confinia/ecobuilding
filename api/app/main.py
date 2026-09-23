@@ -18,6 +18,7 @@ import math
 import os
 import time
 from collections import OrderedDict
+from contextvars import ContextVar
 
 import httpx
 from fastapi import FastAPI, HTTPException, Query, Request
@@ -349,6 +350,20 @@ async def count_requests(request, call_next):
         },
     )
     return response
+
+
+# Langue de la RÉPONSE (#450) : « fr » sauf `?lang=en` explicite. Pas de repli
+# sur Accept-Language : le site est en français seul (#199 ouvert), et un
+# navigateur anglais y lirait sinon une fiche française aux dates anglaises.
+# Les applications, elles, envoient la langue de leur interface. La valeur
+# entre dans les clés de cache des agrégats ; la fiche PDF la pose elle-même.
+_LANG: ContextVar[str] = ContextVar("lang", default="fr")
+
+
+@app.middleware("http")
+async def set_language(request, call_next):
+    _LANG.set("en" if request.query_params.get("lang") == "en" else "fr")
+    return await call_next(request)
 
 
 # --- Helpers -----------------------------------------------------------------
@@ -2017,7 +2032,7 @@ async def building(
     # la route PDF mute query.address et contaminerait l'entrée sinon.
     cache_key = (f"building:{bdnb_id}:"
                  f"{round(lon, 4) if lon is not None else '-'}:"
-                 f"{round(lat, 4) if lat is not None else '-'}")
+                 f"{round(lat, 4) if lat is not None else '-'}:{_LANG.get()}")
     hit = _CACHE.get(cache_key)
     if hit and time.monotonic() - hit[0] < BUILDING_CACHE_TTL:
         _CACHE.move_to_end(cache_key)
@@ -2203,7 +2218,7 @@ async def _building_events(bdnb_id, lon, lat, query_extra=None, extra_rows=()):
 
     cache_key = (f"building:{bdnb_id}:"
                  f"{round(lon, 4) if lon is not None else '-'}:"
-                 f"{round(lat, 4) if lat is not None else '-'}")
+                 f"{round(lat, 4) if lat is not None else '-'}:{_LANG.get()}")
     hit = _CACHE.get(cache_key)
     if hit and time.monotonic() - hit[0] < BUILDING_CACHE_TTL:
         _CACHE.move_to_end(cache_key)
@@ -2421,9 +2436,14 @@ _MOIS_FR = ("janvier", "février", "mars", "avril", "mai", "juin", "juillet",
             "août", "septembre", "octobre", "novembre", "décembre")
 
 
+_MONTHS_EN = ("January", "February", "March", "April", "May", "June", "July",
+              "August", "September", "October", "November", "December")
+
+
 def _date_fr(iso):
-    """« 2019-01-01 » -> « 1ᵉʳ janvier 2019 ». Rend l'entrée telle quelle si ce
-    n'est pas une date."""
+    """« 2019-01-01 » -> « 1ᵉʳ janvier 2019 », ou « 1 January 2019 » quand la
+    réponse est en anglais (#450). Rend l'entrée telle quelle si ce n'est pas
+    une date."""
     if not isinstance(iso, str) or len(iso) < 10:
         return iso
     try:
@@ -2431,6 +2451,8 @@ def _date_fr(iso):
         assert 1 <= m <= 12 and 1 <= j <= 31
     except (ValueError, AssertionError):
         return iso
+    if _LANG.get() == "en":
+        return f"{j} {_MONTHS_EN[m - 1]} {a}"
     return f"{'1ᵉʳ' if j == 1 else j} {_MOIS_FR[m - 1]} {a}"
 
 
@@ -2548,7 +2570,7 @@ async def _commune_history(commune, lon=None, lat=None, bdnb_id=None):
         entetes = {"X-API-Key": CONFINIA_API_KEY}
         faits = await _cached_get_json(
             f"{CONFINIA_BASE_URL}/communes/{commune}/facts",
-            {"country": "FR", "lang": "fr"}, ttl=CONFINIA_TTL, headers=entetes)
+            {"country": "FR", "lang": _LANG.get()}, ttl=CONFINIA_TTL, headers=entetes)
         unite = faits.get("unit") or {}
         if not unite.get("code"):
             return None
@@ -2560,6 +2582,7 @@ async def _commune_history(commune, lon=None, lat=None, bdnb_id=None):
 
         return {
             "code": unite.get("code"),
+            "lang": _LANG.get(),
             "nom": actuel,
             "depuis": unite.get("valid_from"),
             "depuis_fr": _date_fr(unite.get("valid_from")),
