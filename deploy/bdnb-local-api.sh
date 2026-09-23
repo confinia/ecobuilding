@@ -181,26 +181,19 @@ echo "== 5. start bdnb-open, bdnb-rest (admin port) and bdnb-exporter"
 # pg_up stayed 0 after the credential fix). Removing it first forces a fresh
 # read; bdnb-db and the PostgRESTs are left alone.
 podman rm -f ecobuilding-bdnb_bdnb-exporter_1 2>/dev/null || true
-# --no-deps: never let a config drift recreate the 219 GB bdnb-db under us.
+# Any change to docker-compose.yml recreates the WHOLE stack, bdnb-db
+# included: podman-compose 1.3.0 `up` runs a project-wide `down` as soon as
+# one container's config hash differs from the file, and --no-deps does not
+# exclude depends_on targets (seen 2026-09-23, #452). The data volume
+# survives; Postgres gets stop_grace_period (compose) for a clean shutdown,
+# and the mirror is unreachable for ~30 s. So: compose edits at night only.
 ( cd bdnb_stack && podman-compose -p ecobuilding-bdnb -f docker-compose.yml \
     up -d --no-deps bdnb-open bdnb-rest bdnb-exporter )
 sleep 5
 # Schema was possibly (re)built while the container ran: reload its cache.
 podman kill --signal SIGUSR1 ecobuilding-bdnb_bdnb-open_1 2>/dev/null || true
-# bdnb-db is never recreated (above), so its healthcheck is applied in place
-# from the compose file with `podman update` (#452): the same values as the
-# healthcheck block, read from the YAML so the two cannot drift.
-HC=$(python3 - <<'PY'
-import re
-y = open("bdnb_stack/docker-compose.yml").read()
-blk = y[y.index("  bdnb-db:"):]; blk = blk[blk.index("healthcheck:"):]
-v = lambda k, d: (re.search(rf"^\s+{k}:\s*(\S+)", blk, re.M) or [None, d])[1]
-print(f"--health-interval {v('interval','30s')} --health-timeout {v('timeout','5s')} "
-      f"--health-start-period {v('start_period','0s')} --health-retries {v('retries','3')}")
-PY
-)
-# shellcheck disable=SC2086
-podman update $HC ecobuilding-bdnb_bdnb-db_1 >/dev/null && echo "   bdnb-db healthcheck: $HC"
+podman inspect ecobuilding-bdnb_bdnb-db_1 --format \
+  '   bdnb-db healthcheck: interval={{.Config.Healthcheck.Interval}} timeout={{.Config.Healthcheck.Timeout}} start={{.Config.Healthcheck.StartPeriod}} stop-timeout={{.Config.StopTimeout}}s'
 
 echo "== 6. prometheus: pick up the bdnb scrape jobs (config is volume-mounted)"
 podman kill --signal HUP ecobuilding-monitoring_prometheus_1 2>/dev/null \

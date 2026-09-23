@@ -42,6 +42,10 @@ services:
       timeout: 15s
       start_period: 60s
       retries: 3
+    # Every compose edit recreates this container (deploy/bdnb-local-api.sh,
+    # step 5). fsync is off: the shutdown checkpoint must never be cut short
+    # by podman's default 10 s SIGKILL.
+    stop_grace_period: 60s
     restart: unless-stopped
 
   # PostgREST mirrors the BDNB REST interface. db-schema is set after restore
