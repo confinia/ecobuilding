@@ -187,6 +187,20 @@ podman rm -f ecobuilding-bdnb_bdnb-exporter_1 2>/dev/null || true
 sleep 5
 # Schema was possibly (re)built while the container ran: reload its cache.
 podman kill --signal SIGUSR1 ecobuilding-bdnb_bdnb-open_1 2>/dev/null || true
+# bdnb-db is never recreated (above), so its healthcheck is applied in place
+# from the compose file with `podman update` (#452): the same values as the
+# healthcheck block, read from the YAML so the two cannot drift.
+HC=$(python3 - <<'PY'
+import re
+y = open("bdnb_stack/docker-compose.yml").read()
+blk = y[y.index("  bdnb-db:"):]; blk = blk[blk.index("healthcheck:"):]
+v = lambda k, d: (re.search(rf"^\s+{k}:\s*(\S+)", blk, re.M) or [None, d])[1]
+print(f"--health-interval {v('interval','30s')} --health-timeout {v('timeout','5s')} "
+      f"--health-start-period {v('start_period','0s')} --health-retries {v('retries','3')}")
+PY
+)
+# shellcheck disable=SC2086
+podman update $HC ecobuilding-bdnb_bdnb-db_1 >/dev/null && echo "   bdnb-db healthcheck: $HC"
 
 echo "== 6. prometheus: pick up the bdnb scrape jobs (config is volume-mounted)"
 podman kill --signal HUP ecobuilding-monitoring_prometheus_1 2>/dev/null \
