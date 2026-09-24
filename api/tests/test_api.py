@@ -660,12 +660,14 @@ def test_taxes_and_schools_html():
                            "waste_tax_pct": 5.51, "intercommunalite": "CC X",
                            "property_tax_rank_pct": 99, "property_tax_level": "high",
                            "waste_tax_rank_pct": None, "waste_tax_level": None})
-    assert "29.58 %" in h and "TEOM" in h and "(2025)" in h
+    assert "29,58 %" in h and "TEOM" in h and "(2025)" in h
     # Outside the REI (#456) the rate headline (#439) still reads as a
-    # sentence; the taux voté stays as provenance.
+    # sentence; the rates are explained in the note, not labelled "taux voté".
     assert "Élevée — plus haute que dans 99 % des communes" in h
-    assert h.index("Élevée") < h.index("29.58 %")
-    assert "taux global voté" in h
+    assert h.index("Élevée") < h.index("29,58 %")
+    assert "taux voté" not in h
+    assert "Taux 2025 appliqués à la moitié de la valeur locative cadastrale du bien" in h
+    assert "taxe foncière 29,58 %, TEOM 5,51 % (commune" in h
     assert "Ordures ménagères (TEOM)</td>" not in h     # no rank, no headline row
     assert _local_taxes_html({}) == ""
     # With the REI means (#456) the euro line leads and the rate rank goes:
@@ -680,8 +682,8 @@ def test_taxes_and_schools_html():
                            "waste_tax_mean_eur": 160, "articles": 11986})
     assert "environ 860 €/an en moyenne par avis — dans la moyenne, plus que dans 61 % des communes" in h
     assert "environ 160 €/an en moyenne par avis" in h
-    assert "99 %" not in h and "181.22" not in h        # rate rank and TFNB gone
-    assert h.index("860 €/an") < h.index("70.77 %") and "REI 2025" in h
+    assert "99 %" not in h and "181" not in h           # rate rank and TFNB gone
+    assert h.index("860 €/an") < h.index("70,77 %") and "REI 2025" in h
     h2 = _schools_html({"within_2km": 8, "nearest": [
         {"name": "Jean Moulin", "type": "Ecole", "statut": "Public", "distance_m": 240}]})
     assert "Jean Moulin" in h2 and "240 m" in h2 and "sectorisation" in h2

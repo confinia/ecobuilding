@@ -948,11 +948,19 @@ function sectionFiscalite(data) {
                              : taxHeadline(t.property_tax_level, t.property_tax_rank_pct))}
     ${kv("Ordures ménagères (TEOM)", rei ? taxMean(t.waste_tax_mean_eur)
                                          : taxHeadline(t.waste_tax_level, t.waste_tax_rank_pct))}
-    ${kv("Taxe foncière (bâti), taux global voté", t.property_tax_built_pct != null ? t.property_tax_built_pct + " %" : null)}
-    ${kv("TEOM, taux voté", t.waste_tax_pct != null ? t.waste_tax_pct + " %" : null)}
     <p class="hint">${rei
       ? `Moyennes par avis de taxe foncière dans la commune (DGFiP, REI ${t.rei_year}) : un ordre de grandeur, pas le montant dû pour ce logement, qui dépend de sa valeur locative cadastrale.`
-      : "Comparaison entre toutes les communes de France (DGFiP). Le montant dû dépend de la valeur locative cadastrale du bien."}</p>`;
+      : "Comparaison entre toutes les communes de France (DGFiP). Le montant dû dépend de la valeur locative cadastrale du bien."}${taxRates(t)}</p>`;
+}
+// « Taux voté » est du jargon : le pourcentage voté chaque année, appliqué à
+// la moitié de la valeur locative cadastrale. Une phrase l'explique ; une
+// ligne de tableau, non.
+function taxRates(t) {
+  if (t.property_tax_built_pct == null) return "";
+  const pct = v => Number(v).toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const parts = [`taxe foncière ${pct(t.property_tax_built_pct)} %`];
+  if (t.waste_tax_pct) parts.push(`TEOM ${pct(t.waste_tax_pct)} %`);
+  return ` Taux ${t.year || ""} appliqués à la moitié de la valeur locative cadastrale du bien : ${parts.join(", ")} (commune + intercommunalité + syndicats).`;
 }
 
 
