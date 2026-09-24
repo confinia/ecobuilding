@@ -509,7 +509,52 @@ def test_local_taxes_block(monkeypatch):
     assert t["property_tax_built_pct"] == 29.58 and t["waste_tax_pct"] == 5.51
     assert t["property_tax_rank_pct"] == 10 and t["property_tax_level"] == "low"
     assert t["waste_tax_rank_pct"] == 5 and t["waste_tax_level"] == "low"
+    # REI means (#456) ride along, from the committed extract: a low RATE on
+    # large houses is a high BILL — 2 077 €/an, 97th percentile.
+    assert t["rei_year"] == 2025 and t["property_tax_mean_eur"] == 2080
+    assert t["property_tax_mean_rank_pct"] == 97 and t["property_tax_mean_level"] == "high"
+    assert t["waste_tax_mean_eur"] == 390 and t["articles"] == 3033
     assert asyncio.run(main._local_taxes(None)) is None
+
+
+def test_local_taxes_rei_means_survive_a_dgfip_outage(monkeypatch):
+    """The live rates dataset down: the euro means (local file) still ship."""
+    async def boom(url, params, ttl):
+        raise RuntimeError("502")
+    monkeypatch.setattr(main, "_cached_get_json", boom)
+    t = asyncio.run(main._local_taxes("11170"))
+    assert t["property_tax_mean_eur"] == 860 and t["waste_tax_mean_eur"] == 160
+    assert "property_tax_built_pct" not in t
+    # Unknown commune, no rates either: nothing rather than an empty block.
+    assert asyncio.run(main._local_taxes("99999")) is None
+
+
+def test_rei_commune_maps_arrondissements():
+    # Paris, Lyon, Marseille: one REI row for the whole commune (#456).
+    assert main._rei_commune("75116") == "75056" and main._rei_commune("69382") == "69123"
+    assert main._rei_commune("13208") == "13055" and main._rei_commune("13201") == "13055"
+    assert main._rei_commune("75056") == "75056" and main._rei_commune("13200") == "13055"
+    assert main._rei_commune("69123") == "69123" and main._rei_commune("31557") == "31557"
+    assert main._rei_taxes("75101")["articles"] == main._rei_taxes("75056")["articles"]
+
+
+def test_rei_extract_parses_the_dgfip_csv():
+    """One synthetic REI line per case: PLM, Corsica, overseas 2-digit COM,
+    occulted commune (no articles), commune without TEOM."""
+    from app import rei_extract
+    cols = ["DEP", "COM", "E14", "F13", "F14"] + rei_extract.AMOUNT_COLS
+    def line(dep, com, e14, f13, f14, *amounts):
+        return ";".join([dep, com, str(e14), str(f13), str(f14)] + [str(a) for a in amounts])
+    csv = "\n".join([";".join(cols),
+                     line("11", "170", 11986, 1973200, 12151, 9851600, 0, 218581, 0, 0, 0, 0),
+                     line("2A", "004", 100, 0, 0, 100000, 0, 0, 0, 0, 0, 0),
+                     line("971", "20", 10, 5000, 10, "1234,5", 0, 0, 0, 0, 0, 0),
+                     line("75", "056", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)])
+    out = rei_extract.parse(csv.encode("latin-1"))
+    assert set(out) == {"11170", "2A004", "97120"}      # 75056 occulted: absent
+    assert out["11170"] == [840, 33, 162, 11986]        # (9851600+218581)/11986
+    assert out["2A004"] == [1000, 67, None, 100]        # REOM commune: no TEOM mean
+    assert out["97120"] == [123, 0, 500, 10]            # decimal comma parsed
 
 
 def test_tax_level_words():
@@ -616,12 +661,27 @@ def test_taxes_and_schools_html():
                            "property_tax_rank_pct": 99, "property_tax_level": "high",
                            "waste_tax_rank_pct": None, "waste_tax_level": None})
     assert "29.58 %" in h and "TEOM" in h and "(2025)" in h
-    # The headline (#439) reads as a sentence; the taux voté stays as provenance.
+    # Outside the REI (#456) the rate headline (#439) still reads as a
+    # sentence; the taux voté stays as provenance.
     assert "Élevée — plus haute que dans 99 % des communes" in h
     assert h.index("Élevée") < h.index("29.58 %")
     assert "taux global voté" in h
     assert "Ordures ménagères (TEOM)</td>" not in h     # no rank, no headline row
     assert _local_taxes_html({}) == ""
+    # With the REI means (#456) the euro line leads and the rate rank goes:
+    # Gruissan is 99th percentile by rate, 61st by bill.
+    h = _local_taxes_html({"year": "2025", "property_tax_built_pct": 70.77,
+                           "waste_tax_pct": 13.58, "property_tax_unbuilt_pct": 181.22,
+                           "property_tax_rank_pct": 99, "property_tax_level": "high",
+                           "waste_tax_rank_pct": 80, "waste_tax_level": "high",
+                           "rei_year": 2025, "property_tax_mean_eur": 860,
+                           "property_tax_mean_rank_pct": 61,
+                           "property_tax_mean_level": "average",
+                           "waste_tax_mean_eur": 160, "articles": 11986})
+    assert "environ 860 €/an en moyenne par avis — dans la moyenne, plus que dans 61 % des communes" in h
+    assert "environ 160 €/an en moyenne par avis" in h
+    assert "99 %" not in h and "181.22" not in h        # rate rank and TFNB gone
+    assert h.index("860 €/an") < h.index("70.77 %") and "REI 2025" in h
     h2 = _schools_html({"within_2km": 8, "nearest": [
         {"name": "Jean Moulin", "type": "Ecole", "statut": "Public", "distance_m": 240}]})
     assert "Jean Moulin" in h2 and "240 m" in h2 and "sectorisation" in h2

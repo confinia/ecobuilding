@@ -273,6 +273,15 @@ def _traceability_annex(data: dict, photos: list | None) -> str:
             T("insee_com = {c} · exercice {y}").format(c=commune or '—', y=lt.get('year') or '—'),
             T("exercice {y}").format(y=lt.get('year') or '—'),
             "https://data.economie.gouv.fr/explore/dataset/fiscalite-locale-des-particuliers-geo/")))
+    if lt.get("rei_year"):
+        cards.append((T("Fiscalité locale") + T(" (moyennes)"), _prov(
+            T("DGFiP — REI, recensement des éléments d'imposition (data.economie.gouv.fr)"),
+            "Licence Ouverte",
+            T("commune {c} · {n} avis de taxe foncière").format(
+                c=commune or '—', n=_eur(lt.get('articles'))),
+            T("millésime {y}").format(y=lt['rei_year']),
+            "https://data.economie.gouv.fr/explore/dataset/impots-locaux-fichier-de-recensement-"
+            "des-elements-dimposition-a-la-fiscalite-dir/")))
     sc = data.get("schools") or {}
     if sc.get("within_2km"):
         cards.append((T("Écoles"), _prov(
@@ -464,17 +473,30 @@ def _local_taxes_html(t: dict) -> str:
     if not t:
         return ""
     yr = f" ({t['year']})" if t.get("year") else ""
-    # Le taux voté seul ne dit rien à un lecteur (#439) : il s'applique à la
-    # moitié d'une valeur locative cadastrale que personne ne connaît. La
-    # position parmi les communes de France, si.
-    tfb = _row(T("Taxe foncière"), _tax_headline(t.get("property_tax_level"),
-                                                 t.get("property_tax_rank_pct")))
-    teom = _row(T("Ordures ménagères (TEOM)"), _tax_headline(t.get("waste_tax_level"),
-                                                              t.get("waste_tax_rank_pct")))
-    note = T("Comparaison des taux globaux (commune + intercommunalité + syndicats)\n"
-             "entre toutes les communes de France, dernier exercice publié (DGFiP).\n"
-             "Le montant dû dépend de la valeur locative cadastrale du bien : les\n"
-             "données publiées ne permettent pas d'en donner un ordre de grandeur en euros.")
+    # Un taux voté ne dit rien à un lecteur (#439) ; le rang du taux trompait
+    # (Gruissan : 99e centile en taux, 61e en euros). Ce qui se comprend, c'est
+    # la moyenne par avis dans la commune, en euros, telle que la DGFiP la
+    # publie dans le REI (#456) — jamais la cotisation de ce logement.
+    tfb = _row(T("Taxe foncière"), _tax_mean_line(t.get("property_tax_mean_eur"),
+                                                  t.get("property_tax_mean_level"),
+                                                  t.get("property_tax_mean_rank_pct")))
+    teom = _row(T("Ordures ménagères (TEOM)"), _tax_mean_line(t.get("waste_tax_mean_eur")))
+    if t.get("property_tax_mean_eur") is not None:
+        note = T("Moyennes par avis de taxe foncière dans la commune (DGFiP, REI {y}) :\n"
+                 "un ordre de grandeur, pas le montant dû pour ce logement, qui dépend\n"
+                 "de sa valeur locative cadastrale, non publiée par local. Les taux votés\n"
+                 "(commune + intercommunalité + syndicats) sont donnés pour mémoire.").format(
+                     y=t.get("rei_year"))
+    else:
+        # Commune absente du REI (données occultées) : rang du taux seul (#439).
+        tfb = _row(T("Taxe foncière"), _tax_headline(t.get("property_tax_level"),
+                                                     t.get("property_tax_rank_pct")))
+        teom = _row(T("Ordures ménagères (TEOM)"), _tax_headline(t.get("waste_tax_level"),
+                                                                  t.get("waste_tax_rank_pct")))
+        note = T("Comparaison des taux globaux (commune + intercommunalité + syndicats)\n"
+                 "entre toutes les communes de France, dernier exercice publié (DGFiP).\n"
+                 "Le montant dû dépend de la valeur locative cadastrale du bien : les\n"
+                 "données publiées ne permettent pas d'en donner un ordre de grandeur en euros.")
     return f"""
 <h2>{T("Fiscalité locale")}{yr}</h2>
 <table>
@@ -482,10 +504,21 @@ def _local_taxes_html(t: dict) -> str:
   {teom}
   {_row(T("Taxe foncière (bâti), taux global voté"), t.get("property_tax_built_pct"), " %")}
   {_row(T("TEOM, taux voté"), t.get("waste_tax_pct"), " %")}
-  {_row(T("Taxe foncière (non bâti), taux voté"), t.get("property_tax_unbuilt_pct"), " %")}
   {_row(T("Intercommunalité"), t.get("intercommunalite"))}
 </table>
 <p class="meta">{note}</p>"""
+
+
+def _tax_mean_line(eur, level=None, rank_pct=None):
+    """'environ 860 €/an en moyenne par avis — élevée, plus que dans 61 % des
+    communes' ; sans rang (TEOM), la moyenne seule ; '' sans moyenne."""
+    if eur is None:
+        return ""
+    line = T("environ {eur} €/an en moyenne par avis").format(eur=_eur(eur))
+    if level is not None and rank_pct is not None:
+        word = {"low": T("modérée"), "average": T("dans la moyenne"), "high": T("élevée")}[level]
+        line += T(" — {word}, plus que dans {pct} % des communes").format(word=word, pct=rank_pct)
+    return line
 
 
 def _tax_headline(level, rank_pct):
@@ -1423,8 +1456,26 @@ _EN = {
         "{word} — higher than in {pct} % of French municipalities",
     "Taxe foncière (bâti), taux global voté": "Property tax (built land), combined voted rate",
     "TEOM, taux voté": "TEOM, voted rate",
-    "Taxe foncière (non bâti), taux voté": "Property tax (unbuilt land), voted rate",
+    "environ {eur} €/an en moyenne par avis": "about €{eur}/yr on average per tax bill",
+    " — {word}, plus que dans {pct} % des communes":
+        " — {word}, more than in {pct} % of French municipalities",
+    "modérée": "moderate",
+    "dans la moyenne": "average",
+    "élevée": "high",
+    "Moyennes par avis de taxe foncière dans la commune (DGFiP, REI {y}) :\n"
+    "un ordre de grandeur, pas le montant dû pour ce logement, qui dépend\n"
+    "de sa valeur locative cadastrale, non publiée par local. Les taux votés\n"
+    "(commune + intercommunalité + syndicats) sont donnés pour mémoire.":
+        "Averages per property-tax bill in the municipality (DGFiP, REI {y}): an order of "
+        "magnitude, not the amount due for this dwelling, which depends on its cadastral "
+        "rental value, not published per unit. The voted rates (municipality + "
+        "inter-municipal body + syndicates) are given for reference.",
     "Intercommunalité": "Inter-municipal body",
+    " (moyennes)": " (averages)",
+    "DGFiP — REI, recensement des éléments d'imposition (data.economie.gouv.fr)":
+        "DGFiP — REI, census of local tax elements (data.economie.gouv.fr)",
+    "commune {c} · {n} avis de taxe foncière": "municipality {c} · {n} property-tax bills",
+    "millésime {y}": "edition {y}",
     "Comparaison des taux globaux (commune + intercommunalité + syndicats)\n"
     "entre toutes les communes de France, dernier exercice publié (DGFiP).\n"
     "Le montant dû dépend de la valeur locative cadastrale du bien : les\n"

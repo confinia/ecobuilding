@@ -12,6 +12,7 @@ Data sources (all open, keyless):
 
 import asyncio
 import copy as _copy
+import gzip
 import json
 import logging
 import math
@@ -1405,6 +1406,8 @@ async def _do_lookup(q, ban_id, address, lon, lat):
         sources.append("ADEME — Observatoire DPE — Licence Ouverte")
     if local_taxes:
         sources.append("DGFiP — Fiscalité directe locale — Licence Ouverte")
+    if local_taxes and local_taxes.get("rei_year"):
+        sources.append(f"DGFiP — REI {local_taxes['rei_year']} — Licence Ouverte")
     if schools:
         sources.append("Annuaire de l'éducation (MENJ) — Licence Ouverte")
     if urbanisme:
@@ -1598,6 +1601,41 @@ SCHOOLS_URL = ("https://data.education.gouv.fr/api/explore/v2.1/catalog/datasets
                "fr-en-annuaire-education/records")
 
 
+# REI (#456) : taxe foncière et TEOM MOYENNES PAR AVIS dans la commune, en
+# euros, extraites une fois par millésime par app/rei_extract.py. C'est ce
+# qu'un lecteur comprend, là où un taux voté ne parle à personne ; ce n'est
+# jamais la cotisation de ce logement (#257).
+with gzip.open(os.path.join(os.path.dirname(__file__), "rei.json.gz"), "rt",
+               encoding="utf-8") as _rf:
+    _REI = json.load(_rf)
+
+
+def _rei_commune(insee):
+    """Paris, Lyon et Marseille n'ont qu'une ligne REI : l'arrondissement que
+    donne la BDNB (75101, 69381, 13201) se rattache à la commune."""
+    s = str(insee or "")
+    if s.startswith("751") and len(s) == 5:
+        return "75056"
+    if s.startswith("6938") and len(s) == 5:
+        return "69123"
+    if s.startswith("132") and len(s) == 5:
+        return "13055"
+    return s
+
+
+def _rei_taxes(insee):
+    """Mean TFB / TEOM per avis for the commune, or None outside the file."""
+    v = _REI["communes"].get(_rei_commune(insee))
+    if not v:
+        return None
+    tfb, rank, teom, articles = v
+    return {"rei_year": _REI["year"], "property_tax_mean_eur": round(tfb, -1),
+            "property_tax_mean_rank_pct": rank,
+            "property_tax_mean_level": _tax_level(rank),
+            "waste_tax_mean_eur": round(teom, -1) if teom is not None else None,
+            "articles": articles}
+
+
 def _tax_level(rank_pct):
     """Three plain words for a France-wide rank (#439): the bottom quarter of
     communes is 'low', the top quarter 'high', the half between 'average'."""
@@ -1628,41 +1666,43 @@ async def _tax_rank(field, rate, year):
 
 
 async def _local_taxes(commune_insee):
-    """Local recurring taxes (#193): DGFiP fiscalité directe locale — the
-    buyer's other cost sheet next to the DPE €/an. Latest exercice; global
-    rates (commune + interco + syndicats). None on any miss.
+    """Local recurring taxes (#193): the buyer's other cost sheet next to the
+    DPE €/an. Two DGFiP sources: the REI file (mean taxe foncière and TEOM
+    per avis in the commune, in euros, #456) and the live fiscalité directe
+    locale dataset (latest exercice, global voted rates). None on any miss.
 
-    Headline is the France-wide rank of each rate (#439); the raw taux votés
-    stay as provenance. No €/an: the dataset publishes rates only (no base,
-    no produit, no article count), so a typical bill cannot be derived."""
+    Headline is the euro mean and its France-wide rank; the rank of the RATE
+    (#439) misled — Gruissan's 70 % on small seaside dwellings ranked 99th
+    while its mean bill sits at the 61st percentile. The taux votés stay as
+    provenance."""
     if not commune_insee:
         return None
+    out = _rei_taxes(commune_insee) or {}
     try:
         d = await _cached_get_json(FISCALITE_URL, {
             "where": f'insee_com="{commune_insee}"',
             "order_by": "exercice desc", "limit": "1"}, ttl=7 * 86400)
         r = (d.get("results") or [{}])[0]
-        if not r.get("taux_global_tfb"):
-            return None
-        year = r.get("exercice")
-        tfb_rank, teom_rank = await asyncio.gather(
-            _tax_rank("taux_global_tfb", r.get("taux_global_tfb"), year),
-            _tax_rank("taux_plein_teom", r.get("taux_plein_teom"), year))
-        return {
-            "year": year,
-            "property_tax_built_pct": r.get("taux_global_tfb"),
-            "property_tax_unbuilt_pct": r.get("taux_global_tfnb"),
-            "waste_tax_pct": r.get("taux_plein_teom"),
-            "intercommunalite": r.get("q03"),
-            # Rank among French communes (share with a LOWER rate) + the word.
-            "property_tax_rank_pct": tfb_rank,
-            "property_tax_level": _tax_level(tfb_rank),
-            "waste_tax_rank_pct": teom_rank,
-            "waste_tax_level": _tax_level(teom_rank),
-        }
+        if r.get("taux_global_tfb"):
+            year = r.get("exercice")
+            tfb_rank, teom_rank = await asyncio.gather(
+                _tax_rank("taux_global_tfb", r.get("taux_global_tfb"), year),
+                _tax_rank("taux_plein_teom", r.get("taux_plein_teom"), year))
+            out.update({
+                "year": year,
+                "property_tax_built_pct": r.get("taux_global_tfb"),
+                "property_tax_unbuilt_pct": r.get("taux_global_tfnb"),
+                "waste_tax_pct": r.get("taux_plein_teom"),
+                "intercommunalite": r.get("q03"),
+                # Rank among French communes (share with a LOWER rate) + the word.
+                "property_tax_rank_pct": tfb_rank,
+                "property_tax_level": _tax_level(tfb_rank),
+                "waste_tax_rank_pct": teom_rank,
+                "waste_tax_level": _tax_level(teom_rank),
+            })
     except Exception as e:
         log.warning("local taxes failed for %s: %s", commune_insee, e)
-        return None
+    return out or None
 
 
 async def _nearby_schools(lon, lat, radius_km: float = 2.0):
@@ -2117,6 +2157,8 @@ def _assemble_building(bdnb_id, lon, lat, row, v):
         sources.append("ADEME — Observatoire DPE — Licence Ouverte")
     if local_taxes:
         sources.append("DGFiP — Fiscalité directe locale — Licence Ouverte")
+    if local_taxes and local_taxes.get("rei_year"):
+        sources.append(f"DGFiP — REI {local_taxes['rei_year']} — Licence Ouverte")
     if schools:
         sources.append("Annuaire de l'éducation (MENJ) — Licence Ouverte")
     if urbanisme:
