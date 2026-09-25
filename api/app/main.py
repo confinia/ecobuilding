@@ -922,6 +922,54 @@ async def _rnb_lookup(lon, lat):
     return None
 
 
+def _footprint_m2(geom) -> float:
+    """Aire au sol d'un geom_groupe BDNB (GeoJSON en Lambert-93, donc en
+    mètres) : formule du lacet sur l'anneau extérieur de chaque polygone.
+    0 si la géométrie manque ou n'est pas un polygone."""
+    if isinstance(geom, str):
+        try:
+            geom = json.loads(geom)
+        except ValueError:
+            return 0.0
+    if not isinstance(geom, dict):
+        return 0.0
+    t, coords = geom.get("type"), geom.get("coordinates") or []
+    polys = [coords] if t == "Polygon" else coords if t == "MultiPolygon" else []
+    total = 0.0
+    for poly in polys:
+        ring = poly[0] if poly else []
+        s = 0.0
+        for (x1, y1), (x2, y2) in zip(ring, ring[1:] + ring[:1]):
+            s += x1 * y2 - x2 * y1
+        total += abs(s) / 2
+    return total
+
+
+def _main_first(rows: list) -> list:
+    """Plusieurs « bâtiments groupe » à une même adresse BAN (#454 : un
+    cinquième des adresses de Tournefeuille) : PostgREST les rend dans un
+    ordre quelconque, et la fiche décrivait l'extension de 2019 (0 logement)
+    plutôt que la maison de 1993. Le principal d'abord : le plus de
+    logements, puis celui qui porte un DPE, puis la plus grande emprise ;
+    l'identifiant départage, pour une réponse stable."""
+    def key(r):
+        return (-(r.get("nb_log") or 0),
+                0 if r.get("classe_bilan_dpe") else 1,
+                -_footprint_m2(r.get("geom_groupe")),
+                r.get("batiment_groupe_id") or "")
+    return sorted(rows, key=key)
+
+
+async def _rows_at_address(ban_id: str) -> list:
+    """Les bâtiments groupe BDNB d'une clé BAN, le principal en tête (#454)."""
+    rows = await _cached_get_json(
+        BDNB_URL, {"cle_interop_adr": f"eq.{ban_id}", "limit": "5"}, ttl=86400)
+    if not isinstance(rows, list):
+        log.warning("BDNB error: %s", rows)
+        return []
+    return _main_first(rows)
+
+
 def _normalize_building(r: dict) -> dict:
     """BDNB batiment_groupe_complet/adresse row -> stable public schema (v1)."""
     return {
@@ -1345,12 +1393,7 @@ def _motif_sans_batiment(ban_id):
 
 
 async def _do_lookup(q, ban_id, address, lon, lat):
-    rows = await _cached_get_json(
-        BDNB_URL, {"cle_interop_adr": f"eq.{ban_id}", "limit": "5"}, ttl=86400
-    )
-    if not isinstance(rows, list):
-        log.warning("BDNB error: %s", rows)
-        rows = []
+    rows = await _rows_at_address(ban_id)
 
     commune = (rows[0].get("code_commune_insee") if rows
                else _commune_de_ban(ban_id))
@@ -1509,9 +1552,7 @@ async def lookup_stream(
 
     _meter_if_keyed(request, "lookup")
     q, ban_id, address, lon, lat = await _resolve_address(q, ban_id, lon, lat)
-    rows = await _cached_get_json(
-        BDNB_URL, {"cle_interop_adr": f"eq.{ban_id}", "limit": "5"}, ttl=86400)
-    rows = rows if isinstance(rows, list) else []
+    rows = await _rows_at_address(ban_id)
     if not rows:
         # Pas de bâtiment : on renvoie l'agrégat de contexte en une seule ligne.
         data = await _do_lookup(q, ban_id, address, lon, lat)

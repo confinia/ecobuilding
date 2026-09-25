@@ -1985,3 +1985,54 @@ def test_ppri_colour_and_report():
                         "area_risks": {"commune": "X", "report_url": "https://x",
                                        "risques_naturels": [], "risques_technologiques": []}})
     assert "PPRI" not in dry and "zone inondable" not in dry
+
+
+# #454: 45 chemin de Pahin, Tournefeuille. Two groupes on one BAN key: the
+# 1993 house (1 dwelling, brick) and its 2019 extension (0 dwellings). The
+# mirror returned the extension first and the fiche described it.
+PAHIN_HOUSE = {"batiment_groupe_id": "bdnb-bg-G51E-DMDZ-PUUP", "annee_construction": 1993,
+               "nb_log": 1, "classe_bilan_dpe": None, "mat_mur_txt": "BRIQUES",
+               "geom_groupe": {"type": "Polygon",
+                               "coordinates": [[[0, 0], [10, 0], [10, 8], [0, 8], [0, 0]]]}}
+PAHIN_EXTENSION = {"batiment_groupe_id": "bdnb-bg-SPW3-4YZ9-Y7RR", "annee_construction": 2019,
+                   "nb_log": 0, "classe_bilan_dpe": None, "mat_mur_txt": "INDETERMINE",
+                   "geom_groupe": {"type": "Polygon",
+                                   "coordinates": [[[0, 0], [20, 0], [20, 20], [0, 20], [0, 0]]]}}
+
+
+def test_main_groupe_first_prefers_dwellings_over_footprint():
+    """The extension has the bigger footprint; the house has the dwelling."""
+    ids = [r["batiment_groupe_id"] for r in main._main_first([PAHIN_EXTENSION, PAHIN_HOUSE])]
+    assert ids == ["bdnb-bg-G51E-DMDZ-PUUP", "bdnb-bg-SPW3-4YZ9-Y7RR"]
+    # Same dwellings: the one carrying a DPE, then the larger footprint,
+    # then the id, so the answer never depends on the mirror's row order.
+    a = {**PAHIN_EXTENSION, "nb_log": 1}
+    b = {**PAHIN_HOUSE, "nb_log": 1}
+    assert main._main_first([a, b])[0]["batiment_groupe_id"] == a["batiment_groupe_id"]
+    assert main._main_first([b, a])[0]["batiment_groupe_id"] == a["batiment_groupe_id"]
+    assert main._main_first([a, {**b, "classe_bilan_dpe": "D"}])[0] is not a
+    assert main._main_first([]) == []
+
+
+def test_footprint_m2_handles_geojson_shapes():
+    assert main._footprint_m2(PAHIN_HOUSE["geom_groupe"]) == 80
+    assert main._footprint_m2(json.dumps(PAHIN_EXTENSION["geom_groupe"])) == 400
+    multi = {"type": "MultiPolygon", "coordinates": [PAHIN_HOUSE["geom_groupe"]["coordinates"],
+                                                     PAHIN_EXTENSION["geom_groupe"]["coordinates"]]}
+    assert main._footprint_m2(multi) == 480
+    assert main._footprint_m2(None) == 0 and main._footprint_m2("{") == 0
+    assert main._footprint_m2({"type": "Point", "coordinates": [1, 2]}) == 0
+
+
+def test_rows_at_address_puts_the_house_first(monkeypatch):
+    async def mirror(url, params, ttl):
+        assert params["cle_interop_adr"] == "eq.31557_2860_00045"
+        return [PAHIN_EXTENSION, PAHIN_HOUSE]
+    monkeypatch.setattr(main, "_cached_get_json", mirror)
+    rows = asyncio.run(main._rows_at_address("31557_2860_00045"))
+    assert [r["annee_construction"] for r in rows] == [1993, 2019]
+
+    async def down(url, params, ttl):
+        return {"message": "boom"}
+    monkeypatch.setattr(main, "_cached_get_json", down)
+    assert asyncio.run(main._rows_at_address("31557_2860_00045")) == []
