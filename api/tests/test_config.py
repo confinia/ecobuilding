@@ -130,6 +130,23 @@ def test_frontend_lists_other_buildings_readably():
 
 
 @needs_repo
+def test_frontend_deep_links_to_a_search():
+    """#460: a URL opens a fiche by address (?q= free text, ?ban= BAN key),
+    not only by building id (?b=, #14). The map's click handlers must still
+    be registered on that path — an early return made the map inert."""
+    app = (ROOT / "frontend/site/app.js").read_text()
+    assert 'get("q")' in app and 'get("ban")' in app
+    assert "openSearchFromUrl" in app
+    # Both the WebGL2 path and the dead-map fallback honour the link.
+    assert app.count("openSearchFromUrl()") >= 2
+    # The search link is resolved server-side, no client-side geocoding.
+    assert "lookup/stream?${params}" in app
+    debut = app.index("openSearchFromUrl();")
+    fin = app.index('map.on("click", "bdnb-dpe-3d"')
+    assert "return;" not in app[debut:fin], "la carte resterait inerte"
+
+
+@needs_repo
 def test_frontend_loading_feedback_is_wired():
     """#150: every loading path shows a spinner, and the PDF button walks the
     staged labels in order (honest staging — no fake percent for a single

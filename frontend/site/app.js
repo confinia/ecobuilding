@@ -282,6 +282,11 @@ const SHOWCASE = {
 // Captured BEFORE map init: maplibre rewrites the hash continuously.
 const hadHash = !!location.hash;
 const urlBuilding = new URLSearchParams(location.search).get("b");
+// Lien vers une RECHERCHE (#460) : `?q=` en texte libre comme dans la barre,
+// `?ban=` par clé BAN quand le lien doit désigner une adresse sans ambiguïté
+// (rapport de bogue, test opérateur). Le bâtiment, lui, a déjà `?b=` (#14).
+const urlQuery = new URLSearchParams(location.search).get("q");
+const urlBan = new URLSearchParams(location.search).get("ban");
 
 // Depuis MapLibre 6.7 (#420), le constructeur LÈVE GPUInitializationError
 // sans WebGL2 (avant : un événement error et une carte à moitié construite).
@@ -509,9 +514,16 @@ map.on("load", () => {
   };
   document.getElementById("legend").hidden = false;
 
-  // Initial selection: ?b= from the URL, else the showcase (no-hash visits).
-  const initialB = urlBuilding || (!hadHash ? SHOWCASE.bdnb_id : null);
-  if (initialB) {
+  // Une recherche en lien passe AVANT la sélection par identifiant : c'est
+  // l'adresse qui commande, le bâtiment s'en déduit (#460). Surtout pas de
+  // `return` ici : les gestionnaires de clic de la carte se posent plus bas,
+  // et un lien de recherche rendrait la carte inerte.
+  const initialB = urlQuery || urlBan
+    ? null
+    : urlBuilding || (!hadHash ? SHOWCASE.bdnb_id : null);
+  if (urlQuery || urlBan) {
+    openSearchFromUrl();
+  } else if (initialB) {
     if (!urlBuilding) track("showcase_default");
     const c = map.getCenter();
     openBuildingById(initialB, c.lng, c.lat);
@@ -687,7 +699,10 @@ if (mapDead) {
     "La recherche d'adresse et les fiches restent disponibles.";
   document.body.appendChild(el);
   const h = location.hash.slice(1).split("/");   // #zoom/lat/lon/bearing/pitch
-  if (urlBuilding && h.length >= 3) openBuildingById(urlBuilding, +h[2], +h[1]);
+  // Sans WebGL2 la carte est morte, la FICHE doit quand même s'ouvrir : un
+  // lien de recherche (#460) marche ici aussi, puisque le serveur géocode.
+  if (urlQuery || urlBan) openSearchFromUrl();
+  else if (urlBuilding && h.length >= 3) openBuildingById(urlBuilding, +h[2], +h[1]);
 }
 
 async function select(s) {
@@ -764,6 +779,32 @@ async function loadStreetview(lon, lat) {
       `</div><p class="hint">${[...new Set(photos.map((p) => p.source).filter(Boolean))].join(" · ")} — réutilisation sous licence libre, auteur cité au survol</p>`;
     el.innerHTML = streetviewCache;
   } catch { /* imagery is best-effort */ }
+}
+
+// Ouvrir la fiche d'une ADRESSE donnée dans l'URL (#460). Même flux que la
+// barre de recherche : le serveur résout le géocodage, donc un lien suffit là
+// où il fallait redemander à quelqu'un de retaper une adresse.
+async function openSearchFromUrl() {
+  const params = urlBan
+    ? `ban_id=${encodeURIComponent(urlBan)}`
+    : `q=${encodeURIComponent(urlQuery)}`;
+  if (urlQuery) input.value = urlQuery;
+  showLoadingPanel('Chargement des données du bâtiment…');
+  try {
+    const r = await fetch(`${API}/lookup/stream?${params}`);
+    if (!r.ok) throw new Error(r.status);
+    const data = await consumeBuildingStream(r);
+    const { lon, lat } = data.query || {};
+    if (lon != null && lat != null) {
+      safeMap(() => map.flyTo({ center: [lon, lat], zoom: 17.5, pitch: 55,
+                               bearing: -18, duration: 2500 }));
+      safeMap(() => placeMarker(lon, lat));
+      safeMap(() => anchorMarkerToBuilding(data.buildings?.[0]?.bdnb_id, [lon, lat]));
+    }
+    track("lookup", data.buildings?.length ? "ok" : "no_building");
+  } catch {
+    showPanel(`<p class="hint">Adresse introuvable ou données indisponibles.</p>`);
+  }
 }
 
 async function openBuildingById(id, lon, lat) {
