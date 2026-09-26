@@ -943,15 +943,19 @@ function taxMean(eur, level, rank) {
 // décrit un — le principal depuis #454 — et se taisait sur les autres. Une
 // annexe probable (ni logement ni DPE) est dite telle, jamais masquée ; et
 // chaque ligne mène à SA fiche, ce dont #288 a besoin.
+// La NATURE d'abord, les chiffres ensuite (#462) : « 2019 · 0 logements · 6 m
+// — annexe probable » faisait lire une année et un zéro avant d'apprendre
+// qu'il s'agit d'un garage. Et ce zéro, le mot « annexe » le dit déjà.
 function batimentLabel(o) {
   const bouts = [];
+  if (o.annexe) bouts.push("Annexe probable");
+  if (o.dwellings != null && !(o.annexe && !o.dwellings)) {
+    bouts.push(`${o.dwellings} logement${o.dwellings === 1 ? "" : "s"}`);
+  }
   if (o.construction_year) bouts.push(String(o.construction_year));
-  if (o.dwellings != null) bouts.push(`${o.dwellings} logement${o.dwellings === 1 ? "" : "s"}`);
   if (o.height_m) bouts.push(`${Math.round(o.height_m)} m`);
   if (o.energy?.dpe_class) bouts.push(`DPE ${o.energy.dpe_class}`);
-  let label = bouts.join(" · ") || "aucune caractéristique publiée";
-  if (o.annexe) label += " — annexe probable";
-  return label;
+  return bouts.join(" · ") || "aucune caractéristique publiée";
 }
 function sectionAutresBatiments(data) {
   const a = data.address_buildings;
@@ -960,10 +964,20 @@ function sectionAutresBatiments(data) {
   const phrase = a.described_is_main
     ? `${a.count} bâtiments à cette adresse, le principal est décrit ici.`
     : `${a.count} bâtiments à cette adresse, celui décrit ici a été choisi.`;
-  const lignes = others.map(o => `<div class="kv"><span class="k">${batimentLabel(o)}</span>
-    <a href="#" data-bdnb="${o.bdnb_id}" class="autre-bat">Voir sa fiche</a></div>`).join("");
+  // UNE fiche, UN rapport par adresse (#462) : une annexe se lit dans la
+  // fiche du bâtiment qu'elle sert, elle n'a ni fiche ni PDF à elle — sinon
+  // le visiteur dépense une fiche pour un garage. Un vrai bâtiment (des
+  // logements, un DPE), lui, reste cliquable : c'en est un autre.
+  const lignes = others.map((o, i) => {
+    const texte = `Bâtiment ${i + 2} — ${batimentLabel(o)}`;
+    return o.annexe
+      ? `<div class="kv autre-bat-ligne"><span class="k">${texte}</span></div>`
+      : `<div class="kv autre-bat-ligne"><a href="#" data-bdnb="${o.bdnb_id}"
+           class="autre-bat">${texte}</a></div>`;
+  }).join("");
   return `<h3>Autres bâtiments à cette adresse</h3>
-    <p class="hint">${phrase}</p>${lignes}`;
+    <p class="hint">${phrase}</p>${lignes}
+    <p class="hint">Une annexe figure dans cette fiche et dans son PDF : elle n'a pas de fiche à elle.</p>`;
 }
 function sectionFiscalite(data) {
   const t = data.local_taxes;

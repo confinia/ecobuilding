@@ -380,9 +380,12 @@ def _address_buildings_html(a: dict) -> str:
     phrase = (T("{n} bâtiments à cette adresse, le principal est décrit ci-dessus.")
               if a.get("described_is_main")
               else T("{n} bâtiments à cette adresse, celui décrit ci-dessus a été choisi."))
+    # Numérotés pour pouvoir être NOMMÉS (#462) : « le bâtiment 3 » se dit,
+    # « celui de 5 m » se devine. Le bâtiment décrit porte le numéro 1.
     lignes = "".join(
-        f'<tr><td class="k">{_building_label(o)}</td><td>{o.get("bdnb_id") or "—"}</td></tr>'
-        for o in others)
+        f'<tr><td class="k">{T("Bâtiment {i}").format(i=i)} — {_building_label(o)}</td>'
+        f'<td>{o.get("bdnb_id") or "—"}</td></tr>'
+        for i, o in enumerate(others, start=2))
     return f"""
 <h2>{T("Autres bâtiments à cette adresse")}</h2>
 <p class="meta">{phrase.format(n=a.get("count"))}</p>
@@ -390,24 +393,25 @@ def _address_buildings_html(a: dict) -> str:
 
 
 def _building_label(o: dict) -> str:
-    """« 2019, 0 logement, 6 m — annexe probable » : ce qui distingue un
-    bâtiment de son voisin, avec ce que la BDNB en dit vraiment."""
+    """« Annexe probable · 2019 · 6 m » (#462) : la NATURE d'abord, les
+    chiffres ensuite. L'ordre inverse faisait lire une année et « 0 logements »
+    avant d'apprendre qu'il s'agit d'un garage — et ce zéro, le mot le dit
+    déjà, donc il disparaît sur une annexe."""
     bouts = []
-    if o.get("construction_year"):
-        bouts.append(str(o["construction_year"]))
+    if o.get("annexe"):
+        bouts.append(T("Annexe probable"))
     n = o.get("dwellings")
-    if n is not None:
+    if n is not None and not (o.get("annexe") and not n):
         bouts.append(T("{n} logement").format(n=n) if n == 1
                      else T("{n} logements").format(n=n))
+    if o.get("construction_year"):
+        bouts.append(str(o["construction_year"]))
     if o.get("height_m"):
         bouts.append(T("{h} m").format(h=round(o["height_m"])))
     cls = (o.get("energy") or {}).get("dpe_class")
     if cls:
         bouts.append(T("DPE {c}").format(c=cls))
-    label = " · ".join(bouts) or T("aucune caractéristique publiée")
-    if o.get("annexe"):
-        label += T(" — annexe probable")
-    return label
+    return " · ".join(bouts) or T("aucune caractéristique publiée")
 
 
 def _dpe_spread_html(e: dict, dpe_representatif: str | None = None,
@@ -1546,12 +1550,13 @@ _EN = {
         "{n} buildings at this address; the main one is described above.",
     "{n} bâtiments à cette adresse, celui décrit ci-dessus a été choisi.":
         "{n} buildings at this address; the one described above was the one selected.",
+    "Annexe probable": "Probably an outbuilding",
+    "Bâtiment {i}": "Building {i}",
     "{n} logement": "{n} dwelling",
     "{n} logements": "{n} dwellings",
     "{h} m": "{h} m",
     "DPE {c}": "EPC {c}",
     "aucune caractéristique publiée": "no published characteristics",
-    " — annexe probable": " — probably an outbuilding",
     " (moyennes)": " (averages)",
     "DGFiP — REI, recensement des éléments d'imposition (data.economie.gouv.fr)":
         "DGFiP — REI, census of local tax elements (data.economie.gouv.fr)",
