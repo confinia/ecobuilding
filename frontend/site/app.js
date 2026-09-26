@@ -939,6 +939,32 @@ function taxMean(eur, level, rank) {
   if (word && rank != null) s += ` — ${word}, plus que dans ${rank} % des communes`;
   return s;
 }
+// Plusieurs « bâtiments groupe » à la même adresse (#458) : la fiche en
+// décrit un — le principal depuis #454 — et se taisait sur les autres. Une
+// annexe probable (ni logement ni DPE) est dite telle, jamais masquée ; et
+// chaque ligne mène à SA fiche, ce dont #288 a besoin.
+function batimentLabel(o) {
+  const bouts = [];
+  if (o.construction_year) bouts.push(String(o.construction_year));
+  if (o.dwellings != null) bouts.push(`${o.dwellings} logement${o.dwellings === 1 ? "" : "s"}`);
+  if (o.height_m) bouts.push(`${Math.round(o.height_m)} m`);
+  if (o.energy?.dpe_class) bouts.push(`DPE ${o.energy.dpe_class}`);
+  let label = bouts.join(" · ") || "aucune caractéristique publiée";
+  if (o.annexe) label += " — annexe probable";
+  return label;
+}
+function sectionAutresBatiments(data) {
+  const a = data.address_buildings;
+  const others = a?.others || [];
+  if (!others.length) return "";
+  const phrase = a.described_is_main
+    ? `${a.count} bâtiments à cette adresse, le principal est décrit ici.`
+    : `${a.count} bâtiments à cette adresse, celui décrit ici a été choisi.`;
+  const lignes = others.map(o => `<div class="kv"><span class="k">${batimentLabel(o)}</span>
+    <a href="#" data-bdnb="${o.bdnb_id}" class="autre-bat">Voir sa fiche</a></div>`).join("");
+  return `<h3>Autres bâtiments à cette adresse</h3>
+    <p class="hint">${phrase}</p>${lignes}`;
+}
 function sectionFiscalite(data) {
   const t = data.local_taxes;
   if (!t) return "";
@@ -1237,6 +1263,7 @@ function renderPanel(s, data, opts) {
     ${kv("Générateur", b.cooling.generator_type)}
     ${kv("Ancienneté", b.cooling.generator_age)}` : ""}
     ${sectionNappe(data)}
+    ${sectionAutresBatiments(data)}
     ${sectionFiscalite(data)}
     ${sectionEcoles(data)}
     ${sectionEau(data)}
@@ -1265,6 +1292,14 @@ function renderPanel(s, data, opts) {
     f.dataset.url = base + (base.includes("?") ? "&" : "?")
       + "dpe=" + encodeURIComponent(f.dataset.dpe);
     f.onclick = () => downloadReport(f);
+  });
+  // Chaque autre bâtiment de l'adresse mène à SA fiche, par le chemin du clic
+  // sur la carte : même flux, même repère, même compteur (#458).
+  document.querySelectorAll(".autre-bat").forEach((a) => {
+    a.onclick = (e) => {
+      e.preventDefault();
+      openBuildingById(a.dataset.bdnb, data.query?.lon, data.query?.lat);
+    };
   });
   compteurFiches(b.bdnb_id);
   loadStreetview(data.query?.lon, data.query?.lat);

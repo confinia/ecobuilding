@@ -970,6 +970,61 @@ async def _rows_at_address(ban_id: str) -> list:
     return _main_first(rows)
 
 
+def _annexe_probable(r: dict) -> bool:
+    """Ni logement ni DPE : une annexe (garage, abri, extension) plutôt qu'un
+    bâtiment habité. Dit, jamais caché (#458) — c'est l'omission qui avait
+    fait croire à une erreur dans #454."""
+    return not (r.get("nb_log") or 0) and not r.get("classe_bilan_dpe")
+
+
+async def _buildings_at_address(bdnb_id: str, lon, lat) -> dict | None:
+    """Les autres « bâtiments groupe » à la MÊME adresse BAN (#458).
+
+    #455 a mis le principal en tête ; ici on dit que les autres existent. La
+    clé BAN vient de la relation adresse du groupe (celle qui sert déjà à
+    #152), la plus proche du point regardé — un groupe peut couvrir plusieurs
+    numéros. None dès qu'il n'y a qu'un bâtiment : rien à signaler."""
+    try:
+        rel = await _cached_get_json(
+            BDNB_REL_ADR_URL, {"batiment_groupe_id": f"eq.{bdnb_id}", "limit": "200"},
+            ttl=86400)
+        rows_adr = [r for r in (rel if isinstance(rel, list) else [])
+                    if r.get("cle_interop_adr")]
+        if not rows_adr:
+            return None
+        best = rows_adr[0]
+        if lon is not None and lat is not None:
+            best_d = None
+            for r in rows_adr:
+                coords = (r.get("geom_adresse") or {}).get("coordinates")
+                if not coords:
+                    continue
+                alon, alat = _l93_to_wgs84(coords[0], coords[1])
+                d = _haversine_m(lon, lat, alon, alat)
+                if best_d is None or d < best_d:
+                    best, best_d = r, d
+        rows = await _rows_at_address(best["cle_interop_adr"])
+        if len(rows) < 2:
+            return None
+        others = [{**_normalize_building(r), "annexe": _annexe_probable(r)}
+                  for r in rows if r.get("batiment_groupe_id") != bdnb_id]
+        if not others:
+            return None
+        return {
+            "address": best.get("libelle_adresse") or rows[0].get("libelle_adr_principale_ban"),
+            "count": len(rows),
+            "described_id": bdnb_id,
+            # Le bâtiment décrit est-il le principal au sens de #454 (le plus
+            # de logements, puis le DPE, puis l'emprise) ? Il ne l'est pas
+            # quand le visiteur a choisi lui-même une annexe sur la carte.
+            "described_is_main": rows[0].get("batiment_groupe_id") == bdnb_id,
+            "others": others,
+        }
+    except Exception as e:
+        log.warning("buildings at address failed for %s: %s", bdnb_id, e)
+        return None
+
+
 def _normalize_building(r: dict) -> dict:
     """BDNB batiment_groupe_complet/adresse row -> stable public schema (v1)."""
     return {
@@ -2140,7 +2195,8 @@ async def building(
 # toutes, le flux (/v1/buildings/{id}/stream) les émet au fil de l'eau.
 _BLOCK_NAMES = ("prices", "area_risks", "groundwater", "solar_pv", "click_addr",
                 "water_network", "official_dpe", "local_taxes", "schools", "rnb",
-                "commune", "dpe_spread", "urbanisme", "ppri", "construction")
+                "commune", "dpe_spread", "urbanisme", "ppri", "construction",
+                "address_buildings")
 
 
 def _building_block_coros(bdnb_id, lon, lat, row):
@@ -2153,7 +2209,8 @@ def _building_block_coros(bdnb_id, lon, lat, row):
             _rnb_lookup(lon, lat), _commune_history(commune, lon, lat, bdnb_id),
             _dpe_spread(bdnb_id, lon, lat, row.get("nb_log")),
             _plu_zone(lon, lat), _ppri_zone(lon, lat),
-            _construction_years(bdnb_id))
+            _construction_years(bdnb_id),
+            _buildings_at_address(bdnb_id, lon, lat))
 
 
 
@@ -2185,6 +2242,7 @@ def _assemble_building(bdnb_id, lon, lat, row, v):
     urbanisme = v.get("urbanisme")
     ppri = v.get("ppri")
     construction = v.get("construction")
+    address_buildings = v.get("address_buildings")
     sources = ["BDNB (CSTB) — Licence Ouverte v2.0", "Géorisques — Licence Ouverte"]
     if prices:
         sources.append("DVF (DGFiP) / Etalab — Licence Ouverte")
@@ -2237,6 +2295,7 @@ def _assemble_building(bdnb_id, lon, lat, row, v):
         "urbanisme": urbanisme,
         "ppri": ppri,
         "construction": construction,
+        "address_buildings": address_buildings,
         "sources": sources,
     }
     return result
@@ -2312,7 +2371,7 @@ async def _building_events(bdnb_id, lon, lat, query_extra=None, extra_rows=()):
         for name in ("area_risks", "groundwater", "solar_pv", "water_network",
                      "official_dpe", "local_taxes", "schools", "prices", "rnb",
                      "commune", "dpe_spread", "urbanisme", "ppri",
-                     "construction"):
+                     "construction", "address_buildings"):
             yield json.dumps({"type": "block", "name": name,
                               "value": done.get(name)}) + "\n"
         yield json.dumps({"type": "done", "sources": done["sources"],

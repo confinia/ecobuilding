@@ -366,6 +366,50 @@ def _principal_address_note(shown_address: str, b: dict) -> str:
             + '</p>')
 
 
+def _address_buildings_html(a: dict) -> str:
+    """Plusieurs « bâtiments groupe » à la même adresse (#458).
+
+    La fiche en décrit UN — le principal depuis #454 — et se taisait sur les
+    autres : le lecteur qui connaît la parcelle voyait une fiche incomplète
+    sans savoir que l'extension et le garage sont des enregistrements à part.
+    Une annexe probable (ni logement ni DPE) est DITE telle, jamais masquée.
+    """
+    others = (a or {}).get("others") or []
+    if not others:
+        return ""
+    phrase = (T("{n} bâtiments à cette adresse, le principal est décrit ci-dessus.")
+              if a.get("described_is_main")
+              else T("{n} bâtiments à cette adresse, celui décrit ci-dessus a été choisi."))
+    lignes = "".join(
+        f'<tr><td class="k">{_building_label(o)}</td><td>{o.get("bdnb_id") or "—"}</td></tr>'
+        for o in others)
+    return f"""
+<h2>{T("Autres bâtiments à cette adresse")}</h2>
+<p class="meta">{phrase.format(n=a.get("count"))}</p>
+<table>{lignes}</table>"""
+
+
+def _building_label(o: dict) -> str:
+    """« 2019, 0 logement, 6 m — annexe probable » : ce qui distingue un
+    bâtiment de son voisin, avec ce que la BDNB en dit vraiment."""
+    bouts = []
+    if o.get("construction_year"):
+        bouts.append(str(o["construction_year"]))
+    n = o.get("dwellings")
+    if n is not None:
+        bouts.append(T("{n} logement").format(n=n) if n == 1
+                     else T("{n} logements").format(n=n))
+    if o.get("height_m"):
+        bouts.append(T("{h} m").format(h=round(o["height_m"])))
+    cls = (o.get("energy") or {}).get("dpe_class")
+    if cls:
+        bouts.append(T("DPE {c}").format(c=cls))
+    label = " · ".join(bouts) or T("aucune caractéristique publiée")
+    if o.get("annexe"):
+        label += T(" — annexe probable")
+    return label
+
+
 def _dpe_spread_html(e: dict, dpe_representatif: str | None = None,
                      dpe_cible: str | None = None) -> str:
     """L'éventail des DPE connus à l'adresse (#287).
@@ -1149,6 +1193,7 @@ def _report_html(data: dict, photos: list | None = None, map_img: str | None = N
 <h1>{address}</h1>
 {cible_banner}
 {_principal_address_note(address, b)}
+{_address_buildings_html(data.get("address_buildings") or {})}
 <p class="meta">{T("Identifiant BDNB : {id} · Générée le {now} · ecobuilding.confinia.io").format(id=b.get("bdnb_id") or "—", now=now)}</p>
 
 <h2>{T("Énergie (DPE)")}{T(" — logement {m2} m², classe {c}").format(m2=cible.get("surface_m2"), c=cls) if cible else ""}</h2>
@@ -1495,6 +1540,18 @@ _EN = {
         "magnitude, not the amount due for this dwelling, which depends on its cadastral "
         "rental value, not published per unit.",
     "Intercommunalité": "Inter-municipal body",
+    # — Autres bâtiments à cette adresse (#458)
+    "Autres bâtiments à cette adresse": "Other buildings at this address",
+    "{n} bâtiments à cette adresse, le principal est décrit ci-dessus.":
+        "{n} buildings at this address; the main one is described above.",
+    "{n} bâtiments à cette adresse, celui décrit ci-dessus a été choisi.":
+        "{n} buildings at this address; the one described above was the one selected.",
+    "{n} logement": "{n} dwelling",
+    "{n} logements": "{n} dwellings",
+    "{h} m": "{h} m",
+    "DPE {c}": "EPC {c}",
+    "aucune caractéristique publiée": "no published characteristics",
+    " — annexe probable": " — probably an outbuilding",
     " (moyennes)": " (averages)",
     "DGFiP — REI, recensement des éléments d'imposition (data.economie.gouv.fr)":
         "DGFiP — REI, census of local tax elements (data.economie.gouv.fr)",
