@@ -53,6 +53,11 @@ html, body { margin: 0; height: 100%; font-family: system-ui, -apple-system, san
 .kv { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; padding: 3px 0; border-bottom: 1px dashed #eee; }
 .kv span:last-child { text-align: right; }
 .kv .k { color: #555; }
+/* Autres bâtiments de l'adresse (#462) : UNE phrase par ligne, sur toute la
+   largeur. En deux colonnes, « Voir sa fiche » se répétait à droite et se
+   coupait en deux sur un téléphone, au-dessus du seul texte qui informe. */
+.autre-bat-ligne { display: block; }
+.autre-bat-ligne .k, .autre-bat-ligne .autre-bat { display: block; text-align: left; }
 .dpe-badge {
   display: inline-block; min-width: 34px; text-align: center; font-weight: 700;
   color: #fff; border-radius: 6px; padding: 4px 8px; font-size: 16px;

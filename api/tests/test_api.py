@@ -2075,15 +2075,18 @@ def test_address_buildings_html():
                     "dwellings": None, "height_m": None, "energy": {"dpe_class": "D"},
                     "annexe": False}]})
     assert "3 bâtiments à cette adresse, le principal est décrit ci-dessus." in h
-    assert "2019 · 0 logements · 6 m — annexe probable" in h
-    assert "DPE D" in h and "bdnb-bg-TEAM-J8HU-P4MA" in h
-    assert "annexe probable" in h and h.count("annexe probable") == 1
+    # La NATURE d'abord, les chiffres ensuite, et pas de « 0 logements » sur
+    # une annexe : le mot le dit déjà (#462).
+    assert "Bâtiment 2 — Annexe probable · 2019 · 6 m" in h
+    assert "0 logement" not in h
+    assert "Bâtiment 3 — DPE D" in h and "bdnb-bg-TEAM-J8HU-P4MA" in h
+    assert h.count("Annexe probable") == 1
     # Chosen by the visitor rather than picked by the rule: say that instead.
     h2 = _address_buildings_html({"count": 2, "described_is_main": False,
                                   "others": [{"bdnb_id": "x", "dwellings": 1,
                                               "energy": {}, "annexe": False}]})
     assert "celui décrit ci-dessus a été choisi" in h2
-    assert ">1 logement<" in h2                    # singulier, pas « 1 logements »
+    assert "Bâtiment 2 — 1 logement<" in h2        # singulier, pas « 1 logements »
     assert _address_buildings_html({}) == ""
 
 

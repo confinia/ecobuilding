@@ -115,6 +115,21 @@ def test_cicd_pipeline_is_code():
 
 
 @needs_repo
+def test_frontend_lists_other_buildings_readably():
+    """#462: la nature d'abord, une ligne pleine largeur, et une ANNEXE qui ne
+    mène nulle part — une fiche et un rapport par adresse, l'annexe dedans."""
+    app = (ROOT / "frontend/site/app.js").read_text()
+    css = (ROOT / "frontend/site/style.css").read_text()
+    fn = app[app.index("function batimentLabel"):app.index("function sectionFiscalite")]
+    assert 'bouts.push("Annexe probable")' in fn
+    assert "!(o.annexe && !o.dwellings)" in fn            # pas de « 0 logements »
+    assert "Bâtiment ${i + 2}" in fn                      # numérotées, donc nommables
+    assert "Voir sa fiche" not in app                     # plus de colonne répétée
+    assert "o.annexe" in fn and "class=\"autre-bat\"" in fn  # annexe : texte, pas lien
+    assert ".autre-bat-ligne" in css
+
+
+@needs_repo
 def test_frontend_loading_feedback_is_wired():
     """#150: every loading path shows a spinner, and the PDF button walks the
     staged labels in order (honest staging — no fake percent for a single
