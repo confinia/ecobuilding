@@ -66,7 +66,7 @@ def test_stream_sends_the_building_before_the_slow_sources(stubbed):
     assert set(names) == {"prices", "area_risks", "groundwater", "solar_pv",
                           "water_network", "official_dpe", "local_taxes",
                           "schools", "rnb", "commune", "dpe_spread", "urbanisme",
-                          "ppri", "construction"}
+                          "ppri", "construction", "address_buildings"}
 
 
 def test_stream_fills_the_cache_so_the_pdf_replays_nothing(stubbed):

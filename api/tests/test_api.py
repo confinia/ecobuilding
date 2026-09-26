@@ -2024,6 +2024,69 @@ def test_footprint_m2_handles_geojson_shapes():
     assert main._footprint_m2({"type": "Point", "coordinates": [1, 2]}) == 0
 
 
+def test_buildings_at_address_lists_the_others(monkeypatch):
+    """#458: the fiche describes one groupe; the block names the rest, and
+    calls a row with no dwelling and no DPE an annexe rather than hiding it."""
+    async def mirror(url, params, ttl):
+        if url == main.BDNB_REL_ADR_URL:
+            assert params["batiment_groupe_id"].startswith("eq.bdnb-bg-")
+            return [{"cle_interop_adr": "31557_2860_00045",
+                     "libelle_adresse": "45 Chemin de Pahin 31170 Tournefeuille",
+                     "geom_adresse": {"coordinates": [1424000, 6276000]}}]
+        assert params["cle_interop_adr"] == "eq.31557_2860_00045"
+        return [PAHIN_EXTENSION, PAHIN_HOUSE]
+    monkeypatch.setattr(main, "_cached_get_json", mirror)
+    a = asyncio.run(main._buildings_at_address("bdnb-bg-G51E-DMDZ-PUUP", 1.33, 43.58))
+    assert a["count"] == 2 and a["described_is_main"] is True
+    assert [o["bdnb_id"] for o in a["others"]] == ["bdnb-bg-SPW3-4YZ9-Y7RR"]
+    assert a["others"][0]["annexe"] is True        # 0 logement, pas de DPE
+    assert a["address"] == "45 Chemin de Pahin 31170 Tournefeuille"
+
+    # Vu depuis l'extension : la fiche décrit un bâtiment qui n'est PAS le
+    # principal, et doit le dire autrement.
+    a = asyncio.run(main._buildings_at_address("bdnb-bg-SPW3-4YZ9-Y7RR", None, None))
+    assert a["described_is_main"] is False
+    assert [o["bdnb_id"] for o in a["others"]] == ["bdnb-bg-G51E-DMDZ-PUUP"]
+    assert a["others"][0]["annexe"] is False
+
+    # Un seul bâtiment à l'adresse : rien à signaler, pas de bloc vide.
+    async def alone(url, params, ttl):
+        if url == main.BDNB_REL_ADR_URL:
+            return [{"cle_interop_adr": "31557_2860_00045"}]
+        return [PAHIN_HOUSE]
+    monkeypatch.setattr(main, "_cached_get_json", alone)
+    assert asyncio.run(main._buildings_at_address("bdnb-bg-G51E-DMDZ-PUUP", None, None)) is None
+
+    # Miroir en panne : le bloc s'efface, la fiche reste.
+    async def down(url, params, ttl):
+        raise RuntimeError("boom")
+    monkeypatch.setattr(main, "_cached_get_json", down)
+    assert asyncio.run(main._buildings_at_address("bdnb-bg-G51E-DMDZ-PUUP", 1.0, 43.0)) is None
+
+
+def test_address_buildings_html():
+    """The PDF names the others with what tells them apart (#458)."""
+    from app.report import _address_buildings_html
+    h = _address_buildings_html({
+        "count": 3, "described_is_main": True,
+        "others": [{"bdnb_id": "bdnb-bg-SPW3-4YZ9-Y7RR", "construction_year": 2019,
+                    "dwellings": 0, "height_m": 6.2, "energy": {}, "annexe": True},
+                   {"bdnb_id": "bdnb-bg-TEAM-J8HU-P4MA", "construction_year": None,
+                    "dwellings": None, "height_m": None, "energy": {"dpe_class": "D"},
+                    "annexe": False}]})
+    assert "3 bâtiments à cette adresse, le principal est décrit ci-dessus." in h
+    assert "2019 · 0 logements · 6 m — annexe probable" in h
+    assert "DPE D" in h and "bdnb-bg-TEAM-J8HU-P4MA" in h
+    assert "annexe probable" in h and h.count("annexe probable") == 1
+    # Chosen by the visitor rather than picked by the rule: say that instead.
+    h2 = _address_buildings_html({"count": 2, "described_is_main": False,
+                                  "others": [{"bdnb_id": "x", "dwellings": 1,
+                                              "energy": {}, "annexe": False}]})
+    assert "celui décrit ci-dessus a été choisi" in h2
+    assert ">1 logement<" in h2                    # singulier, pas « 1 logements »
+    assert _address_buildings_html({}) == ""
+
+
 def test_rows_at_address_puts_the_house_first(monkeypatch):
     async def mirror(url, params, ttl):
         assert params["cle_interop_adr"] == "eq.31557_2860_00045"
