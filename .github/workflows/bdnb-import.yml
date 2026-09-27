@@ -48,3 +48,10 @@ jobs:
       - name: Notify failure by e-mail
         if: failure()
         run: ssh -o BatchMode=yes localhost 'cd ~/projects/ecobuilding && ./deploy/ci-notify.sh "bdnb-import" "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" "${{ github.ref_name }}"'
+
+      # Règle 25 (#469) : l'issue de CHAQUE exécution, succès compris, va dans
+      # meta.ci_run — le tableau de bord « CI » la lit, et un workflow devenu
+      # silencieux s'y voit aussi.
+      - name: Record the run for Grafana
+        if: always()
+        run: ssh -o BatchMode=yes localhost 'cd ~/projects/ecobuilding && ./deploy/ci-record.sh "bdnb-import" "${{ github.ref_name }}" "${{ github.run_id }}" "${{ job.status }}" "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"'

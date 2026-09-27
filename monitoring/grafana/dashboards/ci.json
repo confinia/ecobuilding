@@ -1,0 +1,321 @@
+{
+  "uid": "ci-runs",
+  "title": "CI — exécutions",
+  "tags": [
+    "ecobuilding",
+    "ci"
+  ],
+  "schemaVersion": 39,
+  "editable": true,
+  "timezone": "Europe/Paris",
+  "refresh": "5m",
+  "time": {
+    "from": "now-7d",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "type": "text",
+      "title": "",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 3
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**Ce que la CI a fait, et ce qu'elle n'a pas fait.** Chaque workflow écrit son issue ici, succès compris (#469) : une ligne rouge est un échec, une ligne vieille est un workflow qui ne tourne plus. Les trois trous de pipeline des 16-17 août ont survécu des semaines faute de cette seconde lecture. Source : `meta.ci_run`, écrite par `deploy/ci-record.sh` depuis le runner de la VM."
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Workflows en échec (dernière exécution)",
+      "datasource": {
+        "type": "postgres",
+        "uid": "vues"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 3,
+        "w": 8,
+        "h": 5
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "center"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(*)::int AS \"en échec\" FROM meta.ci_last WHERE conclusion <> 'success'",
+          "datasource": {
+            "type": "postgres",
+            "uid": "vues"
+          }
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Exécutions (7 jours)",
+      "datasource": {
+        "type": "postgres",
+        "uid": "vues"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 3,
+        "w": 8,
+        "h": 5
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "none",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "center"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(*)::int AS \"exécutions\" FROM meta.ci_run WHERE ts > now() - interval '7 days'",
+          "datasource": {
+            "type": "postgres",
+            "uid": "vues"
+          }
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Dernière exécution, tous workflows (heures)",
+      "datasource": {
+        "type": "postgres",
+        "uid": "vues"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 3,
+        "w": 8,
+        "h": 5
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "h",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 72
+              },
+              {
+                "color": "red",
+                "value": 240
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "center"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT min(age_heures)::int AS \"depuis\" FROM meta.ci_last",
+          "datasource": {
+            "type": "postgres",
+            "uid": "vues"
+          }
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "Dernière exécution par workflow",
+      "datasource": {
+        "type": "postgres",
+        "uid": "vues"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 24,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "left"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "conclusion"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "success": {
+                        "color": "green",
+                        "index": 0
+                      },
+                      "failure": {
+                        "color": "red",
+                        "index": 1
+                      },
+                      "cancelled": {
+                        "color": "text",
+                        "index": 2
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT workflow, conclusion, ref, age_heures AS \"âge (h)\", url FROM meta.ci_last ORDER BY (conclusion <> 'success') DESC, ts DESC",
+          "datasource": {
+            "type": "postgres",
+            "uid": "vues"
+          }
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "Échecs récents (30 jours)",
+      "datasource": {
+        "type": "postgres",
+        "uid": "vues"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 24,
+        "h": 9
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "left"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT ts, workflow, ref, url FROM meta.ci_run WHERE conclusion <> 'success' AND ts > now() - interval '30 days' ORDER BY ts DESC LIMIT 50",
+          "datasource": {
+            "type": "postgres",
+            "uid": "vues"
+          }
+        }
+      ]
+    }
+  ]
+}

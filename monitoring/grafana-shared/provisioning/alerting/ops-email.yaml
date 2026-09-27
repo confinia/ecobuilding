@@ -101,3 +101,44 @@ groups:
               expression: A
               conditions:
                 - evaluator: { type: lt, params: [1] }
+
+      # La CI elle-même (#469, règle 25) : le dernier passage d'un workflow a
+      # ÉCHOUÉ. Jusqu'ici un échec de pipeline ne se voyait que dans un mail —
+      # que la session ne peut pas lire — ou dans GitHub, qu'il faut penser à
+      # ouvrir. Avertissement et non critique : la production tourne toujours,
+      # c'est la capacité à livrer qui est cassée.
+      - uid: ci-workflow-failed
+        title: CI workflow failed (ecobuilding)
+        condition: C
+        for: 10m
+        annotations:
+          summary: >-
+            The last run of at least one workflow failed (meta.ci_last).
+            Open the "CI — exécutions" dashboard for which one and its run
+            URL, then `gh run view <id> --log-failed`.
+          __dashboardUid__: ci-runs
+          __panelId__: "2"
+        labels:
+          severity: warning
+        data:
+          - refId: A
+            relativeTimeRange: { from: 0, to: 0 }
+            datasourceUid: vues
+            model:
+              refId: A
+              format: table
+              rawQuery: true
+              rawSql: >-
+                SELECT now() AS time,
+                       count(*)::float AS value
+                FROM meta.ci_last
+                WHERE conclusion <> 'success'
+          - refId: C
+            relativeTimeRange: { from: 0, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              refId: C
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
