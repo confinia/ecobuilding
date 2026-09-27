@@ -64,6 +64,8 @@ grep -q KC_BOOTSTRAP_ADMIN_PASSWORD deploy/secrets.env || echo "KC_BOOTSTRAP_ADM
 ./deploy/kc-smtp.sh || echo "   WARN: kc-smtp failed (realm email unchanged)"
 # Client URIs replayed from the bootstrap JSON (import never updates a live realm).
 ./deploy/kc-client.sh || echo "   WARN: kc-client failed (client URIs unchanged)"
+# Admin realm: lockout against password guessing, replayed every deploy.
+./deploy/kc-master.sh || echo "   WARN: kc-master failed (admin realm lockout unchanged)"
 
 # Shared monitoring (promote-proof): prometheus + grafana + podman-exporter.
 # CREATE-ONLY from the pipeline: host-network containers (re)created under the
