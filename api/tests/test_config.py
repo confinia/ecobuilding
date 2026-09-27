@@ -239,6 +239,31 @@ def test_frontend_lists_other_buildings_readably():
 
 
 @needs_repo
+def test_signing_in_comes_back_to_the_same_place():
+    """#474 : se connecter quittait la page et on revenait sur le bâtiment
+    vitrine. Aucun chemin d'authentification ne doit reconstruire une URL à
+    partir de `location.origin` seul : ni les liens du mur de quota, ni les
+    `redirectUri` passés à Keycloak."""
+    app = (ROOT / "frontend/site/app.js").read_text()
+    auth = app[app.index("function initAuth"):app.index("function ecoPricing")
+               if "function ecoPricing" in app else len(app)]
+    # Les anciennes formes, toutes parties.
+    assert 'location.origin + "/?welcome=1"' not in app
+    assert 'location.origin + "/?gopro="' not in app
+    assert 'href="/?login=1"' not in app and 'href="/?signup=1"' not in app
+    # La place est gardée puis rendue.
+    assert "sessionStorage.setItem(RETOUR" in app and "restaurerLaPlace()" in app
+    assert "retourAvec(" in app and "lienAuth(" in app
+    # Un redirect_uri ne doit PAS porter de fragment (RFC 6749 §3.1.2) : c'est
+    # pour cela que la place passe par sessionStorage.
+    retour = app[app.index("const retourAvec ="):app.index("const restaurerLaPlace")]
+    assert "location.hash" not in retour
+    # ... alors que le lien du mur de quota, lui, le garde.
+    lien = app[app.index("function lienAuth"):]
+    assert "location.hash" in lien.split("}")[0]
+
+
+@needs_repo
 def test_frontend_deep_links_to_a_search():
     """#460: a URL opens a fiche by address (?q= free text, ?ban= BAN key),
     not only by building id (?b=, #14). The map's click handlers must still
@@ -592,7 +617,9 @@ def test_auth_buttons_never_depend_on_a_cdn():
     head = app[:app.index("let Keycloak")]
     assert 'show("signin", true); show("signup", true);' in head
     assert "openid-connect/${action}" in head          # templated auth URLs
-    assert 'authUrl("registrations")' in head           # sign-up without JS
+    # Le repli construit les DEUX URL, et les recalcule au clic pour garder la
+    # place (#474) — d'où `authUrl(action, …)` plutôt qu'un appel par bouton.
+    assert '"registrations"' in head and "authUrl(action" in head
 
 @needs_repo
 def test_account_panel_and_payment_banner():

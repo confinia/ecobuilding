@@ -74,13 +74,65 @@ async function ecoPricing() {
   const realm = window.ECO_REALM || "confinia";
   const clientId = window.ECO_CLIENT || "ecobuilding-web";
   const show = (id, on) => { const el = document.getElementById(id); if (el) el.hidden = !on; };
+  // Revenir OÙ L'ON ÉTAIT (#474). Se connecter quitte la page, et ce qui
+  // désignait le bâtiment — `?b=` (#14), `?q=`/`?ban=` (#460) — comme la
+  // caméra (le fragment) ne revenaient pas : on atterrissait sur le bâtiment
+  // vitrine, juste après avoir eu une raison de rester. Un `redirect_uri` ne
+  // DOIT pas porter de fragment (RFC 6749 §3.1.2), donc la place est gardée
+  // dans sessionStorage — qui survit à l'aller-retour dans le même onglet —
+  // et rendue une fois le code échangé.
+  const RETOUR = "eco_retour";
+  const memoriserLaPlace = () => {
+    try { sessionStorage.setItem(RETOUR, location.pathname + location.search + location.hash); }
+    catch { /* navigation privée : on perd la place, jamais la connexion */ }
+  };
+  // URL de retour SANS fragment, en gardant les paramètres déjà là et en
+  // AJOUTANT le drapeau (welcome/gopro/launch) plutôt qu'en le substituant.
+  const retourAvec = (drapeaux) => {
+    memoriserLaPlace();
+    const p = new URLSearchParams(location.search);
+    for (const [k, v] of Object.entries(drapeaux || {})) p.set(k, v);
+    for (const k of ["login", "signup"]) p.delete(k);   // déjà traités
+    const qs = p.toString();
+    return location.origin + location.pathname + (qs ? "?" + qs : "");
+  };
+  const restaurerLaPlace = () => {
+    let cible = null;
+    try { cible = sessionStorage.getItem(RETOUR); sessionStorage.removeItem(RETOUR); }
+    catch { return; }
+    if (!cible) return;
+    const u = new URL(cible, location.origin);
+    // Les drapeaux d'arrivée restent : ils déclenchent ce que la personne
+    // venait de demander (bienvenue, passage Pro, offre de lancement).
+    const actuels = new URLSearchParams(location.search);
+    for (const k of ["welcome", "gopro", "launch"]) {
+      if (actuels.has(k)) u.searchParams.set(k, actuels.get(k));
+    }
+    const ici = location.pathname + location.search + location.hash;
+    if (u.pathname + u.search + u.hash === ici) return;
+    history.replaceState(null, "", u.pathname + u.search + u.hash);
+    const b = u.searchParams.get("b");
+    const q = u.searchParams.get("q");
+    const ban = u.searchParams.get("ban");
+    const h = u.hash.slice(1).split("/");          // #zoom/lat/lon/bearing/pitch
+    const rouvrir = () => {
+      if (b && h.length >= 3) openBuildingById(b, +h[2], +h[1]);
+      else if (b) { const c = map.getCenter ? map.getCenter() : { lng: 0, lat: 0 };
+                    openBuildingById(b, c.lng, c.lat); }
+      else if (q || ban) openSearchFromUrl(q, ban);
+    };
+    // La carte peut n'être pas encore prête : on attend son chargement plutôt
+    // que de rouvrir dans le vide (et `safeMap` couvre la carte morte).
+    try { (map.loaded && map.loaded()) ? rouvrir() : map.once("load", rouvrir); }
+    catch { rouvrir(); }
+  };
   // Fallback wiring for a dead adapter. The Keycloak client ENFORCES PKCE, so
   // a bare authorization URL is bounced with « Missing parameter:
   // code_challenge_method » — the #215 fallback silently died the day PKCE
   // was enabled. The challenge is hand-rolled here (WebCrypto): the Keycloak
   // pages then open, the account really gets created; only the silent token
   // exchange needs the adapter, so the user signs in on their next visit.
-  const authUrl = async (action) => {
+  const authUrl = async (action, retour) => {
     const b64u = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)))
       .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
     const verifier = b64u(crypto.getRandomValues(new Uint8Array(40)));
@@ -88,13 +140,24 @@ async function ecoPricing() {
     return `${authBase}/realms/${encodeURIComponent(realm)}/protocol/openid-connect/${action}` +
       `?client_id=${encodeURIComponent(clientId)}&response_type=code&scope=openid` +
       `&code_challenge=${challenge}&code_challenge_method=S256` +
-      `&redirect_uri=${encodeURIComponent(location.origin + "/?welcome=1")}`;
+      `&redirect_uri=${encodeURIComponent(retour)}`;
   };
   const signinEl = document.getElementById("signin");
   const signupEl = document.getElementById("signup");
   try {
-    if (signinEl) signinEl.href = await authUrl("auth");
-    if (signupEl) signupEl.href = await authUrl("registrations");
+    // Le repli garde la place LUI AUSSI (#474), et la calcule AU CLIC : un
+    // href posé au chargement pointerait sur le bâtiment vitrine, puisque la
+    // personne a navigué depuis. L'adaptateur, s'il vit, remplace ces
+    // gestionnaires plus bas.
+    for (const [el, action, drapeaux] of [[signinEl, "auth", {}],
+                                          [signupEl, "registrations", { welcome: "1" }]]) {
+      if (!el) continue;
+      el.href = await authUrl(action, retourAvec(drapeaux));
+      el.onclick = async (e) => {
+        e.preventDefault();
+        window.location.href = await authUrl(action, retourAvec(drapeaux));
+      };
+    }
   } catch {}    // pas de WebCrypto : l'adaptateur ci-dessous reste le chemin
   show("signin", true); show("signup", true);
 
@@ -131,7 +194,7 @@ async function ecoPricing() {
           if (!el || el.dataset.expired) return;
           el.dataset.expired = "1";
           el.textContent = "Session expirée — se reconnecter";
-          el.onclick = () => kc.login();
+          el.onclick = () => kc.login({ redirectUri: retourAvec() });
           window.ecoQuota = null;
           track("session_expired_shown");
         };
@@ -157,14 +220,24 @@ async function ecoPricing() {
               <p class="hint">Cliquez un bâtiment sur la carte pour générer une fiche.
               Un problème ? <a href="mailto:contact@confinia.io?subject=EcoBuilding%20-%20aide">contact@confinia.io</a></p>`);
           });
-          history.replaceState(null, "", location.pathname);
+          // Le drapeau s'efface, PAS la place : `location.pathname` seul
+          // jetait `?b=` et la caméra que #474 vient de rendre.
+          const sans = new URLSearchParams(location.search);
+          sans.delete("welcome");
+          history.replaceState(null, "", location.pathname
+            + (sans.toString() ? "?" + sans : "") + location.hash);
         }
       }
+      // La place d'avant, rendue APRÈS l'échange du code : plus tôt, on
+      // effacerait les paramètres que l'adaptateur doit encore lire (#474).
+      restaurerLaPlace();
       // Adapter available: prefer its flows (PKCE, silent SSO) over raw URLs.
-      if (signinEl) signinEl.onclick = (e) => { e.preventDefault(); track("signin_click"); kc.login(); };
+      if (signinEl) signinEl.onclick = (e) => {
+        e.preventDefault(); track("signin_click"); kc.login({ redirectUri: retourAvec() });
+      };
       if (signupEl) signupEl.onclick = (e) => {
         e.preventDefault(); track("signup_click");
-        kc.register({ redirectUri: location.origin + "/?welcome=1" });
+        kc.register({ redirectUri: retourAvec({ welcome: "1" }) });
       };
       const out = document.getElementById("signout");
       if (out) out.onclick = (e) => { e.preventDefault(); kc.logout({ redirectUri: location.origin }); };
@@ -231,7 +304,7 @@ async function ecoPricing() {
       const wantedTier = new URLSearchParams(location.search).get("gopro");
       if (wantedTier && /^[sml]$/.test(wantedTier)) {
         if (authenticated) { history.replaceState(null, "", location.pathname); startCheckout(wantedTier); }
-        else kc.login({ redirectUri: location.origin + "/?gopro=" + wantedTier });
+        else kc.login({ redirectUri: retourAvec({ gopro: wantedTier }) });
       }
       // Offre de lancement (#384) : Pro S gratuite, activée en un clic. La page
       // /offres.html n'a pas de session — comme pour gopro, elle renvoie vers
@@ -253,17 +326,17 @@ async function ecoPricing() {
       };
       if (new URLSearchParams(location.search).get("launch") === "1") {
         if (authenticated) { history.replaceState(null, "", location.pathname); activateLaunch(); }
-        else kc.login({ redirectUri: location.origin + "/?launch=1" });
+        else kc.login({ redirectUri: retourAvec({ launch: "1" }) });
       }
       // Arriving from the quota page: open registration immediately.
       if (!authenticated && new URLSearchParams(location.search).get("signup") === "1") {
         track("signup_autostart");
-        kc.register({ redirectUri: location.origin + "/?welcome=1" });
+        kc.register({ redirectUri: retourAvec({ welcome: "1" }) });
       }
       // « Déjà un compte ? » depuis le panneau de limite : connexion directe.
       if (!authenticated && new URLSearchParams(location.search).get("login") === "1") {
         track("login_autostart");
-        kc.login({ redirectUri: location.origin });
+        kc.login({ redirectUri: retourAvec() });
       }
     })
     .catch(() => { /* IdP hiccup: the direct-URL buttons stay usable */ });
@@ -784,11 +857,11 @@ async function loadStreetview(lon, lat) {
 // Ouvrir la fiche d'une ADRESSE donnée dans l'URL (#460). Même flux que la
 // barre de recherche : le serveur résout le géocodage, donc un lien suffit là
 // où il fallait redemander à quelqu'un de retaper une adresse.
-async function openSearchFromUrl() {
-  const params = urlBan
-    ? `ban_id=${encodeURIComponent(urlBan)}`
-    : `q=${encodeURIComponent(urlQuery)}`;
-  if (urlQuery) input.value = urlQuery;
+async function openSearchFromUrl(q = urlQuery, ban = urlBan) {
+  const params = ban
+    ? `ban_id=${encodeURIComponent(ban)}`
+    : `q=${encodeURIComponent(q)}`;
+  if (q) input.value = q;
   showLoadingPanel('Chargement des données du bâtiment…');
   try {
     const r = await fetch(`${API}/lookup/stream?${params}`);
@@ -1596,14 +1669,23 @@ function showQuotaPanel(p, signedIn, q) {
         : `<a class="report-link" onclick="fetch('${API}/events',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({event:'pro_interest'})})" href="mailto:contact@confinia.io?subject=EcoBuilding%20-%20besoin%20de%20volume&body=${
              encodeURIComponent("Bonjour,\n\nJ'ai atteint la limite mensuelle et j'ai besoin de plus de fiches.\n\nMon usage : ")
            }">J'ai besoin de plus de fiches — écrivez-nous</a>`)
-      : `<a class="report-link" href="/?login=1">Se connecter</a>`}</p>
+      : `<a class="report-link" href="${lienAuth("login")}">Se connecter</a>`}</p>
     ${signedIn && !window.ECO_PRO_ENABLED
       ? `<p class="hint">Les offres payantes ne sont pas encore ouvertes. Dites-nous
          votre volume : c'est ce qui décide de leur ouverture.</p>` : ""}
-    ${signedIn ? "" : `<p><a href="/?signup=1">Pas encore de compte ? En créer un (30 s, sans carte)</a></p>
+    ${signedIn ? "" : `<p><a href="${lienAuth("signup")}">Pas encore de compte ? En créer un (30 s, sans carte)</a></p>
       <p class="hint">Le compte gratuit offre le même nombre de fiches, mais un
       quota qui vous suit d'un appareil à l'autre, et une clé API.</p>`}
     <p class="hint">Une question ? <a href="mailto:contact@confinia.io?subject=EcoBuilding%20-%20aide">contact@confinia.io</a></p>`);
+}
+
+// Le mur de quota envoyait vers `/?login=1` : un chemin ABSOLU, donc le
+// bâtiment ouvert et la caméra étaient perdus avant même Keycloak (#474).
+// Le drapeau s'ajoute à l'adresse courante, fragment compris.
+function lienAuth(drapeau) {
+  const p = new URLSearchParams(location.search);
+  p.set(drapeau, "1");
+  return location.pathname + "?" + p.toString() + location.hash;
 }
 
 async function downloadReport(btn) {
