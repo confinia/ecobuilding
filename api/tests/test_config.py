@@ -135,6 +135,23 @@ def test_no_trace_of_the_confinia_service():
 
 
 @needs_repo
+def test_sandbox_db_does_not_fsync_every_commit():
+    """#467: VM partagée saturée en IOPS. Le Postgres du bac à sable valide
+    sans attendre le disque ; la prod garde le défaut, et `fsync=off` — celui
+    qui peut laisser une base irrécupérable — reste réservé au miroir BDNB."""
+    sandbox = (ROOT / "sandbox_stack/docker-compose.yml").read_text()
+    assert "synchronous_commit=off" in sandbox
+    # Le commentaire NOMME fsync=off pour dire qu'on ne le met pas ; c'est la
+    # commande qui compte.
+    cmd = [l for l in sandbox.splitlines() if "command:" in l and "postgres" in l]
+    assert cmd and all("fsync=off" not in l for l in cmd), cmd
+    prod = (ROOT / "docker-compose.yml").read_text()
+    assert "synchronous_commit" not in prod, "la prod garde le défaut (#467)"
+    bdnb = (ROOT / "bdnb_stack/docker-compose.yml").read_text()
+    assert "fsync=off" in bdnb              # miroir rebuildable, déjà réglé
+
+
+@needs_repo
 def test_frontend_lists_other_buildings_readably():
     """#462: la nature d'abord, une ligne pleine largeur, et une ANNEXE qui ne
     mène nulle part — une fiche et un rapport par adresse, l'annexe dedans."""
