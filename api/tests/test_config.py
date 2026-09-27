@@ -148,6 +148,14 @@ def test_ci_outcomes_are_recorded_and_visible():
     regles = {r["uid"]: r for r in alertes["groups"][0]["rules"]}
     assert "ci-workflow-failed" in regles
     assert regles["ci-workflow-failed"]["annotations"]["__dashboardUid__"] == "ci-runs"
+    # Grafana REFUSE `from: 0, to: 0` sur une requête de source de données, et
+    # rejette alors tout le provisionnement : il redémarre en boucle et le
+    # monitoring tombe (vécu le 27/09). Seul le nœud `__expr__` a droit à zéro.
+    for regle in regles.values():
+        for q in regle["data"]:
+            fenetre = q.get("relativeTimeRange") or {}
+            if q["datasourceUid"] != "__expr__":
+                assert fenetre.get("from", 0) > 0, (regle["uid"], q["refId"])
 
 
 @needs_repo

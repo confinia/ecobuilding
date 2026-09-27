@@ -121,8 +121,13 @@ groups:
         labels:
           severity: warning
         data:
+          # Une fenêtre NON NULLE, même si la requête n'en dépend pas (elle
+          # lit meta.ci_last avec son propre now()) : Grafana refuse
+          # `from: 0, to: 0` sur une requête de SOURCE — seul le nœud
+          # `__expr__` a droit à zéro — et refuse le provisionnement ENTIER,
+          # donc il redémarre en boucle et le monitoring tombe. Vécu le 27/09.
           - refId: A
-            relativeTimeRange: { from: 0, to: 0 }
+            relativeTimeRange: { from: 600, to: 0 }
             datasourceUid: vues
             model:
               refId: A
