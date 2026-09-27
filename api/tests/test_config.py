@@ -203,6 +203,50 @@ def test_frontend_lists_other_buildings_readably():
 
 
 @needs_repo
+def test_keycloak_login_theme_is_provisioned_like_the_realm():
+    """#475 : la page de connexion porte la marque, et elle la porte DURABLEMENT —
+    le thème est dans le dépôt, monté dans les deux piles, et rejoué sur le
+    royaume vivant (l'import ne met jamais à jour un royaume existant)."""
+    import json as _json
+    import re as _re
+
+    theme = ROOT / "auth_stack/themes/ecobuilding/login"
+    props = (theme / "theme.properties").read_text()
+    assert "parent=keycloak.v2" in props            # étendre, jamais recopier
+    # Déclarer `styles` REMPLACE la liste du parent : la sienne d'abord.
+    assert "styles=css/styles.css css/ecobuilding.css" in props
+    assert "darkMode=false" in props
+    assert (theme / "resources/css/ecobuilding.css").exists()
+    assert (theme / "resources/img/logo.svg").read_text() == \
+        (ROOT / "frontend/site/assets/logo.svg").read_text()   # UN logo, pas deux
+    css = (theme / "resources/css/ecobuilding.css").read_text()
+    assert "#2b7a4b" in css and "--keycloak-logo-url" in css
+
+    for langue in ("fr", "en"):
+        msgs = (theme / f"messages/messages_{langue}.properties").read_text()
+        valeur = next(l for l in msgs.splitlines() if l.startswith("loginTitleHtml="))
+        # MessageFormat : une apostrophe SEULE ouvre une citation et avale la
+        # suite de la phrase. Elles doivent toutes être doublées.
+        assert not _re.search(r"(?<!')'(?!')", valeur), langue
+        # Aucun chiffre de quota : pricing.json est la source unique (#397).
+        assert not _re.search(r"\d+ (fiches|reports)", valeur), langue
+
+    assert "./themes/ecobuilding:/opt/keycloak/themes/ecobuilding:ro" in \
+        (ROOT / "auth_stack/docker-compose.yml").read_text()
+    assert "../auth_stack/themes/ecobuilding:/opt/keycloak/themes/ecobuilding:ro" in \
+        (ROOT / "sandbox_stack/docker-compose.yml").read_text()
+    for f in ("auth_stack/realm-confinia.json", "sandbox_stack/realm-sandbox-ecobuilding.json"):
+        assert _json.loads((ROOT / f).read_text())["loginTheme"] == "ecobuilding", f
+
+    kc = (ROOT / "deploy/kc-theme.sh").read_text()
+    assert "loginTheme=$THEME" in kc
+    # Ne jamais désigner un thème absent : la connexion deviendrait une erreur.
+    assert "test -f" in kc and "exit 1" in kc
+    assert "kc-theme.sh" in (ROOT / "deploy/stack-up.sh").read_text()
+    assert "kc-theme.sh" in (ROOT / "deploy/sandbox.sh").read_text()
+
+
+@needs_repo
 def test_frontend_deep_links_to_a_search():
     """#460: a URL opens a fiche by address (?q= free text, ?ban= BAN key),
     not only by building id (?b=, #14). The map's click handlers must still

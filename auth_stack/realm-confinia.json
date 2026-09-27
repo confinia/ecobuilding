@@ -2,6 +2,7 @@
   "realm": "confinia",
   "enabled": true,
   "displayName": "EcoBuilding",
+  "loginTheme": "ecobuilding",
   "registrationAllowed": true,
   "registrationEmailAsUsername": true,
   "resetPasswordAllowed": true,
