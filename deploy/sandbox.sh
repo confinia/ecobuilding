@@ -71,6 +71,12 @@ REALM=sandbox-ecobuilding \
   ADMIN_USER="${E2E_ADMIN_USER:-ci-admin}" \
   ./deploy/kc-smtp.sh || echo "   WARN: sandbox realm email unchanged"
 
+# 4d. Admin realm lockout, same as production.
+KC_CONTAINER=ecobuilding-sandbox_sandbox-keycloak_1 \
+  SECRETS="$PWD/sandbox_stack/secrets.env" \
+  ADMIN_USER="${E2E_ADMIN_USER:-ci-admin}" \
+  ./deploy/kc-master.sh || echo "   WARN: sandbox admin realm lockout unchanged"
+
 # 5. health
 sleep 3
 echo "== sandbox health =="

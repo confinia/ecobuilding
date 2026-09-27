@@ -196,6 +196,34 @@ def test_sandbox_db_does_not_fsync_every_commit():
 
 
 @needs_repo
+def test_admin_realm_stays_off_public_hosts():
+    """Le royaume d'administration Keycloak (master) et sa console ne répondent
+    que sur iam.ecobuilding.confinia.io ; chaque hôte public les refuse AVANT
+    de relayer vers Keycloak. Et la connexion d'administration se verrouille
+    temporairement après des échecs répétés, réglage rejoué à chaque déploiement."""
+    import re as _re
+
+    for f in ("caddy_server/Caddyfile.blue", "caddy_server/Caddyfile.green",
+              "sandbox_stack/Caddyfile"):
+        cf = (ROOT / f).read_text()
+        blocs = _re.findall(r"handle /auth/\* \{(.*?)\n\t\}", cf, _re.S)
+        assert blocs, f
+        for b in blocs:
+            assert "/auth/realms/master" in b and "/auth/admin" in b, f
+            # Le refus AVANT le relais, dans le même bloc.
+            # (la DIRECTIVE, en début de ligne — pas le mot dans le commentaire)
+            assert b.index("respond @admin_keycloak 404") < b.index("\n\t\treverse_proxy "), f
+
+    kc = (ROOT / "deploy/kc-master.sh").read_text()
+    assert "bruteForceProtected=true" in kc
+    # Un verrou DÉFINITIF offrirait un déni de service à qui connaît le nom
+    # du compte : il reste temporaire.
+    assert "permanentLockout=false" in kc and "maxFailureWaitSeconds=900" in kc
+    assert "kc-master.sh" in (ROOT / "deploy/stack-up.sh").read_text()
+    assert "kc-master.sh" in (ROOT / "deploy/sandbox.sh").read_text()
+
+
+@needs_repo
 def test_frontend_lists_other_buildings_readably():
     """#462: la nature d'abord, une ligne pleine largeur, et une ANNEXE qui ne
     mène nulle part — une fiche et un rapport par adresse, l'annexe dedans."""
