@@ -597,42 +597,6 @@ def _tax_headline(level, rank_pct):
     return T("{word} — plus haute que dans {pct} % des communes").format(word=word, pct=rank_pct)
 
 
-def _commune_html(c: dict) -> str:
-    """La commune au sens civil, et le nom qu'elle portait avant (#275).
-
-    Un acte ancien nomme parfois une commune qui n'existe plus. Et quand rien
-    n'a bougé, le dire — daté et sourcé — vaut aussi la peine.
-
-    Les réserves de la source sont reprises telles quelles : reprendre ses
-    chiffres sans ses réserves affirmerait plus qu'elle ne le fait.
-    """
-    if not c or not c.get("nom"):
-        return ""
-    avant = (_row(T("Auparavant"),
-                  T("{nom}, jusqu'au {date}").format(nom=c['precedent']['nom'],
-                                                     date=c['precedent']['jusqu_au_fr']))
-             if c.get("precedent") else "")
-    reserves = list(c.get("limites") or []) + [
-        d.get("texte") for d in (c.get("non_etablis") or []) if d.get("texte")]
-    credits = " ; ".join(
-        f"{a.get('attribution')} ({a.get('license')})"
-        for a in (c.get("attribution") or []) if a.get("attribution"))
-    credits_html = ('<p class="meta">' + T("Source : {credits}.").format(credits=credits)
-                    + '</p>') if credits else ""
-    return f"""
-<h2>{T("Commune")}</h2>
-<table>
-  {_row(T("Commune"), f"{c['nom']} ({c['code']})")}
-  {_row(T("Nom et limites inchangés depuis"), c.get("depuis_fr"))
-    if c.get("existe_encore") else
-    _row(T("A cessé d'exister le"), c.get("jusqu_au_fr"))}
-  {avant}
-  {_row(T("Données arrêtées au"), c.get("arret_des_donnees_fr"))}
-</table>
-{f'<p class="meta">{" ".join(reserves)}</p>' if reserves else ""}
-{credits_html}"""
-
-
 def _schools_html(sc: dict) -> str:
     """Nearest schools (#194) — proximity, NOT the carte scolaire."""
     if not sc:
@@ -1247,7 +1211,6 @@ def _report_html(data: dict, photos: list | None = None, map_img: str | None = N
 {_local_taxes_html(data.get("local_taxes") or {})}
 {_schools_html(data.get("schools") or {})}
 {quartier_html}
-{_commune_html(data.get("commune") or {})}
 
 <footer>
   {footer_txt}
@@ -1570,14 +1533,6 @@ _EN = {
         "every French municipality, latest published tax year (DGFiP). The amount due depends "
         "on the property's cadastral rental value: the published data does not allow an "
         "estimate in euros.",
-    # — Municipality
-    "Commune": "Municipality",
-    "Auparavant": "Formerly",
-    "{nom}, jusqu'au {date}": "{nom}, until {date}",
-    "Nom et limites inchangés depuis": "Name and boundaries unchanged since",
-    "A cessé d'exister le": "Ceased to exist on",
-    "Données arrêtées au": "Data as of",
-    "Source : {credits}.": "Source: {credits}.",
     # — Schools
     "Établissement": "School",
     "Écoles à proximité": "Schools nearby",
