@@ -115,6 +115,42 @@ def test_cicd_pipeline_is_code():
 
 
 @needs_repo
+def test_ci_outcomes_are_recorded_and_visible():
+    """#469, règle 25 : chaque workflow consigne son issue — SUCCÈS COMPRIS,
+    sinon le silence ne se distingue pas du beau temps — et un tableau de bord
+    la montre, avec une règle d'alerte sur le dernier passage en échec."""
+    import json as _json
+    import yaml as _yaml
+
+    for nom in ("sandbox", "staging", "promote", "bdnb-import", "bdnb-stack"):
+        wf = (ROOT / f".github/workflows/{nom}.yml").read_text()
+        assert "ci-record.sh" in wf, nom
+        bloc = wf[max(0, wf.index("ci-record.sh") - 400):]
+        assert "if: always()" in bloc, f"{nom} ne consigne que les échecs"
+        assert f'"{nom}"' in wf and "job.status" in wf, nom
+
+    record = (ROOT / "deploy/ci-record.sh").read_text()
+    assert "exit 0" in record, "le journal ne doit jamais casser la pipeline"
+    assert "-v wf=" in record and "psql" in record   # valeurs passées en variables
+
+    sql = (ROOT / "deploy/ci-run-table.sql").read_text()
+    assert "meta.ci_run" in sql and "meta.ci_last" in sql
+    assert "GRANT SELECT ON meta.ci_run, meta.ci_last TO grafana_ro" in sql
+
+    dash = _json.loads((ROOT / "monitoring/grafana/dashboards/ci.json").read_text())
+    assert dash["uid"] == "ci-runs"
+    sqls = " ".join(t.get("rawSql", "") for p in dash["panels"]
+                    for t in p.get("targets", []))
+    assert "meta.ci_last" in sqls and "meta.ci_run" in sqls
+
+    alertes = _yaml.safe_load(
+        (ROOT / "monitoring/grafana-shared/provisioning/alerting/ops-email.yaml").read_text())
+    regles = {r["uid"]: r for r in alertes["groups"][0]["rules"]}
+    assert "ci-workflow-failed" in regles
+    assert regles["ci-workflow-failed"]["annotations"]["__dashboardUid__"] == "ci-runs"
+
+
+@needs_repo
 def test_no_trace_of_the_confinia_service():
     """#465: le service api.confinia.io est arrêté (coût sans usage). Aucune
     trace ne doit subsister — une variable oubliée dans un compose ferait
