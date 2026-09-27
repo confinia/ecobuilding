@@ -51,6 +51,9 @@ services:
       - ./secrets.env          # KC_DB_PASSWORD, KC_BOOTSTRAP_ADMIN_PASSWORD
     volumes:
       - ./realm-sandbox-ecobuilding.json:/opt/keycloak/data/import/realm-sandbox-ecobuilding.json:ro
+      # Le MÊME thème que la production (#475), pour que le bac à sable montre
+      # ce que la production montrera.
+      - ../auth_stack/themes/ecobuilding:/opt/keycloak/themes/ecobuilding:ro
     depends_on:
       - sandbox-kc-db
     restart: unless-stopped

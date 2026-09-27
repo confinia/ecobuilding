@@ -71,6 +71,14 @@ REALM=sandbox-ecobuilding \
   ADMIN_USER="${E2E_ADMIN_USER:-ci-admin}" \
   ./deploy/kc-smtp.sh || echo "   WARN: sandbox realm email unchanged"
 
+# 4c. Login theme (#475), same credentials: the sandbox shows what prod will.
+REALM=sandbox-ecobuilding \
+  KC_CONTAINER=ecobuilding-sandbox_sandbox-keycloak_1 \
+  SECRETS="$PWD/sandbox_stack/secrets.env" \
+  ADMIN_USER="${E2E_ADMIN_USER:-ci-admin}" \
+  REALM_JSON=sandbox_stack/realm-sandbox-ecobuilding.json \
+  ./deploy/kc-theme.sh || echo "   WARN: sandbox login theme unchanged"
+
 # 4d. Admin realm lockout, same as production.
 KC_CONTAINER=ecobuilding-sandbox_sandbox-keycloak_1 \
   SECRETS="$PWD/sandbox_stack/secrets.env" \
