@@ -1050,19 +1050,24 @@ function taxRates(t) {
 // Un établissement de CHAQUE niveau (#473), maternelle → lycée, avant les
 // plus proches : le classement par distance seule montrait deux primaires et
 // une inspection académique, et taisait les collèges du quartier.
-const NIVEAUX_FR = { maternelle: "École maternelle", elementaire: "École élémentaire",
-                     college: "Collège", lycee: "Lycée" };
+const NIVEAUX_FR = { creche: "Crèche", maternelle: "École maternelle",
+                     elementaire: "École élémentaire", college: "Collège", lycee: "Lycée" };
 function sectionEcoles(data) {
   const sc = data.schools;
-  if (!sc?.within_2km) return "";
+  if (!sc?.within_2km && !sc?.creches_within_2km) return "";
   const liste = (sc.by_level || []).concat(
     (sc.nearest || []).filter((s) => !(sc.by_level || []).includes(s)).slice(0, 2));
   const manquants = (sc.missing_levels || []).map((n) => NIVEAUX_FR[n]).filter(Boolean);
-  return `<h3>Écoles à proximité (${sc.within_2km} < 2 km)</h3>
+  const titre = sc.creches_within_2km
+    ? `Écoles et crèches à proximité (${sc.within_2km} + ${sc.creches_within_2km} < 2 km)`
+    : `Écoles à proximité (${sc.within_2km} < 2 km)`;
+  return `<h3>${titre}</h3>
     ${liste.map((s) => kv(`${s.type || "Établissement"}${s.statut ? " · " + s.statut : ""}`,
                           `${s.name} (${s.distance_m} m)`)).join("")}
     <p class="hint">Proximité ≠ sectorisation (carte scolaire).${manquants.length
       ? ` Aucun établissement de ces niveaux à moins de 2 km : ${manquants.join(", ").toLowerCase()}.`
+      : ""}${sc.creches_year
+      ? ` Crèches : Base permanente des équipements (Insee, ${sc.creches_year}), liste non exhaustive.`
       : ""}</p>`;
 }
 
