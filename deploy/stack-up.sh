@@ -64,6 +64,8 @@ grep -q KC_BOOTSTRAP_ADMIN_PASSWORD deploy/secrets.env || echo "KC_BOOTSTRAP_ADM
 ./deploy/kc-smtp.sh || echo "   WARN: kc-smtp failed (realm email unchanged)"
 # Client URIs replayed from the bootstrap JSON (import never updates a live realm).
 ./deploy/kc-client.sh || echo "   WARN: kc-client failed (client URIs unchanged)"
+# Login theme replayed from the bootstrap JSON too (#475), for the same reason.
+./deploy/kc-theme.sh || echo "   WARN: kc-theme failed (login theme unchanged)"
 # Admin realm: lockout against password guessing, replayed every deploy.
 ./deploy/kc-master.sh || echo "   WARN: kc-master failed (admin realm lockout unchanged)"
 
