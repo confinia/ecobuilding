@@ -1133,24 +1133,6 @@ function sectionUrbanisme(data) {
 //
 // Les réserves de la source sont reprises, jamais résumées : répéter ses
 // chiffres sans ses réserves affirmerait plus qu'elle.
-function sectionCommune(data) {
-  const c = data.commune;
-  if (!c?.nom) return "";
-  const avant = c.precedent
-    ? kv("Auparavant", `${c.precedent.nom}, jusqu'au ${c.precedent.jusqu_au_fr}`)
-    : "";
-  const reserves = (c.limites || []).concat((c.non_etablis || []).map((d) => d.texte));
-  return `<h3>Commune</h3>
-    ${kv("Commune", `${c.nom} (${c.code})`)}
-    ${c.existe_encore
-      ? kv("Nom et limites inchangés depuis", c.depuis_fr)
-      : kv("A cessé d'exister le", c.jusqu_au_fr)}
-    ${avant}
-    ${kv("Données arrêtées au", c.arret_des_donnees_fr)}
-    ${reserves.length ? `<p class="hint">${reserves.map((r) => r).join(" ")}</p>` : ""}`;
-}
-
-
 // L'éventail des DPE connus à l'adresse (#287).
 //
 // Une professionnelle de la promotion immobilière : « Tu raisonnes en DPE par
@@ -1230,7 +1212,6 @@ function renderPanel(s, data, opts) {
       ${sectionEcoles(data)}
       ${sectionEau(data)}
       ${sectionPrix(data)}
-      ${sectionCommune(data)}
       <div id="streetview"></div>
     `, opts);
     loadStreetview(data.query?.lon, data.query?.lat);
@@ -1327,7 +1308,6 @@ function renderPanel(s, data, opts) {
     ${kv("Potentiel annuel", b.solar?.thermal_potential_kwh_y ? b.solar.thermal_potential_kwh_y + " kWh/an" : null)}
     ${kv("Productible photovoltaïque", data.solar_pv?.yield_kwh_per_kwc_y ? Math.round(data.solar_pv.yield_kwh_per_kwc_y) + " kWh/an par kWc (PVGIS)" : null)}
     ${sectionPrix(data)}
-    ${sectionCommune(data)}
     <p><button id="report-btn" class="report-link" data-url="${API}/report/${encodeURIComponent(b.bdnb_id)}.pdf${reportParams.length ? "?" + reportParams.join("&") : ""}">📄 Fiche EcoBuilding (PDF) — pas le DPE</button></p>
     <p class="hint notdpe">${window.ecoDpe.NOT_THE_DPE}${data.official_dpe?.dpe_number
       ? ` <a href="${window.ecoDpe.ademeUrl(data.official_dpe.dpe_number)}" target="_blank" rel="noopener">Consulter le DPE officiel (ADEME)</a>.` : ""}</p>

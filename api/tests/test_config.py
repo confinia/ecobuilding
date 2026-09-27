@@ -115,6 +115,26 @@ def test_cicd_pipeline_is_code():
 
 
 @needs_repo
+def test_no_trace_of_the_confinia_service():
+    """#465: le service api.confinia.io est arrêté (coût sans usage). Aucune
+    trace ne doit subsister — une variable oubliée dans un compose ferait
+    croire à une intégration vivante, et un `extra_hosts` mort resterait à
+    entretenir."""
+    for rel in ("api/app/main.py", "api/app/report.py", "frontend/site/app.js",
+                "docker-compose.yml", "sandbox_stack/docker-compose.yml",
+                "deploy/secrets.env.example", "e2e/smoke.py"):
+        texte = (ROOT / rel).read_text()
+        assert "CONFINIA" not in texte, rel
+        assert "api.confinia.io" not in texte, rel
+        assert "commune_history" not in texte, rel
+    # Le bloc commune ne fait plus partie du contrat servi.
+    main_py = (ROOT / "api/app/main.py").read_text()
+    assert '"commune", "dpe_spread"' not in main_py
+    # `_date_fr` reste : la phrase d'interdiction de location s'en sert.
+    assert "def _date_fr(" in main_py and "_date_fr(date)" in main_py
+
+
+@needs_repo
 def test_frontend_lists_other_buildings_readably():
     """#462: la nature d'abord, une ligne pleine largeur, et une ANNEXE qui ne
     mène nulle part — une fiche et un rapport par adresse, l'annexe dedans."""
