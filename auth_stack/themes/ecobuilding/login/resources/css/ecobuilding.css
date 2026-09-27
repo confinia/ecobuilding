@@ -1,0 +1,60 @@
+/* EcoBuilding — thème de connexion (#475).
+ *
+ * Tout passe par des VARIABLES : celles que le thème keycloak.v2 expose pour
+ * son logo et son fond, et celles de PatternFly 5 pour les boutons, liens et
+ * rayons. Surcharger des variables survit aux montées de version de Keycloak ;
+ * surcharger des sélecteurs internes, non.
+ *
+ * Valeurs reprises du site (frontend/site/style.css), jamais réinventées :
+ * vert #2b7a4b, fond #f4f7f4 du logo, police système, rayons de 8 px. */
+:root {
+  --keycloak-logo-url: url('../img/logo.svg');
+  --keycloak-logo-height: 72px;
+  --keycloak-logo-width: 72px;
+
+  --eco-vert: #2b7a4b;
+  --eco-vert-fonce: #1f5c38;
+  --eco-fond: #f4f7f4;
+
+  --pf-v5-global--primary-color--100: var(--eco-vert);
+  --pf-v5-global--primary-color--200: var(--eco-vert-fonce);
+  --pf-v5-global--link--Color: var(--eco-vert);
+  --pf-v5-global--link--Color--hover: var(--eco-vert-fonce);
+  --pf-v5-global--FontFamily--text: system-ui, -apple-system, sans-serif;
+  --pf-v5-global--FontFamily--heading: system-ui, -apple-system, sans-serif;
+  --pf-v5-global--BorderRadius--sm: 8px;
+  --pf-v5-global--BorderRadius--lg: 12px;
+}
+
+/* Pas l'image de fond de Keycloak : le fond clair du site. */
+.login-pf body {
+  background: var(--eco-fond);
+}
+
+/* L'en-tête : le logo, le nom, et une phrase qui dit à quoi sert le compte. */
+#kc-header-wrapper {
+  text-align: center;
+}
+.eco-nom {
+  margin-top: 8px;
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--eco-vert);
+  letter-spacing: -0.01em;
+}
+.eco-accroche {
+  margin: 6px auto 0;
+  max-width: 30rem;
+  font-size: 14px;
+  line-height: 1.45;
+  color: #444;
+}
+
+/* La carte du formulaire : les rayons et l'ombre discrète des panneaux du site. */
+.pf-v5-c-login__main {
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 8px 24px rgba(0, 0, 0, 0.06);
+}
+.pf-v5-c-button {
+  border-radius: 8px;
+}
