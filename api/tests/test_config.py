@@ -196,6 +196,23 @@ def test_sandbox_db_does_not_fsync_every_commit():
 
 
 @needs_repo
+def test_stack_up_waits_for_keycloak_before_configuring_it():
+    """#475 : le premier changement du compose d'identité a redémarré Keycloak,
+    les quatre réglages du royaume ont échoué pendant son démarrage, et le
+    déploiement est resté vert. On attend Keycloak — de façon BORNÉE — et un
+    échec s'affiche en annotation du run, pas seulement dans le journal."""
+    up = (ROOT / "deploy/stack-up.sh").read_text()
+    lancement = up.index("podman-compose -p ecobuilding-auth")
+    attente = up.index("/auth/realms/confinia/.well-known/openid-configuration")
+    premier_reglage = up.index("kc_step kc-smtp")
+    assert lancement < attente < premier_reglage
+    assert "seq 1 60" in up.split("KC_OK=")[1][:200]     # bornée, jamais sans fin
+    for etape in ("kc-smtp", "kc-client", "kc-theme", "kc-master"):
+        assert f"kc_step {etape}" in up, etape
+    assert "::warning::$1 a échoué" in up
+
+
+@needs_repo
 def test_admin_realm_stays_off_public_hosts():
     """Le royaume d'administration Keycloak (master) et sa console ne répondent
     que sur iam.ecobuilding.confinia.io ; chaque hôte public les refuse AVANT

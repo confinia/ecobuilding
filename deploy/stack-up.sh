@@ -60,14 +60,32 @@ LEGACY=$(podman ps -a --format '{{.Names}}' | grep -E '^ecobuilding_' || true)
 if ! grep -q KC_DB_PASSWORD deploy/secrets.env; then P=$(openssl rand -hex 24); echo "KC_DB_PASSWORD=$P" >> deploy/secrets.env; echo "POSTGRES_PASSWORD=$P" >> deploy/secrets.env; fi
 grep -q KC_BOOTSTRAP_ADMIN_PASSWORD deploy/secrets.env || echo "KC_BOOTSTRAP_ADMIN_PASSWORD=$(openssl rand -base64 18)" >> deploy/secrets.env
 ( cd auth_stack && podman-compose -p ecobuilding-auth -f docker-compose.yml up -d )
+# ATTENDRE Keycloak avant de le configurer (#475). Tant que la pile d'identité
+# n'était jamais recréée, il était toujours debout ici. Le premier changement
+# de son compose (le thème) l'a redémarré : les quatre étapes ci-dessous ont
+# échoué pendant qu'il démarrait, le déploiement est resté VERT, et la
+# production a tourné sans thème. Attente BORNÉE (3 min) : une boucle sans fin
+# sur cette VM partagée est exactement ce qu'on a dû tuer par dizaines.
+KC_OK=
+for _ in $(seq 1 60); do
+  if curl -fsS -o /dev/null --max-time 5 \
+       http://127.0.0.1:13070/auth/realms/confinia/.well-known/openid-configuration; then
+    KC_OK=1; break
+  fi
+  sleep 3
+done
+[ -n "$KC_OK" ] || echo "::warning::Keycloak pas prêt après 3 min — réglages du royaume NON appliqués"
+# Chaque échec s'affiche aussi en ANNOTATION du run GitHub (::warning::) : un
+# simple « WARN » dans le journal ne se lit que si l'on va le chercher.
+kc_step() { "./deploy/$1.sh" || echo "::warning::$1 a échoué ($2 inchangé)"; }
 # Realm email (SMTP + verify-email) as code — idempotent, skips if no creds (#128).
-./deploy/kc-smtp.sh || echo "   WARN: kc-smtp failed (realm email unchanged)"
+kc_step kc-smtp "realm email"
 # Client URIs replayed from the bootstrap JSON (import never updates a live realm).
-./deploy/kc-client.sh || echo "   WARN: kc-client failed (client URIs unchanged)"
+kc_step kc-client "client URIs"
 # Login theme replayed from the bootstrap JSON too (#475), for the same reason.
-./deploy/kc-theme.sh || echo "   WARN: kc-theme failed (login theme unchanged)"
+kc_step kc-theme "login theme"
 # Admin realm: lockout against password guessing, replayed every deploy.
-./deploy/kc-master.sh || echo "   WARN: kc-master failed (admin realm lockout unchanged)"
+kc_step kc-master "admin realm lockout"
 
 # Shared monitoring (promote-proof): prometheus + grafana + podman-exporter.
 # CREATE-ONLY from the pipeline: host-network containers (re)created under the
