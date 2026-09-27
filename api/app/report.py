@@ -597,6 +597,11 @@ def _tax_headline(level, rank_pct):
     return T("{word} — plus haute que dans {pct} % des communes").format(word=word, pct=rank_pct)
 
 
+# Les niveaux, pour NOMMER ceux qui manquent (#473) ; l'API renvoie les clés.
+_NIVEAUX_FR = (("maternelle", "École maternelle"), ("elementaire", "École élémentaire"),
+               ("college", "Collège"), ("lycee", "Lycée"))
+
+
 def _schools_html(sc: dict) -> str:
     """Nearest schools (#194) — proximity, NOT the carte scolaire."""
     if not sc:
@@ -611,6 +616,14 @@ def _schools_html(sc: dict) -> str:
                 + '</p>')
     note = T("Distances à vol d'oiseau (annuaire de l'éducation). La proximité ne vaut\n"
              "pas sectorisation: la carte scolaire dépend de la commune.")
+    # Un niveau sans établissement dans le rayon se DIT (#473) : son absence
+    # de la liste se lirait comme un oubli, alors que c'est une information —
+    # et le collège est souvent ce qui décide d'un déménagement.
+    manquants = [T(dict(_NIVEAUX_FR)[n]) for n in (sc.get("missing_levels") or [])
+                 if n in dict(_NIVEAUX_FR)]
+    if manquants:
+        note += " " + T("Aucun établissement de ces niveaux à moins de 2 km : {n}.").format(
+            n=", ".join(manquants).lower())
     return f"""
 <h2>{T("Écoles à proximité ({n} à moins de 2 km)").format(n=sc.get('within_2km'))}</h2>
 <table>{rows}</table>
@@ -1539,6 +1552,12 @@ _EN = {
     "Aucun établissement recensé à moins de 2 km (annuaire de l'éducation).":
         "No school listed within 2 km (national school directory).",
     "Écoles à proximité ({n} à moins de 2 km)": "Schools nearby ({n} within 2 km)",
+    "École maternelle": "Nursery school",
+    "École élémentaire": "Primary school",
+    "Collège": "Lower secondary school",
+    "Lycée": "Upper secondary school",
+    "Aucun établissement de ces niveaux à moins de 2 km : {n}.":
+        "No school of these levels within 2 km: {n}.",
     "Distances à vol d'oiseau (annuaire de l'éducation). La proximité ne vaut\n"
     "pas sectorisation: la carte scolaire dépend de la commune.":
         "Straight-line distances (national school directory). Proximity does not imply "
