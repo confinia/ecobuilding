@@ -204,11 +204,11 @@ def test_stack_up_waits_for_keycloak_before_configuring_it():
     up = (ROOT / "deploy/stack-up.sh").read_text()
     lancement = up.index("podman-compose -p ecobuilding-auth")
     attente = up.index("/auth/realms/confinia/.well-known/openid-configuration")
-    premier_reglage = up.index("kc_step kc-smtp")
+    premier_reglage = up.index("kc_step kc-smtp.sh")
     assert lancement < attente < premier_reglage
     assert "seq 1 60" in up.split("KC_OK=")[1][:200]     # bornée, jamais sans fin
     for etape in ("kc-smtp", "kc-client", "kc-theme", "kc-master"):
-        assert f"kc_step {etape}" in up, etape
+        assert f"kc_step {etape}.sh" in up, etape
     assert "::warning::$1 a échoué" in up
 
 

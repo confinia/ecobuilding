@@ -77,15 +77,16 @@ done
 [ -n "$KC_OK" ] || echo "::warning::Keycloak pas prêt après 3 min — réglages du royaume NON appliqués"
 # Chaque échec s'affiche aussi en ANNOTATION du run GitHub (::warning::) : un
 # simple « WARN » dans le journal ne se lit que si l'on va le chercher.
-kc_step() { "./deploy/$1.sh" || echo "::warning::$1 a échoué ($2 inchangé)"; }
+# Le NOM COMPLET du script en argument : `grep kc-theme.sh` doit le retrouver.
+kc_step() { "./deploy/$1" || echo "::warning::$1 a échoué ($2 inchangé)"; }
 # Realm email (SMTP + verify-email) as code — idempotent, skips if no creds (#128).
-kc_step kc-smtp "realm email"
+kc_step kc-smtp.sh "realm email"
 # Client URIs replayed from the bootstrap JSON (import never updates a live realm).
-kc_step kc-client "client URIs"
+kc_step kc-client.sh "client URIs"
 # Login theme replayed from the bootstrap JSON too (#475), for the same reason.
-kc_step kc-theme "login theme"
+kc_step kc-theme.sh "login theme"
 # Admin realm: lockout against password guessing, replayed every deploy.
-kc_step kc-master "admin realm lockout"
+kc_step kc-master.sh "admin realm lockout"
 
 # Shared monitoring (promote-proof): prometheus + grafana + podman-exporter.
 # CREATE-ONLY from the pipeline: host-network containers (re)created under the
