@@ -685,9 +685,105 @@ def test_taxes_and_schools_html():
     assert "99 %" not in h and "181" not in h           # rate rank and TFNB gone
     assert h.index("860 €/an") < h.index("70,77 %") and "REI 2025" in h
     h2 = _schools_html({"within_2km": 8, "nearest": [
-        {"name": "Jean Moulin", "type": "Ecole", "statut": "Public", "distance_m": 240}]})
+        {"name": "Jean Moulin", "type": "École élémentaire", "statut": "Public",
+         "distance_m": 240}], "missing_levels": ["college", "lycee"]})
     assert "Jean Moulin" in h2 and "240 m" in h2 and "sectorisation" in h2
+    # Un niveau absent du rayon se DIT (#473) : son silence se lirait comme un
+    # oubli de notre part.
+    assert "Aucun établissement de ces niveaux à moins de 2 km : collège, lycée." in h2
     assert _schools_html({}) == ""
+
+
+ECOLES_BRUTES = [
+    {"nom_etablissement": "Ecole élémentaire publique Pablo Picasso", "type_etablissement": "Ecole",
+     "statut_public_prive": "Public", "ecole_maternelle": 0, "ecole_elementaire": 1,
+     "position": {"lon": 1.3152, "lat": 43.5863}},
+    {"nom_etablissement": "Ecole maternelle publique Les Crayons de couleur",
+     "type_etablissement": "Ecole", "statut_public_prive": "Public",
+     "ecole_maternelle": 1, "ecole_elementaire": 0,
+     "position": {"lon": 1.3153, "lat": 43.5864}},
+    {"nom_etablissement": "Circonscription d'inspection du 1er degré",
+     "type_etablissement": "Service Administratif", "statut_public_prive": None,
+     "position": {"lon": 1.3155, "lat": 43.5866}},
+    {"nom_etablissement": "Collège Pierre Labitrie", "type_etablissement": "Collège",
+     "statut_public_prive": "Public", "position": {"lon": 1.3200, "lat": 43.5900}},
+    {"nom_etablissement": "Ecole élémentaire publique Le petit train",
+     "type_etablissement": "Ecole", "statut_public_prive": "Public",
+     "ecole_maternelle": 0, "ecole_elementaire": 1,
+     "position": {"lon": 1.3160, "lat": 43.5870}},
+]
+
+
+def test_schools_serve_one_of_each_level(monkeypatch):
+    """#473 : le classement par distance seule montrait deux primaires et une
+    inspection académique, et taisait le collège du quartier."""
+    async def annuaire(url, params, ttl):
+        assert "ecole_maternelle" in params["select"]
+        return {"results": ECOLES_BRUTES}
+    monkeypatch.setattr(main, "_cached_get_json", annuaire)
+    sc = asyncio.run(main._nearby_schools(1.315155, 43.586237))
+    # L'inspection académique n'est pas un lieu où va un enfant : ni comptée,
+    # ni affichée.
+    assert sc["within_2km"] == 4
+    assert all("Circonscription" not in s["name"] for s in sc["nearest"])
+    # Un par niveau, dans l'ordre où un enfant les traverse.
+    # Un par niveau, mais rangés par DISTANCE : la liste ne ment pas sur ce
+    # qui est proche pour respecter un ordre scolaire.
+    # (la crèche vient du fichier BPE local, réel à ces coordonnées)
+    assert sorted(s["level"] for s in sc["by_level"]) == [
+        "college", "creche", "elementaire", "maternelle"]
+    assert [s["distance_m"] for s in sc["by_level"]] == sorted(
+        s["distance_m"] for s in sc["by_level"])
+    assert {s["type"] for s in sc["by_level"]} == {
+        "Crèche", "École maternelle", "École élémentaire", "Collège"}
+    # « Ecole » ne dit pas lequel des deux : les drapeaux de l'annuaire, si.
+    elem = next(s for s in sc["by_level"] if s["level"] == "elementaire")
+    assert elem["name"].endswith("Pablo Picasso")
+    assert sc["missing_levels"] == ["lycee"]
+    # La liste garde ensuite les plus proches, sans répéter les retenus.
+    assert len(sc["nearest"]) == len(set(s["name"] for s in sc["nearest"]))
+
+
+def test_creches_come_from_the_bpe_extract(monkeypatch):
+    """#473 : les crèches ne sont pas dans l'annuaire de l'éducation ; la BPE
+    de l'Insee (D502) les donne, et elles forment un NIVEAU à part entière,
+    sans gonfler le compte des ÉCOLES que les applis publiées affichent."""
+    async def annuaire(url, params, ttl):
+        return {"results": ECOLES_BRUTES}
+    monkeypatch.setattr(main, "_cached_get_json", annuaire)
+    # Tournefeuille, 29 chemin de la Peyrette : 5 crèches dans la commune,
+    # la plus proche « MA TOURNEFEUILLE EN HERBE » à ~630 m.
+    sc = asyncio.run(main._nearby_schools(1.315155, 43.586237))
+    assert sc["creches_within_2km"] >= 1 and sc["creches_year"] == 2025
+    creche = next(s for s in sc["by_level"] if s["level"] == "creche")
+    assert creche["type"] == "Crèche" and creche["distance_m"] < 1000
+    assert creche["capacite"]
+    assert "creche" not in sc["missing_levels"]
+    # Le compte des écoles reste celui des écoles (4 : l'inspection exclue).
+    assert sc["within_2km"] == 4
+    # Au milieu de l'Atlantique : aucune crèche, et on le dit.
+    sc = asyncio.run(main._nearby_schools(-30.0, 40.0))
+    assert sc["creches_within_2km"] == 0 and "creche" in sc["missing_levels"]
+
+
+def test_creches_grid_finds_what_brute_force_finds():
+    """La grille de 0,05° ne doit oublier AUCUNE crèche du rayon : comparée à
+    un balayage complet des 12 794, sur des points de latitudes différentes."""
+    for lon, lat in ((1.315155, 43.586237), (2.3522, 48.8566), (7.2620, 43.7102),
+                     (-1.5536, 47.2184), (4.8357, 45.7640)):
+        grille = {c["name"] for c in main._creches_proches(lon, lat, 2.0)}
+        tout = {c[0] for c in main._CRECHES["creches"]
+                if main._haversine_m(lon, lat, c[1], c[2]) <= 2000}
+        assert grille == tout, (lon, lat, tout - grille)
+
+
+def test_schools_empty_radius_names_every_missing_level(monkeypatch):
+    async def vide(url, params, ttl):
+        return {"results": []}
+    monkeypatch.setattr(main, "_cached_get_json", vide)
+    sc = asyncio.run(main._nearby_schools(1.0, 43.0))
+    assert sc["within_2km"] == 0 and sc["nearest"] == []
+    assert sc["missing_levels"] == ["creche", "maternelle", "elementaire", "college", "lycee"]
 
 
 def test_report_quartier_map_vignette():

@@ -597,12 +597,18 @@ def _tax_headline(level, rank_pct):
     return T("{word} — plus haute que dans {pct} % des communes").format(word=word, pct=rank_pct)
 
 
+# Les niveaux, pour NOMMER ceux qui manquent (#473) ; l'API renvoie les clés.
+_NIVEAUX_FR = (("creche", "Crèche"), ("maternelle", "École maternelle"),
+               ("elementaire", "École élémentaire"),
+               ("college", "Collège"), ("lycee", "Lycée"))
+
+
 def _schools_html(sc: dict) -> str:
     """Nearest schools (#194) — proximity, NOT the carte scolaire."""
     if not sc:
         return ""
     rows = "".join(
-        _row(f"{s.get('type') or T('Établissement')} · {s.get('statut') or ''}".strip(" ·"),
+        _row(f"{T(s.get('type')) if s.get('type') else T('Établissement')} · {s.get('statut') or ''}".strip(" ·"),
              f"{s.get('name')} ({s.get('distance_m')} m)")
         for s in (sc.get("nearest") or []))
     if not rows:
@@ -611,8 +617,24 @@ def _schools_html(sc: dict) -> str:
                 + '</p>')
     note = T("Distances à vol d'oiseau (annuaire de l'éducation). La proximité ne vaut\n"
              "pas sectorisation: la carte scolaire dépend de la commune.")
+    # Un niveau sans établissement dans le rayon se DIT (#473) : son absence
+    # de la liste se lirait comme un oubli, alors que c'est une information —
+    # et le collège est souvent ce qui décide d'un déménagement.
+    manquants = [T(dict(_NIVEAUX_FR)[n]) for n in (sc.get("missing_levels") or [])
+                 if n in dict(_NIVEAUX_FR)]
+    if manquants:
+        note += " " + T("Aucun établissement de ces niveaux à moins de 2 km : {n}.").format(
+            n=", ".join(manquants).lower())
+    # La BPE n'est pas un inventaire complet des modes de garde (#473) : une
+    # crèche absente de la liste n'est pas une crèche absente du quartier.
+    if sc.get("creches_year"):
+        note += " " + T("Crèches : Base permanente des équipements (Insee, {y}), "
+                        "liste non exhaustive.").format(y=sc["creches_year"])
     return f"""
-<h2>{T("Écoles à proximité ({n} à moins de 2 km)").format(n=sc.get('within_2km'))}</h2>
+<h2>{(T("Écoles et crèches à proximité ({n} + {c} à moins de 2 km)").format(
+      n=sc.get('within_2km'), c=sc.get('creches_within_2km'))
+      if sc.get('creches_within_2km') else
+      T("Écoles à proximité ({n} à moins de 2 km)").format(n=sc.get('within_2km')))}</h2>
 <table>{rows}</table>
 <p class="meta">{note}</p>"""
 
@@ -1539,6 +1561,17 @@ _EN = {
     "Aucun établissement recensé à moins de 2 km (annuaire de l'éducation).":
         "No school listed within 2 km (national school directory).",
     "Écoles à proximité ({n} à moins de 2 km)": "Schools nearby ({n} within 2 km)",
+    "Écoles et crèches à proximité ({n} + {c} à moins de 2 km)":
+        "Schools and day nurseries nearby ({n} + {c} within 2 km)",
+    "Crèche": "Day nursery (crèche)",
+    "Crèches : Base permanente des équipements (Insee, {y}), liste non exhaustive.":
+        "Day nurseries: INSEE permanent facilities base ({y}), not an exhaustive list.",
+    "École maternelle": "Nursery school",
+    "École élémentaire": "Primary school",
+    "Collège": "Lower secondary school",
+    "Lycée": "Upper secondary school",
+    "Aucun établissement de ces niveaux à moins de 2 km : {n}.":
+        "No school of these levels within 2 km: {n}.",
     "Distances à vol d'oiseau (annuaire de l'éducation). La proximité ne vaut\n"
     "pas sectorisation: la carte scolaire dépend de la commune.":
         "Straight-line distances (national school directory). Proximity does not imply "
