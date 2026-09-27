@@ -1798,25 +1798,66 @@ async def _local_taxes(commune_insee):
     return out or None
 
 
+# Les quatre niveaux que l'annuaire de l'éducation porte, dans l'ordre où un
+# enfant les traverse (#473). La crèche n'y est PAS : elle relève de la base
+# permanente des équipements de l'INSEE, à vérifier avant de la promettre.
+_NIVEAUX = (("maternelle", "École maternelle"),
+            ("elementaire", "École élémentaire"),
+            ("college", "Collège"),
+            ("lycee", "Lycée"))
+
+
+def _niveau_etablissement(r: dict) -> str | None:
+    """Le niveau d'un enregistrement de l'annuaire, ou None si ce n'est pas un
+    lieu où va un enfant — « Service Administratif » désigne une inspection
+    académique, et elle prenait une des cinq places de la fiche (#473)."""
+    t = (r.get("type_etablissement") or "").strip().lower()
+    if t.startswith("coll"):
+        return "college"
+    if t.startswith("lyc"):
+        return "lycee"
+    if t.startswith("ecole") or t.startswith("école"):
+        # L'annuaire distingue les deux par des drapeaux, là où
+        # `type_etablissement` dit « Ecole » pour l'une comme pour l'autre.
+        if r.get("ecole_maternelle") and not r.get("ecole_elementaire"):
+            return "maternelle"
+        if r.get("ecole_elementaire"):
+            return "elementaire"
+        return "elementaire"
+    return None
+
+
 async def _nearby_schools(lon, lat, radius_km: float = 2.0):
-    """Nearest schools (#194) from the annuaire de l'éducation. Honest caveat
-    carried in the UI: proximity is NOT the carte scolaire assignment."""
+    """Écoles à proximité (#194, #473) : la plus proche de CHAQUE niveau.
+
+    Le classement par distance seule montrait deux écoles primaires et un
+    service administratif, et taisait les collèges pourtant dans le rayon —
+    or c'est le niveau qui décide d'un déménagement. Réserve inchangée et
+    portée par l'interface : la proximité n'est PAS la sectorisation (#325).
+    """
     if lon is None or lat is None:
         return None
     try:
         d = await _cached_get_json(SCHOOLS_URL, {
             "where": f"within_distance(position, geom'POINT({lon} {lat})', {radius_km}km)",
-            "select": "nom_etablissement,type_etablissement,statut_public_prive,position",
-            "limit": "40"}, ttl=86400)
+            "select": ("nom_etablissement,type_etablissement,statut_public_prive,"
+                       "ecole_maternelle,ecole_elementaire,position"),
+            "limit": "60"}, ttl=86400)
         rows = d.get("results") or []
         out = []
         for r in rows:
             pos = r.get("position") or {}
-            if pos.get("lon") is None:
+            niveau = _niveau_etablissement(r)
+            if pos.get("lon") is None or niveau is None:
                 continue
+            libelle = dict(_NIVEAUX)[niveau]
             out.append({
                 "name": r.get("nom_etablissement"),
-                "type": r.get("type_etablissement"),
+                # `type` reste le libellé lisible que les clients affichent
+                # déjà ; il dit maintenant « École maternelle » là où
+                # l'annuaire disait « Ecole » pour les deux.
+                "type": libelle,
+                "level": niveau,
                 "statut": r.get("statut_public_prive"),
                 "distance_m": round(_haversine_m(lon, lat, pos["lon"], pos["lat"])),
                 # La POSITION, gardée (#324) : l'annuaire nous la donne et on la
@@ -1825,9 +1866,30 @@ async def _nearby_schools(lon, lat, radius_km: float = 2.0):
                 "lon": pos["lon"], "lat": pos["lat"],
             })
         if not out:
-            return {"within_2km": 0, "nearest": []}
+            return {"within_2km": 0, "nearest": [], "by_level": [], "missing_levels":
+                    [n for n, _ in _NIVEAUX]}
         out.sort(key=lambda s: s["distance_m"])
-        return {"within_2km": len(out), "nearest": out[:5]}
+        # Un par niveau, puis les suivants par distance : la liste répond « et
+        # après l'école primaire ? » avant « et quoi d'autre à côté ? ». Entre
+        # les représentants, l'ORDRE RESTE LA DISTANCE — un collège à 60 m
+        # passe avant une maternelle à 2 km, sinon la liste ment sur ce qui
+        # est proche pour respecter un ordre scolaire qui n'intéresse personne.
+        par_niveau = []
+        for n, _libelle in _NIVEAUX:
+            proche = next((s for s in out if s["level"] == n), None)
+            if proche:
+                par_niveau.append(proche)
+        par_niveau.sort(key=lambda s: s["distance_m"])
+        reste = [s for s in out if s not in par_niveau]
+        return {
+            "within_2km": len(out),
+            "nearest": par_niveau + reste[:2],
+            "by_level": par_niveau,
+            # Un niveau absent du rayon se DIT : son silence se lirait comme un
+            # oubli de notre part, alors que c'est une information.
+            "missing_levels": [n for n, _ in _NIVEAUX
+                               if not any(s["level"] == n for s in out)],
+        }
     except Exception as e:
         log.warning("schools failed for %s,%s: %s", lon, lat, e)
         return None
