@@ -729,10 +729,13 @@ def test_schools_serve_one_of_each_level(monkeypatch):
     # Un par niveau, dans l'ordre où un enfant les traverse.
     # Un par niveau, mais rangés par DISTANCE : la liste ne ment pas sur ce
     # qui est proche pour respecter un ordre scolaire.
-    assert sorted(s["level"] for s in sc["by_level"]) == ["college", "elementaire", "maternelle"]
+    # (la crèche vient du fichier BPE local, réel à ces coordonnées)
+    assert sorted(s["level"] for s in sc["by_level"]) == [
+        "college", "creche", "elementaire", "maternelle"]
     assert [s["distance_m"] for s in sc["by_level"]] == sorted(
         s["distance_m"] for s in sc["by_level"])
-    assert {s["type"] for s in sc["by_level"]} == {"École maternelle", "École élémentaire", "Collège"}
+    assert {s["type"] for s in sc["by_level"]} == {
+        "Crèche", "École maternelle", "École élémentaire", "Collège"}
     # « Ecole » ne dit pas lequel des deux : les drapeaux de l'annuaire, si.
     elem = next(s for s in sc["by_level"] if s["level"] == "elementaire")
     assert elem["name"].endswith("Pablo Picasso")
@@ -741,13 +744,46 @@ def test_schools_serve_one_of_each_level(monkeypatch):
     assert len(sc["nearest"]) == len(set(s["name"] for s in sc["nearest"]))
 
 
+def test_creches_come_from_the_bpe_extract(monkeypatch):
+    """#473 : les crèches ne sont pas dans l'annuaire de l'éducation ; la BPE
+    de l'Insee (D502) les donne, et elles forment un NIVEAU à part entière,
+    sans gonfler le compte des ÉCOLES que les applis publiées affichent."""
+    async def annuaire(url, params, ttl):
+        return {"results": ECOLES_BRUTES}
+    monkeypatch.setattr(main, "_cached_get_json", annuaire)
+    # Tournefeuille, 29 chemin de la Peyrette : 5 crèches dans la commune,
+    # la plus proche « MA TOURNEFEUILLE EN HERBE » à ~630 m.
+    sc = asyncio.run(main._nearby_schools(1.315155, 43.586237))
+    assert sc["creches_within_2km"] >= 1 and sc["creches_year"] == 2025
+    creche = next(s for s in sc["by_level"] if s["level"] == "creche")
+    assert creche["type"] == "Crèche" and creche["distance_m"] < 1000
+    assert creche["capacite"]
+    assert "creche" not in sc["missing_levels"]
+    # Le compte des écoles reste celui des écoles (4 : l'inspection exclue).
+    assert sc["within_2km"] == 4
+    # Au milieu de l'Atlantique : aucune crèche, et on le dit.
+    sc = asyncio.run(main._nearby_schools(-30.0, 40.0))
+    assert sc["creches_within_2km"] == 0 and "creche" in sc["missing_levels"]
+
+
+def test_creches_grid_finds_what_brute_force_finds():
+    """La grille de 0,05° ne doit oublier AUCUNE crèche du rayon : comparée à
+    un balayage complet des 12 794, sur des points de latitudes différentes."""
+    for lon, lat in ((1.315155, 43.586237), (2.3522, 48.8566), (7.2620, 43.7102),
+                     (-1.5536, 47.2184), (4.8357, 45.7640)):
+        grille = {c["name"] for c in main._creches_proches(lon, lat, 2.0)}
+        tout = {c[0] for c in main._CRECHES["creches"]
+                if main._haversine_m(lon, lat, c[1], c[2]) <= 2000}
+        assert grille == tout, (lon, lat, tout - grille)
+
+
 def test_schools_empty_radius_names_every_missing_level(monkeypatch):
     async def vide(url, params, ttl):
         return {"results": []}
     monkeypatch.setattr(main, "_cached_get_json", vide)
     sc = asyncio.run(main._nearby_schools(1.0, 43.0))
     assert sc["within_2km"] == 0 and sc["nearest"] == []
-    assert sc["missing_levels"] == ["maternelle", "elementaire", "college", "lycee"]
+    assert sc["missing_levels"] == ["creche", "maternelle", "elementaire", "college", "lycee"]
 
 
 def test_report_quartier_map_vignette():

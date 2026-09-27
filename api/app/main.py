@@ -1507,6 +1507,9 @@ async def _do_lookup(q, ban_id, address, lon, lat):
         sources.append(f"DGFiP — REI {local_taxes['rei_year']} — Licence Ouverte")
     if schools:
         sources.append("Annuaire de l'éducation (MENJ) — Licence Ouverte")
+    if schools and schools.get("creches_within_2km"):
+        sources.append(f"Insee — Base permanente des équipements {schools['creches_year']} "
+                       "— Licence Ouverte")
     if urbanisme:
         sources.append("Géoportail de l'Urbanisme (GPU) — Licence Ouverte")
     if ppri:
@@ -1801,10 +1804,42 @@ async def _local_taxes(commune_insee):
 # Les quatre niveaux que l'annuaire de l'éducation porte, dans l'ordre où un
 # enfant les traverse (#473). La crèche n'y est PAS : elle relève de la base
 # permanente des équipements de l'INSEE, à vérifier avant de la promettre.
-_NIVEAUX = (("maternelle", "École maternelle"),
+_NIVEAUX = (("creche", "Crèche"),
+            ("maternelle", "École maternelle"),
             ("elementaire", "École élémentaire"),
             ("college", "Collège"),
             ("lycee", "Lycée"))
+
+
+# Les crèches (#473) : BPE de l'Insee, code D502, extraites une fois par
+# millésime par app/bpe_extract.py (241 Ko). Rangées dans une grille de
+# 0,05° pour ne comparer une adresse qu'aux crèches des cases voisines,
+# plutôt qu'aux 12 794 de France à chaque fiche.
+with gzip.open(os.path.join(os.path.dirname(__file__), "creches.json.gz"), "rt",
+               encoding="utf-8") as _cf:
+    _CRECHES = json.load(_cf)
+_CASE = 0.05
+_GRILLE_CRECHES: dict = {}
+for _c in _CRECHES["creches"]:
+    _GRILLE_CRECHES.setdefault((int(_c[2] // _CASE), int(_c[1] // _CASE)), []).append(_c)
+
+
+def _creches_proches(lon, lat, radius_km: float = 2.0) -> list:
+    """Crèches à moins de `radius_km`, les plus proches d'abord. Une case de
+    0,05° fait au moins 3,9 km de côté en métropole : les 3 × 3 cases autour
+    du point couvrent un rayon de 2 km sans en oublier."""
+    ci, cj = int(lat // _CASE), int(lon // _CASE)
+    out = []
+    for di in (-1, 0, 1):
+        for dj in (-1, 0, 1):
+            for nom, clon, clat, capacite, _depcom in _GRILLE_CRECHES.get((ci + di, cj + dj), ()):
+                d = _haversine_m(lon, lat, clon, clat)
+                if d <= radius_km * 1000:
+                    out.append({"name": nom, "type": "Crèche", "level": "creche",
+                                "statut": None, "capacite": capacite,
+                                "distance_m": round(d), "lon": clon, "lat": clat})
+    out.sort(key=lambda s: s["distance_m"])
+    return out
 
 
 def _niveau_etablissement(r: dict) -> str | None:
@@ -1865,10 +1900,16 @@ async def _nearby_schools(lon, lat, radius_km: float = 2.0):
                 # écoles. Une école est un lieu public : sa coordonnée l'est.
                 "lon": pos["lon"], "lat": pos["lat"],
             })
-        if not out:
-            return {"within_2km": 0, "nearest": [], "by_level": [], "missing_levels":
-                    [n for n, _ in _NIVEAUX]}
+        # Les crèches viennent d'un fichier local : elles répondent même quand
+        # l'annuaire ne renvoie rien, et ne comptent pas parmi les ÉCOLES
+        # (`within_2km` garde son sens pour les applications déjà publiées).
+        creches = _creches_proches(lon, lat, radius_km)
         out.sort(key=lambda s: s["distance_m"])
+        if not out and not creches:
+            return {"within_2km": 0, "creches_within_2km": 0, "nearest": [],
+                    "by_level": [], "missing_levels": [n for n, _ in _NIVEAUX],
+                    "creches_year": _CRECHES["year"]}
+        out = creches[:1] + out
         # Un par niveau, puis les suivants par distance : la liste répond « et
         # après l'école primaire ? » avant « et quoi d'autre à côté ? ». Entre
         # les représentants, l'ORDRE RESTE LA DISTANCE — un collège à 60 m
@@ -1882,7 +1923,9 @@ async def _nearby_schools(lon, lat, radius_km: float = 2.0):
         par_niveau.sort(key=lambda s: s["distance_m"])
         reste = [s for s in out if s not in par_niveau]
         return {
-            "within_2km": len(out),
+            "within_2km": len(out) - len(creches[:1]),
+            "creches_within_2km": len(creches),
+            "creches_year": _CRECHES["year"],
             "nearest": par_niveau + reste[:2],
             "by_level": par_niveau,
             # Un niveau absent du rayon se DIT : son silence se lirait comme un
@@ -2301,6 +2344,9 @@ def _assemble_building(bdnb_id, lon, lat, row, v):
         sources.append(f"DGFiP — REI {local_taxes['rei_year']} — Licence Ouverte")
     if schools:
         sources.append("Annuaire de l'éducation (MENJ) — Licence Ouverte")
+    if schools and schools.get("creches_within_2km"):
+        sources.append(f"Insee — Base permanente des équipements {schools['creches_year']} "
+                       "— Licence Ouverte")
     if urbanisme:
         sources.append("Géoportail de l'Urbanisme (GPU) — Licence Ouverte")
     if ppri:
