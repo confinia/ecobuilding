@@ -34,6 +34,14 @@ http://ecobuilding.confinia.io:13000 {
 	# Shared identity (ecobuilding-auth project): Keycloak under /auth,
 	# stateful, outside blue/green like monitoring.
 	handle /auth/* {
+		# Le royaume d'ADMINISTRATION et sa console n'ont rien à faire sur un
+		# hôte public : l'application n'utilise que le royaume `confinia`.
+		# `master` ne répond que sur iam.ecobuilding.confinia.io, que la
+		# plateforme route directement vers Keycloak — sans passer par ici.
+		# `respond` passe avant `reverse_proxy` dans l'ordre des directives
+		# Caddy : la règle s'applique avant tout relais.
+		@admin_keycloak path /auth/realms/master /auth/realms/master/* /auth/admin /auth/admin/*
+		respond @admin_keycloak 404
 		reverse_proxy 127.0.0.1:13070
 	}
 
@@ -61,6 +69,14 @@ http://staging.ecobuilding.confinia.io:13300 {
 	# Shared identity (ecobuilding-auth project): Keycloak under /auth,
 	# stateful, outside blue/green like monitoring.
 	handle /auth/* {
+		# Le royaume d'ADMINISTRATION et sa console n'ont rien à faire sur un
+		# hôte public : l'application n'utilise que le royaume `confinia`.
+		# `master` ne répond que sur iam.ecobuilding.confinia.io, que la
+		# plateforme route directement vers Keycloak — sans passer par ici.
+		# `respond` passe avant `reverse_proxy` dans l'ordre des directives
+		# Caddy : la règle s'applique avant tout relais.
+		@admin_keycloak path /auth/realms/master /auth/realms/master/* /auth/admin /auth/admin/*
+		respond @admin_keycloak 404
 		reverse_proxy 127.0.0.1:13070
 	}
 

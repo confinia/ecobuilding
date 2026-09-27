@@ -38,6 +38,10 @@ http://sandbox.ecobuilding.confinia.io {
 	}
 
 	handle /auth/* {
+		# Même règle qu'en production : le royaume d'administration ne répond
+		# pas sur l'hôte public ; les scripts l'atteignent de l'intérieur.
+		@admin_keycloak path /auth/realms/master /auth/realms/master/* /auth/admin /auth/admin/*
+		respond @admin_keycloak 404
 		reverse_proxy sandbox-keycloak:8080
 	}
 
