@@ -155,6 +155,9 @@ podman exec ecobuilding-edge_caddy_1 caddy reload --config /etc/caddy/Caddyfile 
 
 # Hard health gate on the candidate, via its local entry port. The api can
 # take >3s to start (uvicorn + otel init): retry instead of racing it.
+# Boot units (#484): every stack comes back after a VM reboot, as deployed.
+./deploy/boot-units.sh || echo "::warning::boot-units a échoué (redémarrage de la VM non couvert)"
+
 if [ "$CANDIDATE" = blue ]; then PORT=13100; else PORT=13200; fi   # 1PESI (#173)
 for i in $(seq 1 12); do
   curl -fsS -m 10 "http://127.0.0.1:$PORT/api/v1/healthz" >/dev/null 2>&1 \
