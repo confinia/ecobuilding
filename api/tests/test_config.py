@@ -196,6 +196,31 @@ def test_sandbox_db_does_not_fsync_every_commit():
 
 
 @needs_repo
+def test_every_stack_comes_back_after_a_reboot():
+    """#484 : après un redémarrage de la VM, aucun des 24 conteneurs ne
+    revenait. Une unité par pile, installée par le déploiement, qui REDÉMARRE
+    LE POD tel quel — jamais un `podman-compose up`, qui recréerait la
+    production sur `:latest` faute du tag du commit déployé."""
+    unite = (ROOT / "deploy/systemd/ecobuilding-stack@.service").read_text()
+    assert "Type=oneshot" in unite
+    assert "RemainAfterExit=yes" in unite          # #144 : garde les auxiliaires
+    assert "ExecStart=/usr/bin/podman pod start pod_ecobuilding-%i" in unite
+    commandes = [l for l in unite.splitlines() if l.startswith("Exec")]
+    assert not any("podman-compose" in l or "up -d" in l for l in commandes)
+    # Arrêt propre à l'extinction : le miroir BDNB (fsync=off) a besoin de
+    # temps pour son point de contrôle, plus que les 10 s par défaut.
+    assert "podman pod stop -t 60" in unite and "WantedBy=default.target" in unite
+
+    install = (ROOT / "deploy/boot-units.sh").read_text()
+    for pile in ("auth", "bdnb", "render", "monitoring", "edge", "blue", "green", "sandbox"):
+        assert pile in install.split("for pile in")[1].split(";")[0], pile
+    assert "enable --now" in install and "podman pod exists" in install
+    up = (ROOT / "deploy/stack-up.sh").read_text()
+    # Appelé AVANT le contrôle final, qui sort du script dès qu'il réussit.
+    assert up.index("./deploy/boot-units.sh") < up.index('if [ "$CANDIDATE" = blue ]')
+
+
+@needs_repo
 def test_stack_up_waits_for_keycloak_before_configuring_it():
     """#475 : le premier changement du compose d'identité a redémarré Keycloak,
     les quatre réglages du royaume ont échoué pendant son démarrage, et le

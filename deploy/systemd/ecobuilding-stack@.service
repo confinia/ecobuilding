@@ -1,0 +1,32 @@
+# EcoBuilding — une pile redémarrée au boot, TELLE QU'ELLE ÉTAIT DÉPLOYÉE (#484).
+#
+# Pourquoi `podman pod start` et non `podman-compose up -d` : la production
+# tourne avec l'image du commit déployé (ECOBUILDING_TAG=<sha>), que seule la
+# pipeline connaît. Un `up -d` au boot, sans ce tag, recalculerait la
+# configuration, verrait une image différente, recréerait tout sur `:latest` —
+# et bleu comme vert repartiraient sur la MÊME image. Redémarrer le pod ne
+# recrée rien : ce qui tournait repart.
+#
+# RemainAfterExit=yes n'est pas cosmétique (#144) : les auxiliaires de podman
+# (conmon, rootlessport, pasta) laissés dans le cgroup d'une unité meurent
+# quand l'unité s'arrête. Une unité oneshot qui reste « active » les garde.
+#
+# Instance = nom court de la pile : auth, bdnb, render, monitoring, edge,
+# blue, green, sandbox (pod podman `pod_ecobuilding-<instance>`).
+# Installé et activé par deploy/boot-units.sh, jamais à la main.
+[Unit]
+Description=EcoBuilding — pile %i, redémarrée telle que déployée (#484)
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/podman pod start pod_ecobuilding-%i
+# À l'arrêt de la machine : 60 s de grâce. Le miroir BDNB tourne avec
+# fsync=off, et son point de contrôle d'arrêt ne doit pas être coupé net —
+# le défaut de podman (10 s) le couperait.
+ExecStop=/usr/bin/podman pod stop -t 60 pod_ecobuilding-%i
+TimeoutStartSec=300
+TimeoutStopSec=150
+
+[Install]
+WantedBy=default.target
