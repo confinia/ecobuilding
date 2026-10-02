@@ -196,6 +196,35 @@ def test_sandbox_db_does_not_fsync_every_commit():
 
 
 @needs_repo
+def test_no_false_alerts_and_monitoring_config_applies():
+    """#487 : deux alertes écrivaient à l'opérateur sans que rien ne soit cassé.
+    Prometheus 3 rejetait les /metrics de PostgREST (Content-Type vide), et la
+    règle CI n'a jamais évalué (une série au lieu d'une valeur réduite). Et la
+    configuration du monitoring doit s'appliquer au déploiement, sans attendre
+    un redémarrage."""
+    import yaml as _yaml
+
+    prom = _yaml.safe_load((ROOT / "monitoring/prometheus-shared.yml").read_text())
+    jobs = {j["job_name"]: j for j in prom["scrape_configs"]}
+    for nom in ("bdnb-rest", "bdnb-open"):
+        assert jobs[nom].get("fallback_scrape_protocol") == "PrometheusText0.0.4", nom
+
+    alertes = _yaml.safe_load(
+        (ROOT / "monitoring/grafana-shared/provisioning/alerting/ops-email.yaml").read_text())
+    ci = {r["uid"]: r for r in alertes["groups"][0]["rules"]}["ci-workflow-failed"]
+    noeuds = {q["refId"]: q for q in ci["data"]}
+    assert noeuds["B"]["model"]["type"] == "reduce" and noeuds["B"]["model"]["expression"] == "A"
+    assert noeuds["C"]["model"]["expression"] == "B" and ci["condition"] == "C"
+    assert "conclusion = 'failure'" in noeuds["A"]["model"]["rawSql"]   # annulé ≠ échec
+    dash = (ROOT / "monitoring/grafana/dashboards/ci.json").read_text()
+    assert "conclusion = 'failure'" in dash
+
+    up = (ROOT / "deploy/stack-up.sh").read_text()
+    assert "podman kill -s HUP ecobuilding-monitoring_prometheus_1" in up
+    assert "/api/admin/provisioning/alerting/reload" in up
+
+
+@needs_repo
 def test_every_stack_comes_back_after_a_reboot():
     """#484 : après un redémarrage de la VM, aucun des 24 conteneurs ne
     revenait. Une unité par pile, installée par le déploiement, qui REDÉMARRE

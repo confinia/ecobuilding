@@ -137,13 +137,27 @@ groups:
                 SELECT now() AS time,
                        count(*)::float AS value
                 FROM meta.ci_last
-                WHERE conclusion <> 'success'
+                WHERE conclusion = 'failure'
+          # RÉDUIRE avant le seuil (#487) : la requête rend une colonne `time`,
+          # donc une SÉRIE, et Grafana refuse d'alerter sur une série (« only
+          # reduced data can be alerted on »). La règle n'a jamais évalué : elle
+          # était en état Error — qui, lui, envoie des courriels.
+          - refId: B
+            relativeTimeRange: { from: 0, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              type: reduce
+              refId: B
+              expression: A
+              reducer: last
+          # Seul `failure` compte : un déploiement annulé parce qu'un plus
+          # récent le remplace n'est pas un échec.
           - refId: C
             relativeTimeRange: { from: 0, to: 0 }
             datasourceUid: "__expr__"
             model:
               type: threshold
               refId: C
-              expression: A
+              expression: B
               conditions:
                 - evaluator: { type: gt, params: [0] }

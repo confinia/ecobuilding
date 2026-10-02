@@ -97,6 +97,21 @@ kc_step kc-master.sh "admin realm lockout"
 # interactive ssh session only.
 if podman container exists ecobuilding-monitoring_grafana_1 2>/dev/null; then
   echo "   monitoring stack present — left untouched (recreate via ssh only; runner netns issue)"
+  # Sa CONFIGURATION, elle, s'applique sans recréer (#487) : jusqu'ici une
+  # règle d'alerte ou une cible corrigée dans le dépôt n'atteignait le
+  # monitoring qu'au prochain redémarrage — qui, le 27/09, a révélé une règle
+  # invalide en faisant tomber Grafana. Prometheus relit sa config sur SIGHUP
+  # (et garde l'ancienne si la nouvelle est invalide) ; Grafana recharge ses
+  # règles provisionnées par son API, sans redémarrer. Les tableaux de bord,
+  # eux, sont relus seuls toutes les 10 s.
+  podman kill -s HUP ecobuilding-monitoring_prometheus_1 >/dev/null 2>&1 \
+    && echo "   prometheus: configuration rechargée" \
+    || echo "::warning::Prometheus: rechargement de la configuration impossible"
+  curl -fsS -m 30 -o /dev/null -X POST \
+       -u "${GF_SECURITY_ADMIN_USER:-admin}:${GF_SECURITY_ADMIN_PASSWORD:-}" \
+       http://127.0.0.1:13040/api/admin/provisioning/alerting/reload \
+    && echo "   grafana: règles d'alerte rechargées" \
+    || echo "::warning::Grafana: rechargement des règles d'alerte refusé (règles inchangées)"
 else
   ( cd monitoring_stack && podman-compose -p ecobuilding-monitoring -f docker-compose.yml up -d )
 fi

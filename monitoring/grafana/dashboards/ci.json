@@ -82,7 +82,7 @@
           "refId": "A",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT count(*)::int AS \"en échec\" FROM meta.ci_last WHERE conclusion <> 'success'",
+          "rawSql": "SELECT count(*)::int AS \"en échec\" FROM meta.ci_last WHERE conclusion = 'failure'",
           "datasource": {
             "type": "postgres",
             "uid": "vues"
@@ -309,7 +309,7 @@
           "refId": "A",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT ts, workflow, ref, url FROM meta.ci_run WHERE conclusion <> 'success' AND ts > now() - interval '30 days' ORDER BY ts DESC LIMIT 50",
+          "rawSql": "SELECT ts, workflow, ref, url FROM meta.ci_run WHERE conclusion = 'failure' AND ts > now() - interval '30 days' ORDER BY ts DESC LIMIT 50",
           "datasource": {
             "type": "postgres",
             "uid": "vues"
