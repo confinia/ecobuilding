@@ -165,7 +165,13 @@ HUBEAU_CHRONIQUES_URL = "https://hubeau.eaufrance.fr/api/v1/niveaux_nappes/chron
 PVGIS_URL = "https://re.jrc.ec.europa.eu/api/v5_2/PVcalc"
 # Drinking-water service indicators (#171): SISPEA per commune via Hub'Eau —
 # network efficiency P104.3 (rendement: 70% = 30% leaked) + price D102.0.
-SISPEA_URL = "https://hubeau.eaufrance.fr/api/v0/indicateurs_services/communes"
+# Eau potable (#171, #486) : l'API Hub'Eau « indicateurs des services » a été
+# décommissionnée le 10/09/2026 (410 Gone). Source désormais : les fichiers
+# open data annuels de l'Observatoire SISPEA, extraits par app/sispea_extract.py
+# — exercice le plus récent déclaré par le service de chaque commune.
+with gzip.open(os.path.join(os.path.dirname(__file__), "eau.json.gz"), "rt",
+               encoding="utf-8") as _ef:
+    _EAU = json.load(_ef)
 # Official DPE record (#189): BDNB links each groupe to its representative
 # dwelling's DPE (identifiant_dpe); the ADEME observatoire then serves the
 # official document's substance (annual € costs, insulation quality, systems).
@@ -1498,7 +1504,7 @@ async def _do_lookup(q, ban_id, address, lon, lat):
     if solar_pv:
         sources.append("PVGIS (JRC) — © Union européenne")
     if water_network:
-        sources.append("SISPEA / OFB (services d'eau) — Licence Ouverte")
+        sources.append("Observatoire SISPEA (OFB), services d'eau — Licence Ouverte")
     if official_dpe and official_dpe.get("dpe_number"):
         sources.append("ADEME — Observatoire DPE — Licence Ouverte")
     if local_taxes:
@@ -2099,34 +2105,25 @@ async def _official_dpe(bdnb_id: str):
 async def _water_network(commune_insee):
     """Commune drinking-water service block (#171): SISPEA network efficiency
     (P104.3 — rendement; 70% means 30% of treated water leaks before the tap)
-    and water price (D102.0, €/m³ for 120 m³). Small communes report sporadic
-    years: pick the LATEST year carrying the indicator and label it. None on
-    any miss so a SISPEA hiccup never breaks a building record."""
+    and water price (D102.0, €/m³ for 120 m³). Small services report late or
+    sporadically: the extract keeps, per commune, the LATEST exercice carrying
+    the indicator, and the fiche labels it. Paris, Lyon and Marseille are filed
+    as whole cities, so an arrondissement code maps to its city (#486)."""
     if not commune_insee:
         return None
-    try:
-        data = await _cached_get_json(
-            SISPEA_URL, {"code_commune": commune_insee, "type_service": "AEP"},
-            ttl=7 * 86400)
-        rows = [r for r in (data.get("data") or [])
-                if (r.get("indicateurs") or {}).get("P104.3") is not None]
-        if not rows:
-            return None
-        r = max(rows, key=lambda r: r.get("annee") or 0)
-        ind = r["indicateurs"]
-        eff = round(float(ind["P104.3"]), 1)
-        price = ind.get("D102.0")
-        return {
-            "efficiency_pct": eff,
-            "losses_pct": round(100 - eff, 1),
-            "year": r.get("annee"),
-            "price_eur_m3": round(float(price), 2) if price is not None else None,
-            "commune": r.get("nom_commune"),
-            "commune_insee": commune_insee,
-        }
-    except Exception as e:
-        log.warning("SISPEA failed for %s: %s", commune_insee, e)
+    v = (_EAU["communes"].get(str(commune_insee))
+         or _EAU["communes"].get(_rei_commune(commune_insee)))
+    if not v:
         return None
+    eff, price, year, nom = v
+    return {
+        "efficiency_pct": eff,
+        "losses_pct": round(100 - eff, 1),
+        "year": year,
+        "price_eur_m3": price,
+        "commune": nom,
+        "commune_insee": commune_insee,
+    }
 
 
 async def _click_address(bdnb_id: str, lon, lat):
@@ -2335,7 +2332,7 @@ def _assemble_building(bdnb_id, lon, lat, row, v):
     if solar_pv:
         sources.append("PVGIS (JRC) — © Union européenne")
     if water_network:
-        sources.append("SISPEA / OFB (services d'eau) — Licence Ouverte")
+        sources.append("Observatoire SISPEA (OFB), services d'eau — Licence Ouverte")
     if official_dpe and official_dpe.get("dpe_number"):
         sources.append("ADEME — Observatoire DPE — Licence Ouverte")
     if local_taxes:

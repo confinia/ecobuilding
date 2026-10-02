@@ -388,19 +388,36 @@ def test_click_address_falls_back_to_nearest_group_address(monkeypatch):
     assert far is None
 
 
-def test_water_network_picks_latest_year_with_indicator(monkeypatch):
-    """#171: SISPEA years are sporadic — take the LATEST row carrying P104.3."""
-    async def fake(url, params, ttl):
-        return {"data": [
-            {"annee": 2015, "nom_commune": "X", "indicateurs": {"P104.3": 85.8, "D102.0": 3.27}},
-            {"annee": 2021, "nom_commune": "X", "indicateurs": {"P104.3": None}},
-            {"annee": 2019, "nom_commune": "X", "indicateurs": {"P104.3": 79.4}},
-        ]}
-    monkeypatch.setattr(main, "_cached_get_json", fake)
-    wn = asyncio.run(main._water_network("78575"))
-    assert wn["year"] == 2019 and wn["efficiency_pct"] == 79.4
-    assert wn["losses_pct"] == 20.6 and wn["commune_insee"] == "78575"
+def test_water_network_reads_the_observatory_extract():
+    """#486 : Hub'Eau a retiré l'API (410 Gone). Les valeurs viennent de
+    l'extrait annuel de l'Observatoire SISPEA, sans appel réseau."""
+    wn = asyncio.run(main._water_network("31557"))           # Tournefeuille
+    assert wn["efficiency_pct"] == 88.4 and wn["losses_pct"] == 11.6
+    assert wn["year"] == 2024 and wn["price_eur_m3"] == 1.84
+    assert wn["commune"] == "Tournefeuille" and wn["commune_insee"] == "31557"
+    # Paris, Lyon, Marseille : fichés à la ville, pas à l'arrondissement.
+    assert asyncio.run(main._water_network("75101"))["commune"] == "Paris"
+    assert asyncio.run(main._water_network("69381"))["commune"] == "Lyon"
+    assert asyncio.run(main._water_network("99999")) is None
     assert asyncio.run(main._water_network(None)) is None
+
+
+def test_sispea_extract_keeps_the_latest_declared_year():
+    """Les services déclarent en retard : chaque commune prend l'exercice le
+    plus RÉCENT où son service a déclaré un rendement ; à plusieurs secteurs,
+    celui qui dessert la plus grande population."""
+    from app import sispea_extract as s
+    par = {
+        2025: ({"E1": (None, None)}, {"31557": [("E1", 30000, "Tournefeuille")]}),
+        2024: ({"E1": (88.4, 1.84), "E2": (70.0, 3.0), "E3": (95.0, 2.0)},
+               {"31557": [("E1", 30000, "Tournefeuille")],
+                "11170": [("E2", 5000, "Gruissan"), ("E3", 300, "Gruissan")]}),
+        2023: ({"E2": (60.0, 2.5)}, {"11170": [("E2", 5000, "Gruissan")]}),
+    }
+    c = s.fusion(par)
+    assert c["31557"] == [88.4, 1.84, 2024, "Tournefeuille"]   # 2025 vide : 2024
+    assert c["11170"] == [70.0, 3.0, 2024, "Gruissan"]         # le secteur le plus peuplé
+    assert s._insee(1001.0) == "01001" and s._insee("2A004") == "2A004"
 
 
 def test_water_network_html_renders():
