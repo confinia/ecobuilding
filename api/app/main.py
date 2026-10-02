@@ -375,7 +375,49 @@ async def set_language(request, call_next):
 
 # --- Helpers -----------------------------------------------------------------
 
-_client = httpx.AsyncClient(timeout=15.0, headers={"User-Agent": "ecobuilding.confinia.io"})
+# Chaque appel à une source, compté par hôte et par issue (#491). Une section
+# de fiche dont la source échoue DISPARAÎT, sans erreur : c'est voulu (une
+# source en panne ne doit jamais casser une fiche), mais une source morte pour
+# de bon ressemble alors à « pas de données ici ». L'API d'eau potable de
+# Hub'Eau a répondu 410 pendant trois semaines sans que personne ne le voie
+# (#486). Compté au niveau du TRANSPORT : aucun appel n'y échappe, quel que
+# soit le chemin du code, et les réponses servies par notre cache n'y passent
+# pas — seuls les vrais appels amont comptent.
+M_UPSTREAM = _meter.create_counter(
+    "ecobuilding_upstream_calls",
+    description="Upstream HTTP calls per source host and outcome (ok, not_found, error, failure)",
+    unit="1")
+
+
+class _TransportCompte(httpx.AsyncBaseTransport):
+    """Transport httpx qui compte chaque requête : `ok` (< 400), `not_found`
+    (404 — pour plusieurs sources, c'est la réponse NORMALE « rien ici » ; on
+    ne veut pas qu'elle déclenche d'alerte), `error` (tout autre statut
+    d'erreur : 410 d'une API retirée, 429, 5xx), `failure` (délai, connexion
+    refusée)."""
+
+    def __init__(self, interne: httpx.AsyncBaseTransport):
+        self._interne = interne
+
+    async def handle_async_request(self, request):
+        source = request.url.host or "inconnu"
+        try:
+            resp = await self._interne.handle_async_request(request)
+        except Exception:
+            M_UPSTREAM.add(1, {"source": source, "outcome": "failure"})
+            raise
+        code = resp.status_code
+        M_UPSTREAM.add(1, {"source": source,
+                           "outcome": "ok" if code < 400 else
+                                      "not_found" if code == 404 else "error"})
+        return resp
+
+    async def aclose(self):
+        await self._interne.aclose()
+
+
+_client = httpx.AsyncClient(timeout=15.0, headers={"User-Agent": "ecobuilding.confinia.io"},
+                            transport=_TransportCompte(httpx.AsyncHTTPTransport()))
 
 # In-process TTL+LRU cache on upstream calls. Guards the BDNB free tier
 # (10k calls/month) against traffic spikes; building data changes rarely.

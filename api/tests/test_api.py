@@ -2215,3 +2215,46 @@ def test_rows_at_address_puts_the_house_first(monkeypatch):
         return {"message": "boom"}
     monkeypatch.setattr(main, "_cached_get_json", down)
     assert asyncio.run(main._rows_at_address("31557_2860_00045")) == []
+
+
+def test_every_upstream_call_is_counted_by_source_and_outcome(monkeypatch):
+    """#491 : une source morte ne casse aucune fiche, sa section disparaît —
+    donc on COMPTE chaque appel amont au niveau du transport, par hôte et par
+    issue. 404 à part : pour plusieurs sources, c'est « rien ici »."""
+    import httpx
+
+    vus = []
+
+    class Compteur:
+        def add(self, n, attrs):
+            vus.append((attrs["source"], attrs["outcome"]))
+
+    monkeypatch.setattr(main, "M_UPSTREAM", Compteur())
+
+    def reponse(request):
+        chemin = request.url.path
+        if chemin == "/gone":
+            return httpx.Response(410)
+        if chemin == "/none":
+            return httpx.Response(404)
+        if chemin == "/boom":
+            raise httpx.ConnectError("refused", request=request)
+        return httpx.Response(200, json={})
+
+    client = httpx.AsyncClient(transport=main._TransportCompte(httpx.MockTransport(reponse)))
+
+    async def appels():
+        for chemin in ("/ok", "/gone", "/none"):
+            await client.get(f"https://hubeau.eaufrance.fr{chemin}")
+        try:
+            await client.get("https://georisques.gouv.fr/boom")
+        except httpx.ConnectError:
+            pass
+        await client.aclose()
+
+    asyncio.run(appels())
+    assert vus == [("hubeau.eaufrance.fr", "ok"), ("hubeau.eaufrance.fr", "error"),
+                   ("hubeau.eaufrance.fr", "not_found"), ("georisques.gouv.fr", "failure")]
+    # Le client de l'application passe bien par ce transport.
+    assert isinstance(main._client._transport, main._TransportCompte)
+
