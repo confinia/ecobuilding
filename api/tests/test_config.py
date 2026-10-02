@@ -196,6 +196,26 @@ def test_sandbox_db_does_not_fsync_every_commit():
 
 
 @needs_repo
+def test_a_failing_source_alerts_without_false_alarms():
+    """#491 : une alerte par source qui échoue durablement — mais ni un 404
+    (« rien ici »), ni une heure creuse (pas de données) ne doivent alerter."""
+    import json as _json
+    import yaml as _yaml
+
+    alertes = _yaml.safe_load(
+        (ROOT / "monitoring/grafana-shared/provisioning/alerting/ops-email.yaml").read_text())
+    r = {x["uid"]: x for x in alertes["groups"][0]["rules"]}["upstream-source-failing"]
+    expr = r["data"][0]["model"]["expr"]
+    assert 'outcome=~"error|failure"' in expr and "not_found" not in expr
+    assert ">= 5" in expr and "by (source)" in expr
+    assert r["noDataState"] == "OK"
+    noeuds = {q["refId"]: q for q in r["data"]}
+    assert noeuds["B"]["model"]["type"] == "reduce" and noeuds["C"]["model"]["expression"] == "B"
+    dash = _json.loads((ROOT / "monitoring/grafana/dashboards/ecobuilding.json").read_text())
+    assert r["annotations"]["__panelId__"] in {str(p["id"]) for p in dash["panels"]}
+
+
+@needs_repo
 def test_no_false_alerts_and_monitoring_config_applies():
     """#487 : deux alertes écrivaient à l'opérateur sans que rien ne soit cassé.
     Prometheus 3 rejetait les /metrics de PostgREST (Content-Type vide), et la

@@ -3,64 +3,285 @@
   "uid": "ecobuilding-main",
   "schemaVersion": 39,
   "refresh": "30s",
-  "time": { "from": "now-24h", "to": "now" },
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
   "panels": [
     {
-      "id": 1, "type": "timeseries", "title": "API requests / min (by route)",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
-      "targets": [{ "expr": "sum by (route) (rate(ecobuilding_api_requests_total[5m])) * 60", "legendFormat": "{{route}}" }]
+      "id": 1,
+      "type": "timeseries",
+      "title": "API requests / min (by route)",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "sum by (route) (rate(ecobuilding_api_requests_total[5m])) * 60",
+          "legendFormat": "{{route}}"
+        }
+      ]
     },
     {
-      "id": 2, "type": "timeseries", "title": "Building lookups / min (by status)",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
-      "targets": [{ "expr": "sum by (status) (rate(ecobuilding_lookups_total[5m])) * 60", "legendFormat": "{{status}}" }]
+      "id": 2,
+      "type": "timeseries",
+      "title": "Building lookups / min (by status)",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "sum by (status) (rate(ecobuilding_lookups_total[5m])) * 60",
+          "legendFormat": "{{status}}"
+        }
+      ]
     },
     {
-      "id": 3, "type": "timeseries", "title": "Frontend events / min (by event)",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
-      "targets": [{ "expr": "sum by (event) (rate(ecobuilding_frontend_events_total[5m])) * 60", "legendFormat": "{{event}}" }]
+      "id": 3,
+      "type": "timeseries",
+      "title": "Frontend events / min (by event)",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "targets": [
+        {
+          "expr": "sum by (event) (rate(ecobuilding_frontend_events_total[5m])) * 60",
+          "legendFormat": "{{event}}"
+        }
+      ]
     },
     {
-      "id": 4, "type": "stat", "title": "Lookups (24h)",
-      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 8 },
-      "targets": [{ "expr": "sum(increase(ecobuilding_lookups_total[24h]))" }]
+      "id": 4,
+      "type": "stat",
+      "title": "Lookups (24h)",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 8
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(ecobuilding_lookups_total[24h]))"
+        }
+      ]
     },
     {
-      "id": 5, "type": "stat", "title": "Page views (24h)",
-      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 8 },
-      "targets": [{ "expr": "sum(increase(ecobuilding_frontend_events_total{event=\"page_view\"}[24h]))" }]
+      "id": 5,
+      "type": "stat",
+      "title": "Page views (24h)",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 8
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(ecobuilding_frontend_events_total{event=\"page_view\"}[24h]))"
+        }
+      ]
     },
     {
-      "id": 6, "type": "stat", "title": "Scrape targets up",
-      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 12 },
-      "targets": [{ "expr": "sum(up)" }]
+      "id": 6,
+      "type": "stat",
+      "title": "Scrape targets up",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 12
+      },
+      "targets": [
+        {
+          "expr": "sum(up)"
+        }
+      ]
     },
     {
-      "id": 9, "type": "stat", "title": "Browsing now (approx.)",
-      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 12 },
-      "targets": [{ "expr": "ceil(sum(increase(ecobuilding_frontend_events_total{event=\"heartbeat\"}[2m])) / 2)" }]
+      "id": 9,
+      "type": "stat",
+      "title": "Browsing now (approx.)",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 12
+      },
+      "targets": [
+        {
+          "expr": "ceil(sum(increase(ecobuilding_frontend_events_total{event=\"heartbeat\"}[2m])) / 2)"
+        }
+      ]
     },
     {
-      "id": 10, "type": "bargauge", "title": "Visitors by country (24h, page views)",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
-      "options": { "displayMode": "gradient", "orientation": "horizontal" },
-      "targets": [{ "expr": "sort_desc(sum by (country) (increase(ecobuilding_frontend_events_total{event=\"page_view\", country!=\"\"}[24h])))", "legendFormat": "{{country}}" }]
+      "id": 10,
+      "type": "bargauge",
+      "title": "Visitors by country (24h, page views)",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 24
+      },
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal"
+      },
+      "targets": [
+        {
+          "expr": "sort_desc(sum by (country) (increase(ecobuilding_frontend_events_total{event=\"page_view\", country!=\"\"}[24h])))",
+          "legendFormat": "{{country}}"
+        }
+      ]
     },
     {
-      "id": 11, "type": "timeseries", "title": "Page views / min by country",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
-      "targets": [{ "expr": "sum by (country) (rate(ecobuilding_frontend_events_total{event=\"page_view\", country!=\"\"}[5m])) * 60", "legendFormat": "{{country}}" }]
+      "id": 11,
+      "type": "timeseries",
+      "title": "Page views / min by country",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 24
+      },
+      "targets": [
+        {
+          "expr": "sum by (country) (rate(ecobuilding_frontend_events_total{event=\"page_view\", country!=\"\"}[5m])) * 60",
+          "legendFormat": "{{country}}"
+        }
+      ]
     },
     {
-      "id": 7, "type": "timeseries", "title": "Podman containers — CPU (cores)",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
-      "targets": [{ "expr": "sum by (name) (rate(podman_container_cpu_seconds_total[5m]))", "legendFormat": "{{name}}" }]
+      "id": 7,
+      "type": "timeseries",
+      "title": "Podman containers — CPU (cores)",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "targets": [
+        {
+          "expr": "sum by (name) (rate(podman_container_cpu_seconds_total[5m]))",
+          "legendFormat": "{{name}}"
+        }
+      ]
     },
     {
-      "id": 8, "type": "timeseries", "title": "Podman containers — memory",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
-      "fieldConfig": { "defaults": { "unit": "bytes" } },
-      "targets": [{ "expr": "sum by (name) (podman_container_mem_usage_bytes)", "legendFormat": "{{name}}" }]
+      "id": 8,
+      "type": "timeseries",
+      "title": "Podman containers — memory",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (name) (podman_container_mem_usage_bytes)",
+          "legendFormat": "{{name}}"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "row",
+      "title": "Sources de données (#491)",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 32
+      }
+    },
+    {
+      "id": 13,
+      "type": "bargauge",
+      "title": "Part des appels en échec, par source (24 h) — error + failure",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 33
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.1
+              },
+              {
+                "color": "red",
+                "value": 0.5
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "sum by (source) (increase(ecobuilding_upstream_calls_total{outcome=~\"error|failure\"}[24h])) / sum by (source) (increase(ecobuilding_upstream_calls_total[24h]))",
+          "legendFormat": "{{source}}",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "Appels amont / h, par issue (ok, not_found = « rien ici », error, failure)",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 33
+      },
+      "targets": [
+        {
+          "expr": "sum by (outcome) (increase(ecobuilding_upstream_calls_total[1h]))",
+          "legendFormat": "{{outcome}}"
+        }
+      ]
     }
   ]
 }

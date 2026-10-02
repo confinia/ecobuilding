@@ -161,3 +161,59 @@ groups:
               expression: B
               conditions:
                 - evaluator: { type: gt, params: [0] }
+
+      # Une SOURCE DE DONNÉES qui échoue durablement (#491). Une section de
+      # fiche dont la source tombe disparaît sans bruit — c'est voulu, une
+      # panne amont ne doit jamais casser une fiche — et l'API d'eau potable
+      # de Hub'Eau a ainsi répondu 410 trois semaines sans que personne ne le
+      # voie (#486). Seuls `error` (410, 429, 5xx) et `failure` (délai,
+      # connexion) comptent : un 404 est souvent la réponse normale « rien
+      # ici ». Au moins 5 appels dans l'heure, pour qu'une requête malchanceuse
+      # ne réveille personne. Une alerte PAR source (série par `source`).
+      - uid: upstream-source-failing
+        title: Data source failing (ecobuilding)
+        condition: C
+        for: 15m
+        # Pas assez d'appels dans l'heure = rien à dire, pas une panne : sans
+        # ceci, Grafana lèverait une alerte « NoData » à chaque heure creuse —
+        # exactement le genre de fausse alerte que #487 vient de supprimer.
+        noDataState: OK
+        execErrState: Error
+        annotations:
+          summary: >-
+            Source {{ $labels.source }} failed on most of its calls over the
+            last hour. Its fiche section is silently missing meanwhile. Check
+            the "Sources de données" row of the dashboard, then the API logs.
+          __dashboardUid__: ecobuilding-main
+          __panelId__: "13"
+        labels:
+          severity: warning
+        data:
+          - refId: A
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              expr: >-
+                (sum by (source) (increase(ecobuilding_upstream_calls_total{outcome=~"error|failure"}[1h]))
+                 / sum by (source) (increase(ecobuilding_upstream_calls_total[1h])))
+                and on (source)
+                (sum by (source) (increase(ecobuilding_upstream_calls_total[1h])) >= 5)
+          - refId: B
+            relativeTimeRange: { from: 0, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              type: reduce
+              refId: B
+              expression: A
+              reducer: last
+          - refId: C
+            relativeTimeRange: { from: 0, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              type: threshold
+              refId: C
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [0.5] }
