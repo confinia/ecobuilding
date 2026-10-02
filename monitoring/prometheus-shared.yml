@@ -35,10 +35,18 @@ scrape_configs:
     static_configs:
       - targets: ["127.0.0.1:13031"]
   - job_name: bdnb-rest
+    # PostgREST sert /metrics SANS Content-Type, et Prometheus 3 ne devine plus :
+    # la cible passait DOWN alors que le service répondait, et l'alerte « cible
+    # tombée » écrivait à l'opérateur toutes les 4 h (#487).
+    fallback_scrape_protocol: PrometheusText0.0.4
     static_configs:
       - targets: ["127.0.0.1:13022"]
         labels: { schemas: dvf-vues }
   - job_name: bdnb-open
+    # PostgREST sert /metrics SANS Content-Type, et Prometheus 3 ne devine plus :
+    # la cible passait DOWN alors que le service répondait, et l'alerte « cible
+    # tombée » écrivait à l'opérateur toutes les 4 h (#487).
+    fallback_scrape_protocol: PrometheusText0.0.4
     static_configs:
       - targets: ["127.0.0.1:13023"]
         labels: { schemas: bdnb }
