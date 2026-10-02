@@ -220,7 +220,11 @@ def test_no_false_alerts_and_monitoring_config_applies():
     assert "conclusion = 'failure'" in dash
 
     up = (ROOT / "deploy/stack-up.sh").read_text()
-    assert "podman kill -s HUP ecobuilding-monitoring_prometheus_1" in up
+    # Montée comme UN FICHIER, la config est figée par l'inode : SIGHUP relit
+    # l'ancienne. On compare et on redémarre seulement si elle a changé.
+    assert "podman kill -s HUP" not in up
+    assert "sha256sum < monitoring/prometheus-shared.yml" in up
+    assert "podman restart ecobuilding-monitoring_prometheus_1" in up
     assert "/api/admin/provisioning/alerting/reload" in up
 
 
