@@ -104,9 +104,20 @@ if podman container exists ecobuilding-monitoring_grafana_1 2>/dev/null; then
   # (et garde l'ancienne si la nouvelle est invalide) ; Grafana recharge ses
   # règles provisionnées par son API, sans redémarrer. Les tableaux de bord,
   # eux, sont relus seuls toutes les 10 s.
-  podman kill -s HUP ecobuilding-monitoring_prometheus_1 >/dev/null 2>&1 \
-    && echo "   prometheus: configuration rechargée" \
-    || echo "::warning::Prometheus: rechargement de la configuration impossible"
+  # Prometheus monte sa config comme UN FICHIER : le rsync du déploiement le
+  # remplace par un nouveau fichier (nouvel inode), et le conteneur garde
+  # l'ancien. Un SIGHUP relirait donc l'ancienne version — vécu le 02/10, la
+  # correction de #487 n'avait rien changé. On compare ce que voit le
+  # conteneur à ce qui est sur disque, et on REDÉMARRE seulement s'ils
+  # diffèrent : un redémarrage remonte le fichier courant.
+  if [ "$(podman exec ecobuilding-monitoring_prometheus_1 cat /etc/prometheus/prometheus.yml 2>/dev/null | sha256sum)" \
+       != "$(sha256sum < monitoring/prometheus-shared.yml)" ]; then
+    podman restart ecobuilding-monitoring_prometheus_1 >/dev/null 2>&1 \
+      && echo "   prometheus: configuration changée — redémarré" \
+      || echo "::warning::Prometheus: redémarrage impossible (configuration inchangée)"
+  else
+    echo "   prometheus: configuration inchangée"
+  fi
   curl -fsS -m 30 -o /dev/null -X POST \
        -u "${GF_SECURITY_ADMIN_USER:-admin}:${GF_SECURITY_ADMIN_PASSWORD:-}" \
        http://127.0.0.1:13040/api/admin/provisioning/alerting/reload \
