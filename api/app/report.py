@@ -305,8 +305,7 @@ def _traceability_annex(data: dict, photos: list | None) -> str:
             "Licence Ouverte",
             T("commune INSEE {c} · indicateur P104.3").format(c=wn.get('commune_insee') or '—'),
             T("année {y} (dernière publiée)").format(y=wn.get('year') or '—'),
-            "https://hubeau.eaufrance.fr/api/v0/indicateurs_services/communes"
-            f"?code_commune={wn.get('commune_insee') or ''}&type_service=AEP")))
+            "https://www.services.eaufrance.fr/donnees/telechargement")))
     pv = data.get("solar_pv") or {}
     if pv and lon is not None:
         cards.append((T("Solaire photovoltaïque"), _prov(
