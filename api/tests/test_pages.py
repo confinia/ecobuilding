@@ -84,3 +84,13 @@ def test_plans_du_site(monkeypatch):
     assert "<loc>https://ecobuilding.confinia.io/batiment/bdnb-bg-M5W1-T6DV-GUBP</loc>" in plan
     assert "<script>" not in plan                           # rien d'inattendu ne passe
     assert client.get("/batiment/sitemap-xx.xml").status_code == 404
+
+
+def test_plan_de_commune_indisponible_repond_503(monkeypatch):
+    _sources(monkeypatch)
+
+    async def panne(url, params, ttl=0):
+        raise RuntimeError("vue absente")
+    monkeypatch.setattr(main, "_cached_get_json", panne)
+    r = client.get("/batiment/sitemap-31149.xml")
+    assert r.status_code == 503 and r.headers["retry-after"] == "3600"

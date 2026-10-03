@@ -4673,7 +4673,8 @@ def _page_html(bdnb_id: str, d: dict, indexable: bool) -> str:
         ban = en.get("rental_ban") or {}
         if ban.get("note"):
             faits.append(("Location", ban["note"]))
-        desc.append(f"{nature}{f' de {annee}' if annee else ''} classée {classe} au DPE"
+        classee = "classée" if nature == "Maison" else "classé"
+        desc.append(f"{nature}{f' de {annee}' if annee else ''} {classee} {classe} au DPE"
                     + (f" (valable jusqu'au {_date_fr(valide)})" if valide and not perime else ""))
         if ban.get("rental_ban_date"):
             desc.append(ban["note"].split(" (")[0])
@@ -4763,9 +4764,15 @@ async def plan_du_site_commune(insee: str):
     from fastapi.responses import Response
     if not re.fullmatch(r"\d[0-9AB]\d{3}", insee):
         raise HTTPException(404)
-    rows = await _cached_get_json(
-        BDNB_DPE_COMMUNE_URL, {"code_commune_insee": f"eq.{insee}", "select": "batiment_groupe_id",
-                               "limit": "50000"}, ttl=7 * 86400)
+    try:
+        rows = await _cached_get_json(
+            BDNB_DPE_COMMUNE_URL, {"code_commune_insee": f"eq.{insee}", "select": "batiment_groupe_id",
+                                   "limit": "50000"}, ttl=7 * 86400)
+    except Exception as exc:
+        # Vue absente (avant le workflow bdnb-stack) ou miroir occupé : un
+        # robot sait revenir sur un 503, pas sur un 500.
+        log.warning("plan du site %s indisponible: %s", insee, exc)
+        raise HTTPException(503, headers={"Retry-After": "3600"})
     corps = "".join(f"<url><loc>{SITE_URL}/batiment/{r['batiment_groupe_id']}</loc></url>"
                     for r in rows or [] if _ID_BDNB.match(r.get("batiment_groupe_id") or ""))
     return Response(content='<?xml version="1.0" encoding="UTF-8"?>\n'
