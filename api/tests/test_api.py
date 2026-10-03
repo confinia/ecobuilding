@@ -1809,6 +1809,12 @@ def test_les_outils_ne_comptent_pas_comme_des_visites():
     assert _est_un_outil("ecobuilding-smoke/1.0")
     assert _est_un_outil("Slack-ImgProxy (+https://api.slack.com/robots)")
     assert _est_un_outil("")
+    # #494 : les bibliothèques HTTP des scripts.
+    assert _est_un_outil("python-httpx/0.28.1")
+    assert _est_un_outil("Python-urllib/3.12")
+    assert _est_un_outil("Go-http-client/2.0")
+    assert _est_un_outil("node-fetch")
+    assert _est_un_outil("axios/1.7.2")
     assert not _est_un_outil("Mozilla/5.0 (Windows NT 10.0) Chrome/152")
     assert not _est_un_outil("EcoBuilding-iOS/1.0")
     assert not _est_un_outil("EcoBuilding-Android/1.0")

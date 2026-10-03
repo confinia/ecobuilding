@@ -91,9 +91,14 @@ def _reseau(request) -> str | None:
 # Ce qui n'est pas une visite : nos propres sondes, les outils, les robots.
 # Tout le reste est compté — y compris nos applications, qu'un filtre exigeant
 # « Mozilla » écartait en silence alors qu'on cherche justement à les mesurer.
+# Les bibliothèques HTTP aussi (#494) : un script python-httpx a été consigné
+# comme 17 vues le 2026-10-03. Pas « okhttp » ni « dalvik » : ce sont les
+# agents par défaut d'Android, qu'une application pourrait porter.
 OUTILS = ("curl/", "wget/", "python-requests", "blackbox-exporter",
           "ecobuilding-smoke", "bot", "spider", "crawler", "slack-imgproxy",
-          "headlesschrome", "postman")
+          "headlesschrome", "postman", "python-httpx", "python-urllib",
+          "aiohttp", "go-http-client", "node-fetch", "axios/", "undici",
+          "libwww-perl", "httpie")
 
 
 def _est_un_outil(agent: str) -> bool:

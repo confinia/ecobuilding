@@ -38,6 +38,10 @@ TILES = os.environ.get(
 # « 7 jours » et ne mélange jamais deux journées (#393).
 WIN = ("(ts at time zone 'Europe/Paris')::date "
        "= ((now() at time zone 'Europe/Paris')::date - 1)")
+# Objectif d'usage (#494) : 100 fiches par jour hors vitrine Rivoli, la fiche
+# que la carte ouvre d'elle-même (une arrivée, pas une adresse cherchée).
+VITRINE = "bdnb-bg-LT4B-YEAJ-XXF1"
+OBJECTIF = 100
 
 
 def psql(sql):
@@ -127,6 +131,12 @@ def collect():
             f"from vues.vue_batiment where {WIN} and lon is not null and lat is not null "
             "group by round(lon::numeric,1), round(lat::numeric,1) "
             "order by 3 desc limit 40"),
+        "cibles": int((scalar_row(
+            f"select count(*) from vues.vue_batiment where {WIN} "
+            f"and bdnb_id <> '{VITRINE}'") or ["0"])[0]),
+        "cibles_7j": float((scalar_row(
+            "select round(count(*) / 7.0, 1) from vues.vue_batiment "
+            f"where ts > now() - interval '7 days' and bdnb_id <> '{VITRINE}'") or ["0"])[0]),
         "jour": (scalar_row(
             "select to_char((now() at time zone 'Europe/Paris')::date - 1, "
             "'DD/MM/YYYY')") or [""])[0],
@@ -175,6 +185,10 @@ def build_html(d, has_map, cid):
         <div style="font-size:12px;color:#666">bâtiments</div></td>
     </tr>
   </table>
+
+  <p style="font-size:14px;margin:4px 0 8px">Objectif : <strong>{OBJECTIF} fiches par jour</strong>
+    hors vitrine Rivoli. Hier : <strong>{d['cibles']}</strong> · moyenne 7 jours :
+    <strong>{d['cibles_7j']:.1f}</strong></p>
 
   {carte}
 
