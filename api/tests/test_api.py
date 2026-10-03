@@ -123,7 +123,7 @@ def test_building_includes_prices(monkeypatch):
     async def fake_bdnb(url, params, ttl):
         return [{"batiment_groupe_id": "bdnb-bg-X", "libelle_adr_principale_ban": "1 rue X"}]
     async def fake_prices(bid): return PRICES_FIXTURE
-    async def fake_risks(lon, lat): return {}
+    async def fake_risks(lon, lat, *_): return {}
     monkeypatch.setattr(main, "_cached_get_json", fake_bdnb)
     monkeypatch.setattr(main, "_dvf_prices", fake_prices)
     monkeypatch.setattr(main, "_area_risks", fake_risks)
@@ -172,7 +172,7 @@ def test_building_includes_rnb_id(monkeypatch):
                 {"rnb_id": "ABCD1234EFGH", "point": {"coordinates": [2.0816, 48.7021]}}]}
         return [{"batiment_groupe_id": "bdnb-bg-R", "libelle_adr_principale_ban": "1 rue R"}]
     async def none1(*a, **k): return None
-    async def norisk(lon, lat): return {}
+    async def norisk(lon, lat, *_): return {}
     monkeypatch.setattr(main, "_cached_get_json", fake_bdnb)
     monkeypatch.setattr(main, "_dvf_prices", none1)
     monkeypatch.setattr(main, "_area_risks", norisk)
@@ -199,7 +199,7 @@ def test_building_aggregate_is_cached(monkeypatch):
         calls["n"] += 1
         return [{"batiment_groupe_id": "bdnb-bg-C", "libelle_adr_principale_ban": "1 rue C"}]
     async def fake_prices(bid): return None
-    async def fake_risks(lon, lat): return {}
+    async def fake_risks(lon, lat, *_): return {}
     monkeypatch.setattr(main, "_cached_get_json", fake_bdnb)
     monkeypatch.setattr(main, "_dvf_prices", fake_prices)
     monkeypatch.setattr(main, "_area_risks", fake_risks)
@@ -217,7 +217,7 @@ def test_building_aggregate_is_cached(monkeypatch):
 def test_building_prices_none_when_dvf_disabled(monkeypatch):
     async def fake_bdnb(url, params, ttl):
         return [{"batiment_groupe_id": "bdnb-bg-X"}]
-    async def fake_risks(lon, lat): return {}
+    async def fake_risks(lon, lat, *_): return {}
     monkeypatch.setattr(main, "_cached_get_json", fake_bdnb)
     monkeypatch.setattr(main, "_area_risks", fake_risks)
     monkeypatch.setattr(main, "DVF_RPC_URL", "")  # real _dvf_prices short-circuits
@@ -302,7 +302,7 @@ def test_building_includes_water_and_pv_and_degrades(monkeypatch):
         if "PVcalc" in url or "niveaux_nappes" in url:
             raise RuntimeError("upstream down")
         return [{"batiment_groupe_id": "bdnb-bg-X", "libelle_adr_principale_ban": "1 rue X"}]
-    async def fake_risks(lon, lat): return {}
+    async def fake_risks(lon, lat, *_): return {}
     monkeypatch.setattr(main, "_cached_get_json", fake)
     monkeypatch.setattr(main, "_area_risks", fake_risks)
     monkeypatch.setattr(main, "DVF_RPC_URL", "")

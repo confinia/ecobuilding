@@ -158,7 +158,11 @@ def _origine(brute: str | None) -> str:
 # Headless DPE-3D map render for the PDF context page (#88). Empty in prod until
 # the render service is wired; when set, the report shows the rendered building.
 RENDER_URL = os.environ.get("RENDER_URL", "")
-GEORISQUES_URL = "https://georisques.gouv.fr/api/v1/resultats_rapport_risque"
+# www : l'apex georisques.gouv.fr coupe désormais la connexion (#493).
+GEORISQUES_URL = "https://www.georisques.gouv.fr/api/v1/resultats_rapport_risque"
+# Registre COMMUNAL des risques (base GASPAR) — le repli quand le rapport à
+# l'adresse ne répond pas (#493).
+GASPAR_RISQUES_URL = "https://www.georisques.gouv.fr/api/v1/gaspar/risques"
 # PLU zone of the parcel (#376): Géoportail de l'Urbanisme (GPU) via the IGN
 # Géoplateforme WFS. Keyless, Licence Ouverte.
 GPU_WFS_URL = "https://data.geopf.fr/wfs/ows"
@@ -1359,7 +1363,12 @@ def _cacher_agregat(cache_key, result, echecs):
     _CACHE.move_to_end(cache_key)
 
 
-async def _area_risks(lon, lat):
+async def _area_risks(lon, lat, commune_insee=None):
+    """Risques naturels et technologiques. D'abord le rapport Géorisques À
+    L'ADRESSE ; s'il ne répond pas, le registre des risques DE LA COMMUNE
+    (GASPAR), marqué `scope: "commune"` (#493). Sans repli, la section
+    disparaissait de chaque fiche et de chaque PDF tant que Géorisques était
+    en panne — vécu en octobre 2026, endpoint en INTERNAL_ERROR."""
     if lon is None or lat is None:
         return None
     try:
@@ -1367,6 +1376,7 @@ async def _area_risks(lon, lat):
         return {
             "commune": (gj.get("commune") or {}).get("libelle"),
             "report_url": gj.get("url"),
+            "scope": "adresse",
             "risques_naturels": [
                 k
                 for k, v in (gj.get("risquesNaturels") or {}).items()
@@ -1380,7 +1390,50 @@ async def _area_risks(lon, lat):
         }
     except httpx.HTTPError as e:
         log.warning("Géorisques unavailable: %r", e)
+    # Repli communal (#493). Il répond : la fiche n'est pas incomplète au sens
+    # du cache (#510), sinon le blocage de l'API par Géorisques empêcherait de
+    # garder la moindre fiche. Il rate aussi : là, c'est un échec.
+    repli = await _commune_risks(commune_insee)
+    if repli is None and commune_insee:
         _echec("area_risks")
+    return repli
+
+
+async def _commune_risks(commune_insee):
+    """Le registre GASPAR de la commune : risques recensés SUR LA COMMUNE,
+    pas à l'adresse — la fiche le dit, et ne conclut jamais « parcelle en
+    zone inondable » sur cette base. Codes de premier niveau seulement (deux
+    chiffres) : 1x naturels, 2x technologiques, 3x miniers ; les sous-types
+    (« par submersion marine »…) restent dans le rapport à l'adresse."""
+    if not commune_insee:
+        return None
+    try:
+        gj = await _cached_get_json(GASPAR_RISQUES_URL,
+                                    {"code_insee": str(commune_insee)}, ttl=86400)
+        lignes = (gj.get("data") or [{}])[0]
+        detail = [r for r in (lignes.get("risques_detail") or [])
+                  if len(str(r.get("num_risque") or "")) == 2]
+        if not detail:
+            return None
+        libelle = lignes.get("libelle_commune") or ""
+        # Clés PROPRES à la commune : les listes à l'adresse restent vides.
+        # Les applications publiées concluent « zone inondable » dès qu'un
+        # risque naturel contient « inond » — vrai à l'adresse, faux pour un
+        # registre communal. Elles n'affichent donc rien plutôt qu'une
+        # affirmation fausse ; les nouvelles versions lisent ces clés.
+        return {
+            "commune": libelle.title() if libelle.isupper() else libelle,
+            "report_url": None,
+            "scope": "commune",
+            "risques_naturels": [],
+            "risques_technologiques": [],
+            "commune_risques_naturels": [r["libelle_risque_long"] for r in detail
+                                         if str(r["num_risque"]).startswith("1")],
+            "commune_risques_technologiques": [r["libelle_risque_long"] for r in detail
+                                               if not str(r["num_risque"]).startswith("1")],
+        }
+    except Exception as e:
+        log.warning("GASPAR unavailable for %s: %r", commune_insee, e)
         return None
 
 
@@ -1650,7 +1703,7 @@ async def _do_lookup(q, ban_id, address, lon, lat):
     # (risques, nappe, solaire…), qui ne dépend que du point.
     (risks, groundwater, solar_pv, water_network, official_dpe,
      local_taxes, schools, urbanisme, ppri) = await asyncio.gather(
-        _area_risks(lon, lat), _groundwater(lon, lat), _solar_pv(lon, lat),
+        _area_risks(lon, lat, commune), _groundwater(lon, lat), _solar_pv(lon, lat),
         _water_network(commune), _noop(),
         _local_taxes(commune), _nearby_schools(lon, lat), _plu_zone(lon, lat),
         _ppri_zone(lon, lat))
@@ -2462,7 +2515,7 @@ _BLOCK_NAMES = ("prices", "area_risks", "groundwater", "solar_pv", "click_addr",
 
 def _building_block_coros(bdnb_id, lon, lat, row):
     commune = row.get("code_commune_insee")
-    return (_prix_complets(bdnb_id, lon, lat, commune), _area_risks(lon, lat),
+    return (_prix_complets(bdnb_id, lon, lat, commune), _area_risks(lon, lat, commune),
             _groundwater(lon, lat), _solar_pv(lon, lat),
             _click_address(bdnb_id, lon, lat),
             _water_network(commune), _official_dpe(bdnb_id),

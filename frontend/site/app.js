@@ -1284,7 +1284,20 @@ function sectionPrix(data) {
 // Section qui ne dépend QUE de la position — donc affichable même
 // sans bâtiment BDNB.
 function sectionRisques(data) {
-  const risks = (data.area_risks?.risques_naturels || []).concat(data.area_risks?.risques_technologiques || []);
+  const ar = data.area_risks;
+  // Repli communal (#493) : le registre GASPAR dit ce qui est recensé DANS LA
+  // COMMUNE, pas à l'adresse — la fiche le dit et n'en tire aucune conclusion
+  // sur la parcelle (la zone inondable, elle, vient du périmètre PPRI).
+  if (ar?.scope === "commune") {
+    const c = (ar.commune_risques_naturels || []).concat(ar.commune_risques_technologiques || []);
+    return c.length
+      ? `<div class="risk-block"><span class="k">Risques recensés dans la commune</span>
+          <div class="risk-chips">${c.map((r) => `<span class="chip">${r}</span>`).join("")}</div>
+          <p class="hint">Registre communal (GASPAR, Géorisques) : le risque existe dans la commune,
+          pas forcément à cette adresse.</p></div>`
+      : "";
+  }
+  const risks = (ar?.risques_naturels || []).concat(ar?.risques_technologiques || []);
   return risks.length
     ? `<div class="risk-block"><span class="k">Risques de la zone</span>
         <div class="risk-chips">${risks.map((r) => `<span class="chip">${humanizeRisk(r)}</span>`).join("")}</div></div>`
