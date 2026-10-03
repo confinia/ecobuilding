@@ -4764,6 +4764,12 @@ async def plan_du_site_commune(insee: str):
     from fastapi.responses import Response
     if not re.fullmatch(r"\d[0-9AB]\d{3}", insee):
         raise HTTPException(404)
+    # Un échec est MÉMORISÉ une heure : une requête lente continue dans la
+    # base après notre délai, et chaque nouvelle visite d'un robot la
+    # relancerait (Toulouse, avant la vue matérialisée, passait 60 s).
+    echec = _CACHE.get(f"plan-echec:{insee}")
+    if echec and time.monotonic() - echec[0] < 3600:
+        raise HTTPException(503, headers={"Retry-After": "3600"})
     try:
         rows = await _cached_get_json(
             BDNB_DPE_COMMUNE_URL, {"code_commune_insee": f"eq.{insee}", "select": "batiment_groupe_id",
@@ -4772,6 +4778,7 @@ async def plan_du_site_commune(insee: str):
         # Vue absente (avant le workflow bdnb-stack) ou miroir occupé : un
         # robot sait revenir sur un 503, pas sur un 500.
         log.warning("plan du site %s indisponible: %s", insee, exc)
+        _CACHE[f"plan-echec:{insee}"] = (time.monotonic(), None)
         raise HTTPException(503, headers={"Retry-After": "3600"})
     corps = "".join(f"<url><loc>{SITE_URL}/batiment/{r['batiment_groupe_id']}</loc></url>"
                     for r in rows or [] if _ID_BDNB.match(r.get("batiment_groupe_id") or ""))
