@@ -27,6 +27,136 @@
       }
     },
     {
+      "id": 112,
+      "type": "timeseries",
+      "title": "Fiches consultées / jour, hors vitrine Rivoli — objectif 100",
+      "description": "Objectif fixé le 2026-10-03 (#494) : 100 fiches de bâtiment consultées par jour, par des humains, hors vitrine Rivoli (bdnb-bg-LT4B-YEAJ-XXF1, la fiche ouverte par défaut). Les outils (curl, scripts, robots) ne sont jamais consignés. Jour = journée de Paris.",
+      "datasource": {
+        "type": "postgres",
+        "uid": "vues"
+      },
+      "timeFrom": "30d",
+      "gridPos": {
+        "x": 0,
+        "y": 3,
+        "w": 18,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 30
+              },
+              {
+                "color": "green",
+                "value": 100
+              }
+            ]
+          },
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 70,
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#2b7a4b"
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawQuery": true,
+          "datasource": {
+            "type": "postgres",
+            "uid": "vues"
+          },
+          "rawSql": "SELECT (ts AT TIME ZONE 'Europe/Paris')::date::timestamp AS \"time\",\n       count(*) AS \"fiches vues\"\nFROM vues.vue_batiment\nWHERE $__timeFilter(ts) AND bdnb_id <> 'bdnb-bg-LT4B-YEAJ-XXF1'\nGROUP BY 1 ORDER BY 1"
+        }
+      ]
+    },
+    {
+      "id": 113,
+      "type": "stat",
+      "title": "Moyenne 7 jours (objectif 100 / jour)",
+      "description": "Objectif fixé le 2026-10-03 (#494) : 100 fiches de bâtiment consultées par jour, par des humains, hors vitrine Rivoli (bdnb-bg-LT4B-YEAJ-XXF1, la fiche ouverte par défaut). Les outils (curl, scripts, robots) ne sont jamais consignés. Jour = journée de Paris.",
+      "datasource": {
+        "type": "postgres",
+        "uid": "vues"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 3,
+        "w": 6,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 30
+              },
+              {
+                "color": "green",
+                "value": 100
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "datasource": {
+            "type": "postgres",
+            "uid": "vues"
+          },
+          "rawSql": "SELECT count(*) / 7.0 AS \"fiches / jour\"\nFROM vues.vue_batiment\nWHERE ts > now() - interval '7 days' AND bdnb_id <> 'bdnb-bg-LT4B-YEAJ-XXF1'"
+        }
+      ]
+    },
+    {
       "id": 1,
       "type": "stat",
       "title": "Enterprise leads (total)",
@@ -34,7 +164,7 @@
         "h": 5,
         "w": 6,
         "x": 0,
-        "y": 3
+        "y": 11
       },
       "targets": [
         {
@@ -51,7 +181,7 @@
         "h": 5,
         "w": 6,
         "x": 6,
-        "y": 3
+        "y": 11
       },
       "targets": [
         {
@@ -68,7 +198,7 @@
         "h": 5,
         "w": 6,
         "x": 12,
-        "y": 3
+        "y": 11
       },
       "targets": [
         {
@@ -85,7 +215,7 @@
         "h": 5,
         "w": 6,
         "x": 18,
-        "y": 3
+        "y": 11
       },
       "targets": [
         {
@@ -102,7 +232,7 @@
         "h": 5,
         "w": 6,
         "x": 0,
-        "y": 8
+        "y": 16
       },
       "targets": [
         {
@@ -119,7 +249,7 @@
         "h": 5,
         "w": 6,
         "x": 6,
-        "y": 8
+        "y": 16
       },
       "fieldConfig": {
         "defaults": {
@@ -141,7 +271,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 8
+        "y": 16
       },
       "targets": [
         {
@@ -158,7 +288,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 13
+        "y": 21
       },
       "targets": [
         {
@@ -175,7 +305,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 16
+        "y": 24
       },
       "targets": [
         {
@@ -190,7 +320,7 @@
       "title": "Blocages préflight (7j)",
       "gridPos": {
         "x": 0,
-        "y": 24,
+        "y": 32,
         "w": 6,
         "h": 5
       },
@@ -207,7 +337,7 @@
       "title": "Clics fiche (7j)",
       "gridPos": {
         "x": 6,
-        "y": 24,
+        "y": 32,
         "w": 6,
         "h": 5
       },
@@ -224,7 +354,7 @@
       "title": "Inscriptions abouties (7j)",
       "gridPos": {
         "x": 12,
-        "y": 24,
+        "y": 32,
         "w": 6,
         "h": 5
       },
@@ -241,7 +371,7 @@
       "title": "Intérêt Pro (7j)",
       "gridPos": {
         "x": 18,
-        "y": 24,
+        "y": 32,
         "w": 6,
         "h": 5
       },
@@ -258,7 +388,7 @@
       "title": "Entonnoir / jour",
       "gridPos": {
         "x": 0,
-        "y": 29,
+        "y": 37,
         "w": 12,
         "h": 8
       },
@@ -275,7 +405,7 @@
       "title": "Murs de quota / jour (serveur, 429)",
       "gridPos": {
         "x": 12,
-        "y": 29,
+        "y": 37,
         "w": 12,
         "h": 8
       },
@@ -297,7 +427,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 37,
+        "y": 45,
         "w": 24,
         "h": 12
       },
@@ -534,7 +664,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 52,
+        "y": 60,
         "w": 16,
         "h": 10
       },
@@ -641,7 +771,7 @@
       },
       "gridPos": {
         "x": 16,
-        "y": 52,
+        "y": 60,
         "w": 8,
         "h": 10
       },
@@ -669,7 +799,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 62,
+        "y": 70,
         "w": 24,
         "h": 11
       },
@@ -811,7 +941,7 @@
       "transparent": true,
       "gridPos": {
         "x": 0,
-        "y": 49,
+        "y": 57,
         "w": 24,
         "h": 3
       },
