@@ -92,5 +92,14 @@ def test_plan_de_commune_indisponible_repond_503(monkeypatch):
     async def panne(url, params, ttl=0):
         raise RuntimeError("vue absente")
     monkeypatch.setattr(main, "_cached_get_json", panne)
+    appels = []
+
+    async def panne_comptee(url, params, ttl=0):
+        appels.append(url)
+        raise RuntimeError("vue absente")
+    monkeypatch.setattr(main, "_cached_get_json", panne_comptee)
     r = client.get("/batiment/sitemap-31149.xml")
     assert r.status_code == 503 and r.headers["retry-after"] == "3600"
+    # La seconde visite d'un robot ne relance pas la requête lente.
+    assert client.get("/batiment/sitemap-31149.xml").status_code == 503
+    assert len(appels) == 1

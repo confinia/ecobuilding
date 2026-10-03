@@ -24,6 +24,10 @@ S=$(podman exec ecobuilding-bdnb_bdnb-db_1 psql -U bdnb -d bdnb -tAc \
 [ -n "$S" ] || { echo "no batiment_groupe table found — run bdnb-import.sh first"; exit 1; }
 echo "   source schema: $S"
 
+# Departments listed by the building-page sitemaps (#495), same default as
+# the API's SITEMAP_DEPARTEMENTS. Digits/2A/2B only, quoted for SQL.
+SITEMAP_DEPTS_SQL=$(echo "${SITEMAP_DEPARTEMENTS:-31}" | tr -cd '0-9AB,' | sed "s/[^,]\+/'&'/g")
+
 echo "== 2. build the api.bdnb.io-compatible views in schema bdnb"
 podman exec -i ecobuilding-bdnb_bdnb-db_1 psql -U bdnb -d bdnb -v ON_ERROR_STOP=1 <<SQL
 CREATE SCHEMA IF NOT EXISTS bdnb;
@@ -136,14 +140,27 @@ LEFT JOIN LATERAL (
   WHERE rp.batiment_groupe_id = g.batiment_groupe_id) sit ON true;
 
 -- Buildings of a commune that have a DPE, for the per-commune sitemaps of
--- the indexable building pages (#495). Through batiment_groupe_complet the
--- same list took 20 s for Blagnac (the wide view's joins); straight on the
--- two base tables, driven by the commune index, Colomiers takes 0.2 s.
-CREATE OR REPLACE VIEW bdnb.batiment_dpe_commune AS
+-- the indexable building pages (#495). A MATERIALIZED view, restricted to
+-- the sitemap departments: as a plain view Colomiers took 0.2 s but Toulouse
+-- (44k buildings, one random DPE lookup each on spinning disks) passed 60 s,
+-- and every crawler retry would have replayed it. BDNB changes once a year,
+-- so the list is built once (IF NOT EXISTS: re-runs cost nothing) — dropped
+-- with its source schema at the next millésime and rebuilt by this script.
+-- Built on the first run after the view existed: run bdnb-stack at night.
+DO \$\$ BEGIN
+  IF EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+             WHERE n.nspname = 'bdnb' AND c.relname = 'batiment_dpe_commune' AND c.relkind = 'v') THEN
+    DROP VIEW bdnb.batiment_dpe_commune;
+  END IF;
+END \$\$;
+CREATE MATERIALIZED VIEW IF NOT EXISTS bdnb.batiment_dpe_commune AS
 SELECT g.batiment_groupe_id, g.code_commune_insee, d.classe_bilan_dpe
 FROM ${S}.batiment_groupe g
 JOIN ${S}.batiment_groupe_dpe_representatif_logement d USING (batiment_groupe_id)
-WHERE d.classe_bilan_dpe IS NOT NULL;
+WHERE d.classe_bilan_dpe IS NOT NULL
+  AND g.code_departement_insee IN (${SITEMAP_DEPTS_SQL});
+CREATE INDEX IF NOT EXISTS batiment_dpe_commune_commune_idx
+  ON bdnb.batiment_dpe_commune (code_commune_insee);
 
 GRANT USAGE ON SCHEMA bdnb TO bdnb_anon;
 GRANT SELECT ON ALL TABLES IN SCHEMA bdnb TO bdnb_anon;
