@@ -36,6 +36,13 @@
 	}
 
 	# Public API (FastAPI). /api stripped; app root_path keeps docs correct.
+	# Pages indexables d'un bâtiment et leurs plans de site (#495), rendues
+	# par l'API mais servies sous le nom du site : c'est l'adresse que les
+	# moteurs de recherche indexent.
+	handle /batiment/* {
+		reverse_proxy api:8000
+	}
+
 	handle_path /api/* {
 		reverse_proxy api:8000
 	}

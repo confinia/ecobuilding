@@ -8,3 +8,4 @@ Disallow: /auth/
 Allow: /
 
 Sitemap: https://ecobuilding.confinia.io/sitemap.xml
+Sitemap: https://ecobuilding.confinia.io/batiment/sitemap.xml
