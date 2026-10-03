@@ -17,6 +17,7 @@ import json
 import logging
 import math
 import os
+import re
 import time
 from collections import OrderedDict
 from contextvars import ContextVar
@@ -4588,3 +4589,216 @@ async def track(ev: FrontendEvent, request: Request):
     M_FRONTEND.add(1, {"event": evenement, "scope": portee,
                        "country": _client_country(request)})
     return None
+
+
+# --- Pages indexables (#495) --------------------------------------------------
+# La fiche ne vit que dans le navigateur : un robot de recherche ne voit qu'une
+# coquille vide, et la longue traîne « DPE 13 rue X, Ville » ne nous trouve
+# jamais. Une page HTML par bâtiment, rendue ICI, avec les faits qui font la
+# recherche (classe, validité, interdiction de location, année, zone PLU, prix
+# médian de la commune, taxe foncière) et un lien vers la carte 3D.
+#
+# Les robots viendront en nombre : seules les sources LOCALES ou déjà en cache
+# servent (miroir BDNB, DVF local, REI committé, DPE officiel, zone PLU), jamais
+# Géorisques, PVGIS, écoles ou eau ; et deux pages au plus se construisent en
+# même temps. Une source qui manque retire sa ligne, jamais la page.
+SITE_URL = os.environ.get("PUBLIC_SITE_URL", "https://ecobuilding.confinia.io")
+PAGE_TTL = float(os.environ.get("PAGE_TTL", "86400"))
+BDNB_DPE_COMMUNE_URL = os.environ.get(
+    "BDNB_DPE_COMMUNE_URL", BDNB_BASE_URL.rsplit("/", 1)[0] + "/batiment_dpe_commune")
+SITEMAP_DEPARTEMENTS = [d.strip() for d in os.environ.get("SITEMAP_DEPARTEMENTS", "31").split(",") if d.strip()]
+_PAGE_SEM = asyncio.Semaphore(int(os.environ.get("PAGE_CONCURRENCY", "2")))
+_ID_BDNB = re.compile(r"^bdnb-bg-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$")
+_TYPE_BATIMENT = {"Résidentiel individuel": "Maison", "Résidentiel collectif": "Immeuble"}
+
+
+async def _sans_echec(coro):
+    try:
+        return await coro
+    except Exception as e:
+        log.warning("page: bloc indisponible: %s", e)
+        return None
+
+
+async def _donnees_page(bdnb_id: str) -> dict | None:
+    cle = f"page:{bdnb_id}"
+    hit = _CACHE.get(cle)
+    if hit and time.monotonic() - hit[0] < PAGE_TTL:
+        return hit[1]
+    async with _PAGE_SEM:
+        rows = await _cached_get_json(
+            BDNB_BASE_URL, {"batiment_groupe_id": f"eq.{bdnb_id}", "limit": "1"}, ttl=86400)
+        if not isinstance(rows, list) or not rows:
+            return None
+        row = rows[0]
+        pt = await _sans_echec(_building_point(bdnb_id))
+        lon, lat = pt if pt else (None, None)
+        prix, taxes, dpe, plu = await asyncio.gather(
+            _sans_echec(_dvf_prices(bdnb_id)),
+            _sans_echec(_local_taxes(row.get("code_commune_insee"))),
+            _sans_echec(_official_dpe(bdnb_id)),
+            _sans_echec(_plu_zone(lon, lat)) if pt else _sans_echec(asyncio.sleep(0)))
+    d = {"row": row, "bat": _normalize_building(row), "lon": lon, "lat": lat,
+         "prix": prix, "taxes": taxes, "dpe": dpe, "plu": plu}
+    _CACHE[cle] = (time.monotonic(), d)
+    _CACHE.move_to_end(cle)
+    while len(_CACHE) > _CACHE_MAX:
+        _CACHE.popitem(last=False)
+    return d
+
+
+def _eur(n) -> str:
+    return f"{round(n):,}".replace(",", " ") + " €"
+
+
+def _page_html(bdnb_id: str, d: dict, indexable: bool) -> str:
+    from html import escape as e
+    bat, row = d["bat"], d["row"]
+    adresse = bat.get("address") or bdnb_id
+    m = re.match(r"^(.*?)\s+(\d{5})\s+(.+)$", adresse)
+    rue, cp, commune = (m.group(1), m.group(2), m.group(3)) if m else (adresse, "", "")
+    nature = _TYPE_BATIMENT.get(row.get("usage_principal_bdnb_open") or "", "Bâtiment")
+    en = bat.get("energy") or {}
+    classe = en.get("dpe_class")
+    annee = bat.get("construction_year")
+    titre = (f"DPE {classe} — {rue}, {commune}" if classe else f"Bâtiment — {rue}, {commune}")
+    faits, desc = [], []
+    if classe:
+        valide = en.get("dpe_valid_until")
+        perime = bool(valide and valide < datetime.now().date().isoformat())
+        faits.append(("Classe énergie (DPE)", f"{classe}"
+                      + (f", DPE du {_date_fr(str(en.get('dpe_date'))[:10])}" if en.get("dpe_date") else "")))
+        if valide:
+            faits.append(("Validité du DPE", ("expiré depuis le " if perime else "jusqu'au ") + _date_fr(valide)))
+        ban = en.get("rental_ban") or {}
+        if ban.get("note"):
+            faits.append(("Location", ban["note"]))
+        classee = "classée" if nature == "Maison" else "classé"
+        desc.append(f"{nature}{f' de {annee}' if annee else ''} {classee} {classe} au DPE"
+                    + (f" (valable jusqu'au {_date_fr(valide)})" if valide and not perime else ""))
+        if ban.get("rental_ban_date"):
+            desc.append(ban["note"].split(" (")[0])
+    if annee:
+        faits.append(("Année de construction", str(annee)))
+    if bat.get("dwellings"):
+        faits.append(("Logements", str(bat["dwellings"])))
+    dpe = d.get("dpe") or {}
+    if dpe.get("annual_cost_eur"):
+        faits.append(("Facture d'énergie estimée", f"{_eur(dpe['annual_cost_eur'])} par an (DPE n° {dpe.get('dpe_number', '')})"))
+    plu = d.get("plu") or {}
+    if plu.get("libelong") or plu.get("libelle"):
+        faits.append(("Zone d'urbanisme (PLU)", plu.get("libelong") or plu["libelle"]))
+    prix = (d.get("prix") or {}).get("commune_eur_m2") or {}
+    for t, lib in (("Maison", "maisons"), ("Appartement", "appartements")):
+        if (prix.get(t) or {}).get("median"):
+            faits.append((f"Prix médian des {lib} à {commune or 'la commune'}",
+                          f"{_eur(prix[t]['median'])}/m² ({prix[t]['n']} ventes DVF)"))
+    if (prix.get("Maison") or {}).get("median"):
+        desc.append(f"Prix médian des maisons à {commune} : {_eur(prix['Maison']['median'])}/m²")
+    taxes = d.get("taxes") or {}
+    if taxes.get("property_tax_mean_eur"):
+        faits.append(("Taxe foncière moyenne par avis dans la commune",
+                      f"{_eur(taxes['property_tax_mean_eur'])} (REI {taxes.get('rei_year', '')})"))
+    ventes = ((d.get("prix") or {}).get("sales") or [])[:3]
+    # Liens RELATIFS : la page de la sandbox mène à la carte de la sandbox ;
+    # seule l'URL canonique nomme la production.
+    carte = (f"/?b={bdnb_id}#18/{d['lat']:.6f}/{d['lon']:.6f}/-30/60"
+             if d.get("lat") is not None else f"/?b={bdnb_id}")
+    canon = f"{SITE_URL}/batiment/{bdnb_id}"
+    description = (". ".join(desc) + ". " if desc else "") + "Données publiques sourcées, fiche en 3D et en PDF."
+    lignes = "\n".join(f"<tr><th>{e(k)}</th><td>{e(v)}</td></tr>" for k, v in faits)
+    lignes_ventes = "\n".join(
+        f"<li>{e(_date_fr(s.get('date', '')))} : {e(s.get('type_local') or 'bien')}"
+        + (f" de {s['surface_m2']} m²" if s.get("surface_m2") else "")
+        + (f", {_eur(s['valeur_fonciere'])}" if s.get("valeur_fonciere") else "")
+        + (f" ({_eur(s['eur_m2'])}/m²)" if s.get("eur_m2") else "") + "</li>" for s in ventes)
+    robots = "index,follow" if indexable else "noindex,nofollow"
+    return f"""<!DOCTYPE html>
+<html lang="fr"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{e(titre)} | EcoBuilding</title>
+<meta name="description" content="{e(description)}">
+<meta name="robots" content="{robots}">
+<link rel="canonical" href="{e(canon)}">
+<meta property="og:title" content="{e(titre)}"><meta property="og:description" content="{e(description)}">
+<meta property="og:url" content="{e(canon)}"><meta property="og:type" content="website">
+<style>
+:root{{--fg:#1a1a1a;--muted:#5d6b62;--accent:#2b7a4b;--bg:#fff;--line:#e3e8e5}}
+@media (prefers-color-scheme:dark){{:root{{--fg:#e8ece9;--muted:#9fb0a5;--accent:#6cc292;--bg:#121614;--line:#2a332e}}}}
+body{{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 -apple-system,Segoe UI,Roboto,sans-serif}}
+main{{max-width:720px;margin:0 auto;padding:24px 16px}}
+h1{{font-size:1.5rem;margin:.2em 0}} .sub{{color:var(--muted);margin:0 0 1em}}
+table{{border-collapse:collapse;width:100%}} th,td{{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line);vertical-align:top}}
+th{{font-weight:600;width:45%}} a.btn{{display:inline-block;margin:16px 0;padding:10px 16px;background:var(--accent);color:#fff;border-radius:8px;text-decoration:none}}
+.note{{color:var(--muted);font-size:.85rem;margin-top:24px}}
+</style></head><body><main>
+<p class="sub"><a href="/">EcoBuilding</a> · fiche du bâtiment</p>
+<h1>{e(titre)}</h1>
+<p class="sub">{e(adresse)}</p>
+<table>{lignes}</table>
+{f"<h2>Dernières ventes connues (DVF)</h2><ul>{lignes_ventes}</ul>" if lignes_ventes else ""}
+<a class="btn" href="{e(carte)}">Voir le bâtiment en 3D et la fiche complète</a>
+<p class="note">Fiche établie à partir de données publiques (BDNB, ADEME, DVF, DGFiP, Géoportail de l'Urbanisme), chacune sous Licence Ouverte. Ce n'est pas le diagnostic de performance énergétique officiel du logement : seul le DPE établi par un diagnostiqueur certifié fait foi.</p>
+</main></body></html>"""
+
+
+@app.get("/batiment/sitemap.xml", include_in_schema=False)
+async def plan_du_site_batiments():
+    """Index : un plan par commune des départements couverts (#495)."""
+    from fastapi.responses import Response
+    codes = []
+    for dep in SITEMAP_DEPARTEMENTS:
+        communes = await _cached_get_json(
+            f"https://geo.api.gouv.fr/departements/{dep}/communes", {"fields": "code"}, ttl=7 * 86400)
+        codes += [c["code"] for c in communes or []]
+    corps = "".join(f"<sitemap><loc>{SITE_URL}/batiment/sitemap-{c}.xml</loc></sitemap>" for c in codes)
+    return Response(content='<?xml version="1.0" encoding="UTF-8"?>\n'
+                    f'<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{corps}</sitemapindex>',
+                    media_type="application/xml", headers={"Cache-Control": "public, max-age=86400"})
+
+
+@app.get("/batiment/sitemap-{insee}.xml", include_in_schema=False)
+async def plan_du_site_commune(insee: str):
+    """Les bâtiments d'une commune qui ont un DPE : les autres n'auraient
+    presque rien à dire (#495). Vue étroite du miroir, index commune."""
+    from fastapi.responses import Response
+    if not re.fullmatch(r"\d[0-9AB]\d{3}", insee):
+        raise HTTPException(404)
+    try:
+        rows = await _cached_get_json(
+            BDNB_DPE_COMMUNE_URL, {"code_commune_insee": f"eq.{insee}", "select": "batiment_groupe_id",
+                                   "limit": "50000"}, ttl=7 * 86400)
+    except Exception as exc:
+        # Vue absente (avant le workflow bdnb-stack) ou miroir occupé : un
+        # robot sait revenir sur un 503, pas sur un 500.
+        log.warning("plan du site %s indisponible: %s", insee, exc)
+        raise HTTPException(503, headers={"Retry-After": "3600"})
+    corps = "".join(f"<url><loc>{SITE_URL}/batiment/{r['batiment_groupe_id']}</loc></url>"
+                    for r in rows or [] if _ID_BDNB.match(r.get("batiment_groupe_id") or ""))
+    return Response(content='<?xml version="1.0" encoding="UTF-8"?>\n'
+                    f'<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{corps}</urlset>',
+                    media_type="application/xml", headers={"Cache-Control": "public, max-age=86400"})
+
+
+@app.get("/batiment/{bdnb_id}", include_in_schema=False)
+async def page_batiment(bdnb_id: str, request: Request, utm_source: str | None = None):
+    """Page HTML indexable d'un bâtiment (#495)."""
+    if not _ID_BDNB.match(bdnb_id):
+        raise HTTPException(404)
+    d = await _donnees_page(bdnb_id)
+    if d is None:
+        raise HTTPException(404)
+    # Une arrivée humaine sur la page est une vue comme une autre (les robots
+    # et outils sont écartés par _noter_la_vue) ; la provenance est le lien
+    # ou l'hôte du référent, comme côté carte.
+    src = utm_source
+    if not src:
+        ref = request.headers.get("referer") or ""
+        hote = re.sub(r"^www\.", "", ref.split("/")[2]) if ref.count("/") >= 2 else ""
+        src = "direct" if not hote or hote == request.url.hostname else hote
+    _noter_la_vue(bdnb_id, d.get("lon"), d.get("lat"), request, src[:60], None)
+    # Seule la production s'indexe : sandbox et staging répondent noindex.
+    hote = (request.headers.get("host") or "").split(":")[0]
+    indexable = hote == SITE_URL.split("//", 1)[-1]
+    return HTMLResponse(_page_html(bdnb_id, d, indexable),
+                        headers={"Cache-Control": "public, max-age=3600"})

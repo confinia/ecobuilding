@@ -45,6 +45,13 @@ http://sandbox.ecobuilding.confinia.io {
 		reverse_proxy sandbox-keycloak:8080
 	}
 
+	# Pages indexables d'un bâtiment et leurs plans de site (#495), rendues
+	# par l'API mais servies sous le nom du site : c'est l'adresse que les
+	# moteurs de recherche indexent.
+	handle /batiment/* {
+		reverse_proxy sandbox-api:8000
+	}
+
 	handle_path /api/* {
 		reverse_proxy sandbox-api:8000
 	}

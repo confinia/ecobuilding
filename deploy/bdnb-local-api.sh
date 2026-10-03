@@ -135,6 +135,16 @@ LEFT JOIN LATERAL (
   JOIN ${S}.parcelle_sitadel ps USING (parcelle_id)
   WHERE rp.batiment_groupe_id = g.batiment_groupe_id) sit ON true;
 
+-- Buildings of a commune that have a DPE, for the per-commune sitemaps of
+-- the indexable building pages (#495). Through batiment_groupe_complet the
+-- same list took 20 s for Blagnac (the wide view's joins); straight on the
+-- two base tables, driven by the commune index, Colomiers takes 0.2 s.
+CREATE OR REPLACE VIEW bdnb.batiment_dpe_commune AS
+SELECT g.batiment_groupe_id, g.code_commune_insee, d.classe_bilan_dpe
+FROM ${S}.batiment_groupe g
+JOIN ${S}.batiment_groupe_dpe_representatif_logement d USING (batiment_groupe_id)
+WHERE d.classe_bilan_dpe IS NOT NULL;
+
 GRANT USAGE ON SCHEMA bdnb TO bdnb_anon;
 GRANT SELECT ON ALL TABLES IN SCHEMA bdnb TO bdnb_anon;
 ALTER DEFAULT PRIVILEGES IN SCHEMA bdnb GRANT SELECT ON TABLES TO bdnb_anon;
