@@ -61,6 +61,8 @@ def test_page_porte_les_faits_et_l_url_canonique(monkeypatch):
     assert "Zone d'urbanisme" not in h                      # source en panne : ligne absente
     assert "/?b=bdnb-bg-M5W1-T6DV-GUBP#18/43.607086/1.338233" in h
     assert "pas le diagnostic de performance énergétique officiel" in h   # #418
+    # Conditions DVF : jamais de vente individuelle sur une page indexable.
+    assert "420\u202f000" not in h and "Dernières ventes" not in h
     assert len(vues) == 1
 
 

@@ -4699,7 +4699,6 @@ def _page_html(bdnb_id: str, d: dict, indexable: bool) -> str:
     if taxes.get("property_tax_mean_eur"):
         faits.append(("Taxe foncière moyenne par avis dans la commune",
                       f"{_eur(taxes['property_tax_mean_eur'])} (REI {taxes.get('rei_year', '')})"))
-    ventes = ((d.get("prix") or {}).get("sales") or [])[:3]
     # Liens RELATIFS : la page de la sandbox mène à la carte de la sandbox ;
     # seule l'URL canonique nomme la production.
     carte = (f"/?b={bdnb_id}#18/{d['lat']:.6f}/{d['lon']:.6f}/-30/60"
@@ -4707,11 +4706,10 @@ def _page_html(bdnb_id: str, d: dict, indexable: bool) -> str:
     canon = f"{SITE_URL}/batiment/{bdnb_id}"
     description = (". ".join(desc) + ". " if desc else "") + "Données publiques sourcées, fiche en 3D et en PDF."
     lignes = "\n".join(f"<tr><th>{e(k)}</th><td>{e(v)}</td></tr>" for k, v in faits)
-    lignes_ventes = "\n".join(
-        f"<li>{e(_date_fr(s.get('date', '')))} : {e(s.get('type_local') or 'bien')}"
-        + (f" de {s['surface_m2']} m²" if s.get("surface_m2") else "")
-        + (f", {_eur(s['valeur_fonciere'])}" if s.get("valeur_fonciere") else "")
-        + (f" ({_eur(s['eur_m2'])}/m²)" if s.get("eur_m2") else "") + "</li>" for s in ventes)
+    # PAS de ventes individuelles DVF ici : les conditions d'utilisation de
+    # DVF interdisent leur indexation par les moteurs de recherche. Seules
+    # les médianes communales (agrégats) figurent sur la page ; le détail des
+    # ventes reste dans la fiche de la carte, que les robots ne lisent pas.
     robots = "index,follow" if indexable else "noindex,nofollow"
     return f"""<!DOCTYPE html>
 <html lang="fr"><head>
@@ -4736,7 +4734,6 @@ th{{font-weight:600;width:45%}} a.btn{{display:inline-block;margin:16px 0;paddin
 <h1>{e(titre)}</h1>
 <p class="sub">{e(adresse)}</p>
 <table>{lignes}</table>
-{f"<h2>Dernières ventes connues (DVF)</h2><ul>{lignes_ventes}</ul>" if lignes_ventes else ""}
 <a class="btn" href="{e(carte)}">Voir le bâtiment en 3D et la fiche complète</a>
 <p class="note">Fiche établie à partir de données publiques (BDNB, ADEME, DVF, DGFiP, Géoportail de l'Urbanisme), chacune sous Licence Ouverte. Ce n'est pas le diagnostic de performance énergétique officiel du logement : seul le DPE établi par un diagnostiqueur certifié fait foi.</p>
 </main></body></html>"""
