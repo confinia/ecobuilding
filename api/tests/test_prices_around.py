@@ -85,3 +85,37 @@ def test_pas_de_mediane_sous_dix_ventes_et_arrondissement_nomme():
     assert "Maison : 3 ventes seulement, pas de médiane représentative" in h
     assert "5 529" not in h and "5 529" not in h
     assert "5 661" in h or "5 661" in h
+
+
+ESTIMATION = {"type_local": "Maison", "surface_m2": 143.3, "radius_m": 600, "n": 18,
+              "from": "2023-12-07", "eur_m2": {"p25": 2301, "p50": 3006, "p75": 3270},
+              "price": {"low": 330000, "mid": 431000, "high": 469000},
+              "comparables": [{"date": "2025-01-30", "surface_m2": 144, "pieces": 6,
+                               "valeur_fonciere": 450000, "eur_m2": 3125, "distance_m": 567}]}
+
+
+def test_la_fourchette_observee_dans_le_pdf():
+    h = report._prices_html({**PARCELLE}, estimation=ESTIMATION, classe="G")
+    assert "Fourchette de prix observée" in h
+    assert "330 000 € – 469 000 €" in h or "330 000 € – 469 000 €" in h
+    assert "pas une estimation de valeur" in h and "classe énergétique (G)" in h
+    assert "567 m" in h
+
+
+def test_le_bloc_estimation_maison_ou_appartement(monkeypatch):
+    vus = []
+
+    async def dpe(bid):
+        return {"surface_habitable_m2": 143.3}
+
+    async def get(url, params, ttl=0):
+        vus.append(params)
+        return ESTIMATION
+    monkeypatch.setattr(main, "DVF_ESTIMATION_URL", "http://dvf/rpc/estimation")
+    monkeypatch.setattr(main, "_official_dpe", dpe)
+    monkeypatch.setattr(main, "_cached_get_json", get)
+    assert asyncio.run(main._estimation("b", 1.3382331, 43.607, {"nb_log": 1}))["n"] == 18
+    assert vus[-1] == {"lon": 1.33823, "lat": 43.607, "type_local": "Maison", "surface": 143.3}
+    asyncio.run(main._estimation("b", 1.3, 43.6, {"nb_log": 12}))
+    assert vus[-1]["type_local"] == "Appartement"
+    assert asyncio.run(main._estimation("b", 1.3, 43.6, {"nb_log": None})) is None

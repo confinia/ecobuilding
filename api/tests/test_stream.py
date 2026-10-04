@@ -40,7 +40,7 @@ def stubbed(monkeypatch):
                  "_official_dpe", "_local_taxes", "_nearby_schools",
                  "_dvf_prices", "_rnb_lookup", "_click_address",
                  "_dpe_spread", "_plu_zone", "_ppri_zone",
-                 "_construction_years"):
+                 "_construction_years", "_estimation"):
         async def none(*a, _n=name, **k):
             calls.append(_n)
             return None
@@ -66,7 +66,7 @@ def test_stream_sends_the_building_before_the_slow_sources(stubbed):
     assert set(names) == {"prices", "area_risks", "groundwater", "solar_pv",
                           "water_network", "official_dpe", "local_taxes",
                           "schools", "rnb", "dpe_spread", "urbanisme",
-                          "ppri", "construction", "address_buildings"}
+                          "ppri", "construction", "address_buildings", "estimation"}
 
 
 def test_stream_fills_the_cache_so_the_pdf_replays_nothing(stubbed):

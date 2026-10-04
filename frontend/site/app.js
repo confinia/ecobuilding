@@ -975,7 +975,7 @@ const STREAM_PENDING = {
   solar_pv: "Solaire (PVGIS)", water_network: "Eau potable (SISPEA)",
   official_dpe: "DPE officiel (ADEME)", local_taxes: "Fiscalité locale (DGFiP)",
   schools: "Écoles (annuaire)", prices: "Prix de vente (DVF)", rnb: "ID-RNB",
-  commune: "Commune (Confinia)", dpe_spread: "DPE des logements (ADEME)",
+  dpe_spread: "DPE des logements (ADEME)", estimation: "Fourchette de prix (DVF)",
 };
 async function consumeBuildingStream(response, searched) {
   const reader = response.body.getReader();
@@ -1252,6 +1252,36 @@ function medianeTxt(m) {
     : `${m.n} vente${m.n > 1 ? "s" : ""} seulement : pas de médiane représentative`;
 }
 
+// Fourchette de prix OBSERVÉE (#429) : des ventes réelles, comparables
+// (même type, surface ±30 %, trois ans), jamais une estimation de valeur.
+// Le total ne s'affiche que pour une maison : pour un appartement, la
+// surface du logement représentatif du DPE n'est pas forcément la sienne.
+function blocFourchette(data) {
+  const e = data.estimation;
+  if (!e?.eur_m2?.p50) return "";
+  const eur = (v) => Math.round(v).toLocaleString("fr-FR") + " €";
+  const maison = e.type_local === "Maison";
+  const classe = data.buildings?.[0]?.energy?.dpe_class;
+  const total = maison
+    ? `<div class="fourchette-total">${eur(e.price.low)} – ${eur(e.price.high)}</div>
+       <div class="hint">médiane ${eur(e.price.mid)} pour ${Math.round(e.surface_m2)} m²</div>`
+    : `<div class="fourchette-total">${eurM2(e.eur_m2.p25)} – ${eurM2(e.eur_m2.p75)}</div>
+       <div class="hint">médiane ${eurM2(e.eur_m2.p50)}</div>`;
+  const comps = (e.comparables || []).map((c) => kv(
+    `${moisAn(c.date)} · ${Math.round(c.surface_m2)} m²${c.pieces ? ", " + c.pieces + " p." : ""} · ${c.distance_m} m`,
+    `${(c.valeur_fonciere || 0).toLocaleString("fr-FR")} € · ${eurM2(c.eur_m2)}`)).join("");
+  return `<div class="fourchette">
+    <div class="k">Fourchette de prix observée${maison ? ", maison" : ", appartements, au m²"}</div>
+    ${total}
+    <p class="hint">D'après ${e.n} ventes de ${maison ? "maisons" : "appartements"} de surface proche
+      (±30 %) à moins de ${e.radius_m >= 1000 ? (e.radius_m / 1000).toLocaleString("fr-FR") + " km" : e.radius_m + " m"},
+      depuis ${moisAn(e.from)} : quartiles ${eurM2(e.eur_m2.p25)} – ${eurM2(e.eur_m2.p75)}.
+      Ventes observées (DVF), pas une estimation : l'état du bien${classe ? ` et sa classe énergétique (${classe})` : ""}
+      ne sont pas pris en compte.</p>
+    <details class="ventes"><summary>Les ventes comparables</summary>${comps}</details>
+  </div>`;
+}
+
 function sectionPrix(data) {
   const p = data.prices;
   if (!p?.available) return "";
@@ -1274,6 +1304,7 @@ function sectionPrix(data) {
     </details>` : "";
   const parcelle = (p.sales || []).slice(0, 3).map((s) => kv(`Vente sur la parcelle, ${String(s.date || "").slice(0, 10)}`, `${(s.valeur_fonciere || 0).toLocaleString("fr-FR")} € (${s.type_local || "?"}${s.surface_m2 ? ", " + Math.round(s.surface_m2) + " m²" : ""})`)).join("");
   return `<h3>Prix de vente (DVF)</h3>
+    ${blocFourchette(data)}
     ${lignes.join("")}
     ${parcelle}
     ${listeAutour}

@@ -180,7 +180,7 @@ echo "== 2b. DVF functions (#89, #426), when DVF is loaded"
 # (IF NOT EXISTS) — a heavy one-off read of dvf.mutation: night runs only.
 if podman exec ecobuilding-bdnb_bdnb-db_1 psql -U bdnb -d bdnb -tAc \
      "select to_regclass('dvf.mutation') is not null" | grep -q t; then
-  for F in deploy/dvf-prices-function.sql deploy/dvf-around.sql; do
+  for F in deploy/dvf-prices-function.sql deploy/dvf-around.sql deploy/dvf-estimation.sql; do
     echo "   $F"
     podman exec -i ecobuilding-bdnb_bdnb-db_1 psql -U bdnb -d bdnb -q -v ON_ERROR_STOP=1 < "$F"
   done
