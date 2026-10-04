@@ -1241,17 +1241,29 @@ function tendance(serie) {
   return `<span class="spark" title="${detail}"><svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true"><polyline fill="none" stroke="currentColor" stroke-width="1.5" points="${pts}"/></svg>${pct > 0 ? "+" : ""}${pct} % depuis ${a.year}</span>`;
 }
 
+// Une médiane sur 3 ventes n'en est pas une (Lyon 2e, maisons : n = 3) : en
+// dessous de 10, on dit le nombre, pas un prix. Et à Paris, Lyon, Marseille
+// le code DVF est celui de l'ARRONDISSEMENT : on le nomme ainsi (#426).
+const MEDIANE_MIN = 10;
+function estArrondissement(code) { return /^(751\d\d|6938\d|132\d\d)$/.test(String(code || "")); }
+function medianeTxt(m) {
+  if (!m?.median) return null;
+  return m.n >= MEDIANE_MIN ? `${eurM2(m.median)} (${m.n} ventes)`
+    : `${m.n} vente${m.n > 1 ? "s" : ""} seulement : pas de médiane représentative`;
+}
+
 function sectionPrix(data) {
   const p = data.prices;
   if (!p?.available) return "";
   const autour = p.around, tr = p.trend || {};
+  const zone = estArrondissement(p.commune_code) ? "arrondissement" : "commune";
   const lignes = [];
   for (const [t, lib] of [["Maison", "maison"], ["Appartement", "appartement"]]) {
     const q = autour?.area_eur_m2?.[t], c = p.commune_eur_m2?.[t];
-    lignes.push(kv(`Médiane du quartier, ${lib}`, q?.median ? `${eurM2(q.median)} (${q.n} vente${q.n > 1 ? "s" : ""})` : null));
-    lignes.push(kv(`Médiane commune, ${lib}`, c?.median ? eurM2(c.median) : null));
+    lignes.push(kv(`Médiane du quartier, ${lib}`, medianeTxt(q)));
+    lignes.push(kv(`Médiane ${zone}, ${lib}`, medianeTxt(c)));
     lignes.push(kv(`Tendance quartier, ${lib}`, tendance(tr.area?.[t])));
-    lignes.push(kv(`Tendance commune, ${lib}`, tendance(tr.commune?.[t])));
+    lignes.push(kv(`Tendance ${zone}, ${lib}`, tendance(tr.commune?.[t])));
   }
   const ventes = autour?.sales || [];
   const prixM2 = ventes.map((s) => s.eur_m2).filter(Boolean);

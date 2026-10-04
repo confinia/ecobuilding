@@ -126,6 +126,27 @@ def _dia_html(m):
 
 
 _TYPES_FR = {"Maison": "Maison", "Appartement": "Appartement"}
+# Une médiane sur 3 ventes n'en est pas une (#426) ; à Paris, Lyon et
+# Marseille le code DVF est celui de l'arrondissement.
+MEDIANE_MIN = 10
+
+
+def _est_arrondissement(code) -> bool:
+    c = str(code or "")
+    return len(c) == 5 and (c.startswith("751") or c.startswith("6938") or c.startswith("132"))
+
+
+def _medianes_txt(medianes: dict) -> str:
+    out = []
+    for t, v in medianes.items():
+        if not v.get("median"):
+            continue
+        if (v.get("n") or 0) >= MEDIANE_MIN:
+            out.append(f"{T(_TYPES_FR.get(t, t))} {_eur(v['median'])} €/m² (n={v['n']})")
+        else:
+            out.append(T("{type} : {n} ventes seulement, pas de médiane représentative").format(
+                type=T(_TYPES_FR.get(t, t)), n=v.get("n") or 0))
+    return " · ".join(out)
 
 
 def _serie_txt(serie) -> str | None:
@@ -143,14 +164,13 @@ def _autour_html(p: dict) -> str:
     (commune et quartier) et les ventes les plus récentes autour."""
     autour, tr = p.get("around") or {}, p.get("trend") or {}
     out = ""
-    zone = {t: v for t, v in (autour.get("area_eur_m2") or {}).items() if v.get("median")}
+    zone = _medianes_txt(autour.get("area_eur_m2") or {})
     if zone:
         out += ('<p>' + T("Prix médian dans le quartier (rayon de {r} m) : <strong>{med}</strong>").format(
-            r=autour.get("radius_m"),
-            med=" · ".join(f"{T(_TYPES_FR.get(t, t))} {_eur(v['median'])} €/m² (n={v['n']})"
-                           for t, v in zone.items())) + '</p>')
+            r=autour.get("radius_m"), med=zone) + '</p>')
     lignes = []
-    for niveau, lib in (("area", T("quartier")), ("commune", T("commune"))):
+    lib_commune = T("arrondissement") if _est_arrondissement(p.get("commune_code")) else T("commune")
+    for niveau, lib in (("area", T("quartier")), ("commune", lib_commune)):
         for t, serie in ((tr.get(niveau) or {}).items()):
             txt = _serie_txt(serie)
             if txt:
@@ -180,8 +200,7 @@ def _prices_html(p: dict | None, fiche_logement: bool = False) -> str:
         return ('<h2>' + T("Prix de vente (DVF)") + '</h2><p class="meta">'
                 + T("Données de prix indisponibles pour ce secteur : la base DVF "
                     "ne couvre pas l'Alsace-Moselle ni Mayotte.") + '</p>')
-    med = {t: v for t, v in (p.get("commune_eur_m2") or {}).items() if v.get("median")}
-    med_txt = " · ".join(f"{t} {_eur(v['median'])} €/m² (n={v['n']})" for t, v in med.items()) or "—"
+    med_txt = _medianes_txt(p.get("commune_eur_m2") or {}) or "—"
     # Une MUTATION groupée (appartement + cave + parking vendus ensemble)
     # répète sa valeur foncière sur CHAQUE ligne de lot : affiché tel quel,
     # « 4 565 000 € » apparaissait deux fois et se lisait comme le prix de
@@ -218,7 +237,9 @@ def _prices_html(p: dict | None, fiche_logement: bool = False) -> str:
     return ('<h2>' + T("Prix de vente (DVF)")
             + (T(" — parcelle") if fiche_logement else "") + '</h2>'
             + note_logement
-            + '<p>' + T("Prix médian dans la commune : <strong>{med}</strong>").format(med=med_txt)
+            + '<p>' + (T("Prix médian dans l'arrondissement : <strong>{med}</strong>")
+                       if _est_arrondissement(p.get("commune_code"))
+                       else T("Prix médian dans la commune : <strong>{med}</strong>")).format(med=med_txt)
             + f'</p>{_autour_html(p)}{sales_tbl}'
             + '<p class="meta">'
             + T("€/m² indicatif, calculé sur les ventes d'un seul local. "
@@ -1428,6 +1449,11 @@ _EN = {
     "Ventes enregistrées sur la PARCELLE — pas nécessairement celles du logement de cette fiche.":
         "Sales recorded on the PARCEL — not necessarily those of the dwelling covered by this report.",
     " — parcelle": " — parcel",
+    "Prix médian dans l'arrondissement : <strong>{med}</strong>":
+        "Median price in the arrondissement: <strong>{med}</strong>",
+    "{type} : {n} ventes seulement, pas de médiane représentative":
+        "{type}: only {n} sales, no representative median",
+    "arrondissement": "arrondissement",
     "Parcelle dans le périmètre d'un PPRI inondation. La couleur de la zone (bleue ou rouge) se lit dans le règlement du PPRI.":
         "The parcel lies within the perimeter of a flood risk prevention plan (PPRI). The zone colour (blue or red) is given in the plan's regulation.",
     "Prix médian dans le quartier (rayon de {r} m) : <strong>{med}</strong>":

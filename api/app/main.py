@@ -4884,12 +4884,17 @@ def _page_html(bdnb_id: str, d: dict, indexable: bool) -> str:
     if plu.get("libelong") or plu.get("libelle"):
         faits.append(("Zone d'urbanisme (PLU)", plu.get("libelong") or plu["libelle"]))
     prix = (d.get("prix") or {}).get("commune_eur_m2") or {}
+    code = str((d.get("prix") or {}).get("commune_code") or "")
+    ou = (f"dans l'arrondissement ({cp})" if re.fullmatch(r"751\d\d|6938\d|132\d\d", code)
+          else f"à {commune or 'la commune'}")
+    # Pas de médiane sur moins de 10 ventes (#426) : elle ne représenterait rien.
+    prix = {t: v for t, v in prix.items() if (v or {}).get("median") and (v.get("n") or 0) >= 10}
     for t, lib in (("Maison", "maisons"), ("Appartement", "appartements")):
         if (prix.get(t) or {}).get("median"):
-            faits.append((f"Prix médian des {lib} à {commune or 'la commune'}",
+            faits.append((f"Prix médian des {lib} {ou}",
                           f"{_eur(prix[t]['median'])}/m² ({prix[t]['n']} ventes DVF)"))
     if (prix.get("Maison") or {}).get("median"):
-        desc.append(f"Prix médian des maisons à {commune} : {_eur(prix['Maison']['median'])}/m²")
+        desc.append(f"Prix médian des maisons {ou} : {_eur(prix['Maison']['median'])}/m²")
     taxes = d.get("taxes") or {}
     if taxes.get("property_tax_mean_eur"):
         faits.append(("Taxe foncière moyenne par avis dans la commune",

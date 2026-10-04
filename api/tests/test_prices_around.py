@@ -73,3 +73,15 @@ def test_le_pdf_montre_quartier_tendance_et_ventes_autour():
     assert "rayon de 250 m" in h
     assert "2021 : 3 149 → 2025 : 3 100 €/m² (-2 %)" in h or "2021 : 3 149 → 2025 : 3 100 €/m² (-2 %)" in h
     assert "Ventes les plus récentes autour du bâtiment" in h and "40 m" in h
+
+
+def test_pas_de_mediane_sous_dix_ventes_et_arrondissement_nomme():
+    """#426 (Lyon 2e) : « Maison 5 529 €/m² (n=3) » n'est pas une médiane, et
+    le code 69382 est un arrondissement, pas une commune."""
+    h = report._prices_html({"available": True, "commune_code": "69382", "sales": [],
+                             "commune_eur_m2": {"Maison": {"n": 3, "median": 5529},
+                                                "Appartement": {"n": 2176, "median": 5661}}})
+    assert "Prix médian dans l'arrondissement" in h
+    assert "Maison : 3 ventes seulement, pas de médiane représentative" in h
+    assert "5 529" not in h and "5 529" not in h
+    assert "5 661" in h or "5 661" in h
