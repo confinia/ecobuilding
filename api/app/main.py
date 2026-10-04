@@ -413,8 +413,12 @@ class _TransportCompte(httpx.AsyncBaseTransport):
             M_UPSTREAM.add(1, {"source": source, "outcome": "failure"})
             raise
         code = resp.status_code
+        # Un service WMS répond 200 avec un rapport d'exception quand une
+        # couche disparaît (#510) : c'est une panne, pas un succès.
+        exception_wms = code < 400 and "se_xml" in resp.headers.get("content-type", "")
         M_UPSTREAM.add(1, {"source": source,
-                           "outcome": "ok" if code < 400 else
+                           "outcome": "error" if exception_wms else
+                                      "ok" if code < 400 else
                                       "not_found" if code == 404 else "error"})
         return resp
 
@@ -745,7 +749,10 @@ async def _ppri_overlay(base_bytes: bytes, bounds_json: str | None) -> bytes:
         wms = await _client.get(
             "https://www.georisques.gouv.fr/services",
             params={"SERVICE": "WMS", "VERSION": "1.1.1", "REQUEST": "GetMap",
-                    "LAYERS": "PPRN_ZONE_INOND", "SRS": "EPSG:3857",
+                    # #510 : le zonage PPRN_ZONE_INOND a été retiré. La surface
+                    # inondable centennale (territoires TRI) sous le périmètre
+                    # des PPRI approuvés.
+                    "LAYERS": "ALEA_SYNT_01_02MOY_FXX,SUP_INOND", "SRS": "EPSG:3857",
                     "BBOX": f"{minx},{miny},{maxx},{maxy}",
                     "WIDTH": W, "HEIGHT": H, "FORMAT": "image/png",
                     "TRANSPARENT": "TRUE", "STYLES": ""}, timeout=30.0)
@@ -1397,10 +1404,16 @@ def _couleur_ppri(code):
 
 
 async def _ppri_zone(lon, lat):
-    """Zone réglementaire du PPRI inondation pour le point (#377), via la couche
-    nationale PPRN_ZONE_INOND de Géorisques (WMS GetFeatureInfo). Renvoie la
-    zone (code, couleur bleue/rouge, PPRI, état, lien règlement) ou None si
-    aucun PPRI approuvé n'est cartographié à ce point. Fail-soft."""
+    """PPRI inondation au point (#377, #510).
+
+    Géorisques a retiré la couche nationale du ZONAGE réglementaire
+    (PPRN_ZONE_INOND, « LayerNotDefined » depuis octobre 2026) : la couleur
+    bleue/rouge de la zone ne se lit plus. Reste SUP_INOND, le PÉRIMÈTRE des
+    PPR approuvés — on dit donc si la parcelle est DANS un PPRI, lequel, son
+    état et sa date, sans jamais inventer de couleur. La couche porte aussi
+    d'autres PPR (sécheresse à Colomiers, aléa MVT) : seuls les PPR
+    inondation comptent ici. `code` reste rempli pour les applications
+    publiées, qui l'affichent tel quel faute de couleur."""
     if lon is None or lat is None:
         return None
     try:
@@ -1409,32 +1422,36 @@ async def _ppri_zone(lon, lat):
         d = 0.0004
         gj = await _cached_get_json(GEORISQUES_WMS, {
             "SERVICE": "WMS", "VERSION": "1.3.0", "REQUEST": "GetFeatureInfo",
-            "CRS": "EPSG:4326", "LAYERS": "PPRN_ZONE_INOND",
-            "QUERY_LAYERS": "PPRN_ZONE_INOND", "INFO_FORMAT": "application/json",
+            "CRS": "EPSG:4326", "LAYERS": "SUP_INOND",
+            "QUERY_LAYERS": "SUP_INOND", "INFO_FORMAT": "application/json",
+            "FEATURE_COUNT": "10",
             "WIDTH": "51", "HEIGHT": "51", "I": "25", "J": "25",
             # WMS 1.3.0 EPSG:4326 axis order is lat,lon.
             "BBOX": f"{lat - d},{lon - d},{lat + d},{lon + d}"}, ttl=86400)
-        feats = (gj or {}).get("features") or []
-        if not feats:
+        feats = [f.get("properties") or {} for f in (gj or {}).get("features") or []]
+        inond = [p for p in feats
+                 if "INOND" in str(p.get("codesAlea") or "").upper()
+                 or str(p.get("modelesProcedures") or "").upper().startswith("PPRN-I")]
+        if not inond:
             return None
-        p = feats[0].get("properties") or {}
-        code = p.get("code_zone_reglement") or p.get("libelle_zone")
+        # Un PPR approuvé passe avant un PPR seulement prescrit.
+        p = sorted(inond, key=lambda q: "approuv" not in str(q.get("libelle_sous_etat") or "").lower())[0]
         return {
-            "code": code,
-            "couleur": _couleur_ppri(code),
-            "libelle_zone": p.get("libelle_zone"),
-            "nom_ppr": p.get("nom_ppr"),
-            "etat": p.get("etat"),
-            "date_approbation": p.get("date_approbation"),
-            "url_reglement": p.get("url_reglement_zone"),
+            "perimetre": True,
+            "code": "Périmètre PPRI",
+            "couleur": None,
+            "libelle_zone": None,
+            "nom_ppr": (p.get("lib_ppr") or "").strip() or None,
+            "etat": p.get("libelle_sous_etat"),
+            "date_approbation": p.get("dat_approbation") or None,
+            "id_gaspar": p.get("id_gaspar"),
+            "url_reglement": None,
         }
     except json.JSONDecodeError:
-        # Géorisques renvoie un corps VIDE quand aucun PPRI n'est cartographié
-        # au point — c'est le cas courant (la France n'est pas toute en PPRI),
-        # pas une panne : on n'en fait pas un avertissement.
+        # Corps vide : rien de cartographié au point (cas courant).
         return None
     except Exception as e:
-        log.warning("Géorisques PPRN_ZONE_INOND unavailable for %s,%s: %s", lon, lat, e)
+        log.warning("Géorisques SUP_INOND unavailable for %s,%s: %s", lon, lat, e)
         return None
 
 

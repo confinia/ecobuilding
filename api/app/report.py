@@ -858,6 +858,9 @@ def _urbanisme_html(data: dict, ppri_img: str | None = None) -> str:
         elif couleur == "rouge":
             phrase = T("Parcelle en zone ROUGE du PPRI inondation : risque fort, "
                        "secteur très contraint (zone {code}).")
+        elif ppri.get("perimetre"):
+            phrase = T("Parcelle dans le périmètre d'un PPRI inondation. La couleur "
+                       "de la zone (bleue ou rouge) se lit dans le règlement du PPRI.")
         else:
             phrase = T("Parcelle dans une zone réglementée du PPRI inondation "
                        "(zone {code}).")
@@ -1425,6 +1428,8 @@ _EN = {
     "Ventes enregistrées sur la PARCELLE — pas nécessairement celles du logement de cette fiche.":
         "Sales recorded on the PARCEL — not necessarily those of the dwelling covered by this report.",
     " — parcelle": " — parcel",
+    "Parcelle dans le périmètre d'un PPRI inondation. La couleur de la zone (bleue ou rouge) se lit dans le règlement du PPRI.":
+        "The parcel lies within the perimeter of a flood risk prevention plan (PPRI). The zone colour (blue or red) is given in the plan's regulation.",
     "Prix médian dans le quartier (rayon de {r} m) : <strong>{med}</strong>":
         "Median price in the neighbourhood ({r} m radius): <strong>{med}</strong>",
     "Tendance (médiane annuelle)": "Trend (yearly median)",
