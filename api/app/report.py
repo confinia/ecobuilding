@@ -1113,6 +1113,13 @@ def _report_html(data: dict, photos: list | None = None, map_img: str | None = N
                         + '</div>')
 
     zone_risks = ", ".join((risks.get("risques_naturels") or []) + (risks.get("risques_technologiques") or [])) or None
+    zone_label = T("Risques recensés dans la zone")
+    if risks.get("scope") == "commune":
+        # Repli communal (#493) : recensé DANS LA COMMUNE, jamais présenté
+        # comme un fait de la parcelle.
+        zone_risks = ", ".join((risks.get("commune_risques_naturels") or [])
+                               + (risks.get("commune_risques_technologiques") or [])) or None
+        zone_label = T("Risques recensés dans la commune (registre GASPAR, pas forcément à cette adresse)")
     conso = e.get("consumption_kwh_m2y")
     ges = e.get("ghg_kgco2_m2y")
     if cible:
@@ -1281,7 +1288,7 @@ def _report_html(data: dict, photos: list | None = None, map_img: str | None = N
 <h2>{T("Risques")}</h2>
 <table>
   {_row(T("Retrait-gonflement des argiles"), (b.get("risks") or {}).get("clay_shrink_swell"))}
-  {_row(T("Risques recensés dans la zone"), zone_risks)}
+  {_row(zone_label, zone_risks)}
   {_row(T("Rapport Géorisques"), risks.get("report_url"))}
 </table>
 
@@ -1449,6 +1456,8 @@ _EN = {
     "Ventes enregistrées sur la PARCELLE — pas nécessairement celles du logement de cette fiche.":
         "Sales recorded on the PARCEL — not necessarily those of the dwelling covered by this report.",
     " — parcelle": " — parcel",
+    "Risques recensés dans la commune (registre GASPAR, pas forcément à cette adresse)":
+        "Risks recorded in the municipality (GASPAR register, not necessarily at this address)",
     "Prix médian dans l'arrondissement : <strong>{med}</strong>":
         "Median price in the arrondissement: <strong>{med}</strong>",
     "{type} : {n} ventes seulement, pas de médiane représentative":
