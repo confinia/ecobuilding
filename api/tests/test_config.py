@@ -421,17 +421,20 @@ def test_frontend_deep_links_to_a_search():
 
 @needs_repo
 def test_frontend_loading_feedback_is_wired():
-    """#150: every loading path shows a spinner, and the PDF button walks the
-    staged labels in order (honest staging — no fake percent for a single
-    server-side render)."""
+    """#150: every loading path shows a spinner. #506: the PDF wait shows the
+    server's REAL stages, ticked as the server finishes them (progress token,
+    polled), in order; the bar only creeps inside the current stage."""
     app = (ROOT / "frontend/site/app.js").read_text()
     css = (ROOT / "frontend/site/style.css").read_text()
     # All loading paths use the narrated panel (rotating source labels).
     assert app.count("showLoadingPanel(") >= 3     # geolocate + search + click + def
     assert "LOADING_SOURCES" in app and "DGFiP" in app
     order = [app.index(s) for s in
-             ("Collecte des données", "Rendu de la carte 3D", "Mise en page du PDF")]
+             ('["data", "Données du bâtiment"', '["render_3d", "Carte 3D"',
+              '["quartier", "Plan du quartier"', '["compose", "Mise en page"')]
     assert order == sorted(order)
+    assert '"progress=" + jeton' in app and "/report/progress/${jeton}" in app
+    assert "Math.min((maintenant - debutEtapeMs) / (enCours[1] * 1000), 0.9)" in app
     assert "downloadReport" in app and 'id="report-btn"' in app
     assert "window.open" in app                     # popup-safe: opened in-gesture
     assert ".hint.loading::before" in css and "@keyframes spin" in css

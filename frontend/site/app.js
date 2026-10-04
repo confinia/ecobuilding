@@ -1454,6 +1454,9 @@ function renderPanel(s, data, opts) {
   `, opts);
   const pdfBtn = document.getElementById("report-btn");
   if (pdfBtn) pdfBtn.onclick = () => downloadReport(pdfBtn);
+  // Pré-rendu (#507) : la fiche est COMPLÈTE à l'écran, on demande au serveur
+  // de préparer les deux cartes du PDF pendant qu'elle se lit.
+  if (pdfBtn && !pending.length) preparerPdf(pdfBtn.dataset.url);
   // Fiche PAR LOGEMENT (#311) : chaque bloc porte son bouton, qui réutilise
   // l'URL du bouton principal avec le numéro de DPE en plus. Même parcours,
   // même pré-vol, même quota — seul le document change.
@@ -1675,20 +1678,66 @@ function showLoadingPanel(first) {
   }, 550);
 }
 
-// --- PDF generation feedback (#150) ------------------------------------------
-// The fiche takes 10-45 s server-side (upstream data + 3D render + layout). A
-// raw link opens a blank tab for that whole time. Staged labels timed on real
-// p50 durations are honest feedback; a smooth percent bar would be fiction —
-// a single server render exposes no progress.
-const PDF_STAGES = [
-  [0, "Collecte des données…"],
-  [3000, "Rendu de la carte 3D…"],
-  [12000, "Mise en page du PDF…"],
+// --- PDF generation feedback (#150, #506) -------------------------------------
+// Les étapes RÉELLES du serveur, cochées quand il les termine : la page passe
+// un jeton (?progress=) et relit /report/progress/<jeton> chaque seconde. Les
+// poids sont les durées médianes mesurées (#280) ; dans l'étape en cours, la
+// barre avance doucement sans jamais déborder sur la suivante.
+const PDF_ETAPES = [
+  ["data", "Données du bâtiment", 2],
+  ["render_3d", "Carte 3D", 12],
+  ["aerial", "Photo aérienne", 1],
+  ["quartier", "Plan du quartier", 9],
+  ["compose", "Mise en page", 2],
 ];
-function pdfStage(elapsedMs) {
-  let label = PDF_STAGES[0][1];
-  for (const [t, l] of PDF_STAGES) if (elapsedMs >= t) label = l;
-  return label;
+const PDF_TOTAL = PDF_ETAPES.reduce((a, e) => a + e[2], 0);
+
+function pdfAttenteHtml() {
+  return `<!doctype html><title>Fiche EcoBuilding</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<body style="font-family:system-ui,sans-serif;display:flex;min-height:90vh;align-items:center;justify-content:center;background:#f6f8f6;margin:0 16px">
+<style>
+  .et{display:flex;align-items:center;gap:.6em;padding:.35em 0;color:#888;transition:color .3s}
+  .et .m{width:1.3em;height:1.3em;border-radius:50%;border:2px solid #cfd8d2;display:inline-flex;align-items:center;justify-content:center;font-size:.8em;flex:none;transition:all .3s}
+  .et.cours{color:#1a1a1a;font-weight:600}
+  .et.cours .m{border-color:#2b7a4b;border-top-color:transparent;animation:s .8s linear infinite}
+  .et.ok{color:#2b7a4b}
+  .et.ok .m{background:#2b7a4b;border-color:#2b7a4b;color:#fff;animation:pop .35s ease-out}
+  @keyframes s{to{transform:rotate(360deg)}}
+  @keyframes pop{0%{transform:scale(.4)}70%{transform:scale(1.25)}100%{transform:scale(1)}}
+</style>
+<div style="width:100%;max-width:24em">
+  <div style="font-size:1.3em;font-weight:700;color:#2b7a4b;text-align:center">EcoBuilding</div>
+  <div style="margin:1.2em 0 .4em;height:10px;border-radius:5px;background:#e3e8e5;overflow:hidden">
+    <div id="barre" style="height:100%;width:2%;background:linear-gradient(90deg,#52b153,#2b7a4b);border-radius:5px;transition:width .5s"></div>
+  </div>
+  <div style="display:flex;justify-content:space-between;color:#777;font-size:.85em"><span id="pct">0 %</span><span id="elapsed"></span></div>
+  <div style="margin-top:1em">${PDF_ETAPES.map(([k, l]) =>
+    `<div class="et" id="et-${k}"><span class="m"></span><span>${l}</span></div>`).join("")}</div>
+  <p style="color:#555;font-size:.85em;margin-top:1.2em;text-align:center">La fiche assemble les données ouvertes,
+  la carte 3D, la photo aérienne et le plan du quartier.</p>
+</div></body>`;
+}
+
+// État affiché : étapes cochées (serveur) + avancée douce dans l'étape en cours.
+function pdfAvancee(faites, debutEtapeMs, maintenant) {
+  let fait = 0, enCours = null;
+  for (const [k, , w] of PDF_ETAPES) {
+    if (faites.has(k)) fait += w;
+    else if (!enCours) enCours = [k, w];
+  }
+  let creep = 0;
+  if (enCours) creep = Math.min((maintenant - debutEtapeMs) / (enCours[1] * 1000), 0.9) * enCours[1];
+  return { pct: Math.min(99, Math.round((fait + creep) * 100 / PDF_TOTAL)), enCours: enCours && enCours[0] };
+}
+
+const PREPAREES = new Set();
+function preparerPdf(url) {
+  if (PREPAREES.has(url)) return;
+  PREPAREES.add(url);
+  setTimeout(() => {
+    fetch(url.replace(/\.pdf(\?|$)/, "/prepare$1"), { method: "POST" }).catch(() => {});
+  }, 4000);
 }
 
 const NEXT_TIER = { s: "m", m: "l" };
@@ -1777,26 +1826,34 @@ async function downloadReport(btn) {
       return;
     }
   } catch { /* pré-vol indisponible : le serveur reste la barrière (429) */ }
-  if (tab) tab.document.write(`<!doctype html><title>Fiche EcoBuilding</title>
-<body style="font-family:system-ui,sans-serif;display:flex;min-height:90vh;align-items:center;justify-content:center;background:#f6f8f6">
-<div style="text-align:center;max-width:26em">
-  <div style="font-size:1.3em;font-weight:700;color:#2b7a4b">EcoBuilding</div>
-  <div style="margin:1.2em auto;width:34px;height:34px;border:4px solid #2b7a4b;border-top-color:transparent;border-radius:50%;animation:s .8s linear infinite"></div>
-  <style>@keyframes s{to{transform:rotate(360deg)}}</style>
-  <div id="stage" style="font-weight:600">Collecte des données…</div>
-  <div id="elapsed" style="color:#777;font-size:.9em;margin-top:.4em"></div>
-  <p style="color:#555;font-size:.9em;margin-top:1.2em">La fiche assemble les données ouvertes, le rendu de la carte 3D
-  et les photos de rue : comptez 10 à 45 secondes.</p>
-</div></body>`);
+  if (tab) tab.document.write(pdfAttenteHtml());
   btn.disabled = true;
   const t0 = Date.now();
+  const jeton = (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2))
+    .replace(/-/g, "").slice(0, 16);
+  const faites = new Set();
+  let debutEtape = t0, lecture = false;
   const timer = setInterval(() => {
     const ms = Date.now() - t0;
-    btn.textContent = "⏳ " + pdfStage(ms);
+    if (!lecture && ms > 900) {
+      lecture = true;
+      fetch(`${API}/report/progress/${jeton}`).then((r) => r.json()).then((p) => {
+        for (const k of p.done || []) if (!faites.has(k)) { faites.add(k); debutEtape = Date.now(); }
+      }).catch(() => {}).finally(() => { lecture = false; });
+    }
+    const { pct, enCours } = pdfAvancee(faites, debutEtape, Date.now());
+    const libelle = (PDF_ETAPES.find((e) => e[0] === enCours) || [, "Finalisation"])[1];
+    btn.textContent = `⏳ ${libelle}… ${pct} %`;
     try {  // the interstitial is same-origin (about:blank): mirror progress there
       if (tab && tab.document) {
-        tab.document.getElementById("stage").textContent = pdfStage(ms);
-        tab.document.getElementById("elapsed").textContent = Math.round(ms / 1000) + " s";
+        const d = tab.document;
+        d.getElementById("barre").style.width = pct + "%";
+        d.getElementById("pct").textContent = pct + " %";
+        d.getElementById("elapsed").textContent = Math.round(ms / 1000) + " s";
+        for (const [k] of PDF_ETAPES) {
+          d.getElementById("et-" + k).className = "et" + (faites.has(k) ? " ok" : k === enCours ? " cours" : "");
+          if (faites.has(k)) d.querySelector(`#et-${k} .m`).textContent = "✓";
+        }
       }
     } catch (e) { /* tab closed or navigated: ignore */ }
   }, 500);
@@ -1805,7 +1862,7 @@ async function downloadReport(btn) {
     // Signed-in users get their account allowance (#206); anonymous visitors
     // keep the 10/month IP tier.
     const headers = enTeteAuth();
-    const r = await fetch(url, { headers });
+    const r = await fetch(url + (url.includes("?") ? "&" : "?") + "progress=" + jeton, { headers });
     if (r.status === 429) {
       // Self-service: the app itself says what to do next (#212).
       const signedIn = !!window.ecoToken;
