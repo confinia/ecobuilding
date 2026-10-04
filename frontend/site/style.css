@@ -136,6 +136,11 @@ html, body { margin: 0; height: 100%; font-family: system-ui, -apple-system, san
 .attribution { font-size: 10px; color: #888; margin-top: 12px; }
 .attribution a { color: #888; }
 .hint { font-size: 12px; color: #777; }
+/* Prix (#426) : courbe de tendance et ventes autour, repliées par défaut. */
+.spark { display: inline-flex; align-items: center; gap: 6px; color: #2b7a4b; white-space: nowrap; }
+.spark svg { flex: none; }
+details.ventes { margin: 6px 0; font-size: 13px; }
+details.ventes summary { cursor: pointer; color: #2b7a4b; padding: 3px 0; }
 
 /* Loading feedback (#150): spinner on panel hints + PDF button states. */
 .hint.loading::before {

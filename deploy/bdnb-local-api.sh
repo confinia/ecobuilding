@@ -175,6 +175,19 @@ ALTER DATABASE bdnb SET join_collapse_limit = 16;
 ALTER DATABASE bdnb SET from_collapse_limit = 16;
 SQL
 
+echo "== 2b. DVF functions (#89, #426), when DVF is loaded"
+# Both files are idempotent. dvf-around.sql builds dvf.vente_logement ONCE
+# (IF NOT EXISTS) — a heavy one-off read of dvf.mutation: night runs only.
+if podman exec ecobuilding-bdnb_bdnb-db_1 psql -U bdnb -d bdnb -tAc \
+     "select to_regclass('dvf.mutation') is not null" | grep -q t; then
+  for F in deploy/dvf-prices-function.sql deploy/dvf-around.sql; do
+    echo "   $F"
+    podman exec -i ecobuilding-bdnb_bdnb-db_1 psql -U bdnb -d bdnb -q -v ON_ERROR_STOP=1 < "$F"
+  done
+else
+  echo "   dvf.mutation absent (run deploy/dvf-import.sh first) — skipped"
+fi
+
 echo "== 3. statistics (autovacuum is off on this mirror)"
 for T in batiment_groupe batiment_groupe_adresse batiment_groupe_risques \
          batiment_groupe_ffo_bat batiment_groupe_bdtopo_bat \
@@ -219,6 +232,7 @@ podman rm -f ecobuilding-bdnb_bdnb-exporter_1 2>/dev/null || true
 sleep 5
 # Schema was possibly (re)built while the container ran: reload its cache.
 podman kill --signal SIGUSR1 ecobuilding-bdnb_bdnb-open_1 2>/dev/null || true
+podman kill --signal SIGUSR1 ecobuilding-bdnb_bdnb-rest_1 2>/dev/null || true   # dvf RPCs (#426)
 podman inspect ecobuilding-bdnb_bdnb-db_1 --format \
   '   bdnb-db healthcheck: interval={{.Config.Healthcheck.Interval}} timeout={{.Config.Healthcheck.Timeout}} start={{.Config.Healthcheck.StartPeriod}}'
 

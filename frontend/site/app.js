@@ -1155,14 +1155,59 @@ function sectionEau(data) {
 }
 
 
-// Section qui ne dépend QUE de la position — donc affichable même
-// sans bâtiment BDNB.
+// Prix (#89, #426) : la parcelle, le QUARTIER (ventes dans un rayon, sa
+// médiane) et la commune, avec la tendance annuelle — « ma rue » et « dans
+// quel sens ça bouge », ce que demandait l'agent de Tournefeuille. Section
+// qui ne dépend QUE de la position — donc affichable même sans bâtiment BDNB.
+function eurM2(v) {
+  return v ? Math.round(v).toLocaleString("fr-FR") + " €/m²" : null;
+}
+
+function moisAn(d) {
+  const t = String(d || "");
+  return t.length >= 7 ? `${t.slice(5, 7)}/${t.slice(0, 4)}` : t;
+}
+
+// Une courbe de 80 px et la variation sur la période ; le détail par année
+// (médiane, nombre de ventes) au survol. Rien sous deux années.
+function tendance(serie) {
+  if (!serie || serie.length < 2) return null;
+  const vals = serie.map((p) => p.median);
+  const min = Math.min(...vals), max = Math.max(...vals), span = max - min || 1;
+  const w = 80, h = 18;
+  const pts = serie.map((p, i) =>
+    `${(i * w / (serie.length - 1)).toFixed(1)},${(h - 2 - (p.median - min) * (h - 4) / span).toFixed(1)}`).join(" ");
+  const a = serie[0], b = serie[serie.length - 1];
+  const pct = Math.round((b.median - a.median) * 100 / a.median);
+  const detail = serie.map((p) => `${p.year} : ${p.median.toLocaleString("fr-FR")} €/m² (${p.n} ventes)`).join("&#10;");
+  return `<span class="spark" title="${detail}"><svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true"><polyline fill="none" stroke="currentColor" stroke-width="1.5" points="${pts}"/></svg>${pct > 0 ? "+" : ""}${pct} % depuis ${a.year}</span>`;
+}
+
 function sectionPrix(data) {
-  return data.prices?.available ? `<h3>Prix de vente (DVF)</h3>
-    ${kv("Médiane commune, maison", data.prices.commune_eur_m2?.Maison?.median ? data.prices.commune_eur_m2.Maison.median.toLocaleString("fr-FR") + " €/m²" : null)}
-    ${kv("Médiane commune, appartement", data.prices.commune_eur_m2?.Appartement?.median ? data.prices.commune_eur_m2.Appartement.median.toLocaleString("fr-FR") + " €/m²" : null)}
-    ${(data.prices.sales || []).slice(0, 3).map((s) => kv(`Vente ${String(s.date || "").slice(0, 10)}`, `${(s.valeur_fonciere || 0).toLocaleString("fr-FR")} € (${s.type_local || "?"}${s.surface_m2 ? ", " + Math.round(s.surface_m2) + " m²" : ""})`)).join("")}
-    <p class="hint">Transactions réelles DGFiP (DVF) : parcelle du bâtiment et médianes communales.</p>` : "";
+  const p = data.prices;
+  if (!p?.available) return "";
+  const autour = p.around, tr = p.trend || {};
+  const lignes = [];
+  for (const [t, lib] of [["Maison", "maison"], ["Appartement", "appartement"]]) {
+    const q = autour?.area_eur_m2?.[t], c = p.commune_eur_m2?.[t];
+    lignes.push(kv(`Médiane du quartier, ${lib}`, q?.median ? `${eurM2(q.median)} (${q.n} vente${q.n > 1 ? "s" : ""})` : null));
+    lignes.push(kv(`Médiane commune, ${lib}`, c?.median ? eurM2(c.median) : null));
+    lignes.push(kv(`Tendance quartier, ${lib}`, tendance(tr.area?.[t])));
+    lignes.push(kv(`Tendance commune, ${lib}`, tendance(tr.commune?.[t])));
+  }
+  const ventes = autour?.sales || [];
+  const prixM2 = ventes.map((s) => s.eur_m2).filter(Boolean);
+  const listeAutour = ventes.length ? `<details class="ventes"><summary>Ventes autour : ${ventes.length}${autour.n > ventes.length ? ` (sur ${autour.n})` : ""} dans un rayon de ${autour.radius_m} m${prixM2.length > 1 ? `, de ${eurM2(Math.min(...prixM2))} à ${eurM2(Math.max(...prixM2))}` : ""}</summary>
+      ${ventes.slice(0, 20).map((s) => kv(
+        `${moisAn(s.date)} · ${(s.type_local || "bien").toLowerCase()}${s.surface_m2 ? " " + Math.round(s.surface_m2) + " m²" : ""}${s.pieces ? ", " + s.pieces + " p." : ""} · ${s.distance_m} m`,
+        `${(s.valeur_fonciere || 0).toLocaleString("fr-FR")} € · ${eurM2(s.eur_m2)}`)).join("")}
+    </details>` : "";
+  const parcelle = (p.sales || []).slice(0, 3).map((s) => kv(`Vente sur la parcelle, ${String(s.date || "").slice(0, 10)}`, `${(s.valeur_fonciere || 0).toLocaleString("fr-FR")} € (${s.type_local || "?"}${s.surface_m2 ? ", " + Math.round(s.surface_m2) + " m²" : ""})`)).join("");
+  return `<h3>Prix de vente (DVF)</h3>
+    ${lignes.join("")}
+    ${parcelle}
+    ${listeAutour}
+    <p class="hint">Ventes réelles DGFiP (DVF, 2021-2025) : une maison ou un appartement par vente. Le quartier est le plus petit rayon (250, 500 ou 1 000 m) qui compte au moins 10 ventes ; une année de moins de 10 ventes est écartée de la tendance.</p>`;
 }
 
 
