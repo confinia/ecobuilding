@@ -125,6 +125,52 @@ def _dia_html(m):
 """
 
 
+_TYPES_FR = {"Maison": "Maison", "Appartement": "Appartement"}
+
+
+def _serie_txt(serie) -> str | None:
+    """« 2021 : 3 149 → 2025 : 3 100 €/m² (−2 %) » ; None sous deux années."""
+    if not serie or len(serie) < 2:
+        return None
+    a, b = serie[0], serie[-1]
+    pct = round((b["median"] - a["median"]) * 100 / a["median"])
+    return (f"{a['year']} : {_eur(a['median'])} → {b['year']} : {_eur(b['median'])} €/m² "
+            f"({'+' if pct > 0 else ''}{pct} %)")
+
+
+def _autour_html(p: dict) -> str:
+    """Quartier (#426) : médiane des ventes dans le rayon, tendance annuelle
+    (commune et quartier) et les ventes les plus récentes autour."""
+    autour, tr = p.get("around") or {}, p.get("trend") or {}
+    out = ""
+    zone = {t: v for t, v in (autour.get("area_eur_m2") or {}).items() if v.get("median")}
+    if zone:
+        out += ('<p>' + T("Prix médian dans le quartier (rayon de {r} m) : <strong>{med}</strong>").format(
+            r=autour.get("radius_m"),
+            med=" · ".join(f"{T(_TYPES_FR.get(t, t))} {_eur(v['median'])} €/m² (n={v['n']})"
+                           for t, v in zone.items())) + '</p>')
+    lignes = []
+    for niveau, lib in (("area", T("quartier")), ("commune", T("commune"))):
+        for t, serie in ((tr.get(niveau) or {}).items()):
+            txt = _serie_txt(serie)
+            if txt:
+                lignes.append(f"{T(_TYPES_FR.get(t, t))}, {lib} : {txt}")
+    if lignes:
+        out += ('<p>' + T("Tendance (médiane annuelle)") + ' :<br>' + "<br>".join(lignes) + '</p>')
+    ventes = (autour.get("sales") or [])[:8]
+    if ventes:
+        rows = "".join(
+            f'<tr><td>{(s.get("date") or "")[:10]}</td><td>{T(_TYPES_FR.get(s.get("type_local"), s.get("type_local") or "—"))}</td>'
+            f'<td>{round(s["surface_m2"]) if s.get("surface_m2") else "—"} m²</td>'
+            f'<td>{_eur(s.get("valeur_fonciere") or 0)} €</td><td>{_eur(s["eur_m2"]) if s.get("eur_m2") else "—"} €/m²</td>'
+            f'<td>{s.get("distance_m", "—")} m</td></tr>' for s in ventes)
+        out += (f'<p class="meta">' + T("Ventes les plus récentes autour du bâtiment") + '</p>'
+                f'<table class="sales"><tr><td class="k">{T("Date")}</td><td class="k">{T("Type")}</td>'
+                f'<td class="k">{T("Surface")}</td><td class="k">{T("Montant")}</td><td class="k">€/m²</td>'
+                f'<td class="k">{T("Distance")}</td></tr>{rows}</table>')
+    return out
+
+
 def _prices_html(p: dict | None, fiche_logement: bool = False) -> str:
     """DVF home-price section (recent parcelle sales + commune median €/m²).
     Honest about the DVF coverage gap (Alsace-Moselle, Mayotte)."""
@@ -173,7 +219,7 @@ def _prices_html(p: dict | None, fiche_logement: bool = False) -> str:
             + (T(" — parcelle") if fiche_logement else "") + '</h2>'
             + note_logement
             + '<p>' + T("Prix médian dans la commune : <strong>{med}</strong>").format(med=med_txt)
-            + f'</p>{sales_tbl}'
+            + f'</p>{_autour_html(p)}{sales_tbl}'
             + '<p class="meta">'
             + T("€/m² indicatif, calculé sur les ventes d'un seul local. "
                 "Transactions réelles enregistrées par la DGFiP.") + '</p>')
@@ -1379,6 +1425,15 @@ _EN = {
     "Ventes enregistrées sur la PARCELLE — pas nécessairement celles du logement de cette fiche.":
         "Sales recorded on the PARCEL — not necessarily those of the dwelling covered by this report.",
     " — parcelle": " — parcel",
+    "Prix médian dans le quartier (rayon de {r} m) : <strong>{med}</strong>":
+        "Median price in the neighbourhood ({r} m radius): <strong>{med}</strong>",
+    "Tendance (médiane annuelle)": "Trend (yearly median)",
+    "quartier": "neighbourhood",
+    "commune": "municipality",
+    "Maison": "House",
+    "Appartement": "Flat",
+    "Ventes les plus récentes autour du bâtiment": "Most recent sales around the building",
+    "Distance": "Distance",
     "Prix médian dans la commune : <strong>{med}</strong>":
         "Median price in the municipality: <strong>{med}</strong>",
     "€/m² indicatif, calculé sur les ventes d'un seul local. Transactions réelles enregistrées par la DGFiP.":

@@ -526,6 +526,44 @@ async def _dvf_prices(bdnb_id: str):
         return None
 
 
+# Ventes AUTOUR du bâtiment, médiane du quartier et tendance annuelle (#426).
+# La parcelle seule n'a souvent aucune vente et la médiane communale mêle
+# toute la ville : l'agent veut « ma rue » et « dans quel sens ça bouge ».
+DVF_AROUND_URL = os.environ.get(
+    "DVF_AROUND_URL", DVF_RPC_URL.replace("prices_for_building", "prices_around"))
+
+
+async def _dvf_around(lon, lat, commune):
+    if not DVF_AROUND_URL or lon is None or lat is None:
+        return None
+    try:
+        params = {"lon": round(lon, 5), "lat": round(lat, 5)}
+        if commune:
+            params["commune"] = commune
+        return await _cached_get_json(DVF_AROUND_URL, params, ttl=86400)
+    except Exception as e:
+        log.warning("DVF around failed at %s,%s: %s", lon, lat, e)
+        return None
+
+
+async def _prix_complets(bdnb_id, lon, lat, commune):
+    """Le bloc `prices` : ventes de la parcelle et médiane communale (#89),
+    plus `around` (ventes dans le rayon, médiane du quartier) et `trend`
+    (médianes annuelles commune et quartier) quand le DVF local les sert.
+    Clés AJOUTÉES seulement : les applications publiées lisent toujours
+    `sales` et `commune_eur_m2`."""
+    if lon is None or lat is None:
+        pt = await _building_point(bdnb_id) if DVF_AROUND_URL else None
+        lon, lat = pt if pt else (None, None)
+    prix, autour = await asyncio.gather(_dvf_prices(bdnb_id), _dvf_around(lon, lat, commune))
+    if not autour:
+        return prix
+    out = dict(prix or {"available": True, "source": autour.get("source")})
+    out["around"] = {k: autour.get(k) for k in ("radius_m", "n", "sales", "area_eur_m2")}
+    out["trend"] = autour.get("trend") or {}
+    return out
+
+
 # Le rendu 3D est l'étape la plus chère de la fiche : 11,7 s mesurées en
 # production (#280), repayées à chaque génération pour la même vue — le cache
 # de la fiche FINIE ne protège que la combinaison exacte de paramètres, pas la
@@ -2348,7 +2386,7 @@ _BLOCK_NAMES = ("prices", "area_risks", "groundwater", "solar_pv", "click_addr",
 
 def _building_block_coros(bdnb_id, lon, lat, row):
     commune = row.get("code_commune_insee")
-    return (_dvf_prices(bdnb_id), _area_risks(lon, lat),
+    return (_prix_complets(bdnb_id, lon, lat, commune), _area_risks(lon, lat),
             _groundwater(lon, lat), _solar_pv(lon, lat),
             _click_address(bdnb_id, lon, lat),
             _water_network(commune), _official_dpe(bdnb_id),
