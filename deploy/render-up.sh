@@ -23,7 +23,16 @@ for i in $(seq 1 30); do
     exit 0
   fi
   if podman logs --since 5m ecobuilding-render_render_1 2>&1 | grep -q "chauffe: 500\|shot failed"; then
-    echo "render: le cliché de chauffe a ÉCHOUÉ"; podman logs --since 5m ecobuilding-render_render_1 | tail -20; exit 1
+    # Une seconde chance (#501) : sur une VM occupée (pile staging recréée au
+    # même moment), le premier cliché d'un Chromium froid a dépassé les 30 s de
+    # puppeteer alors que l'image était saine — 14,6 s une fois au calme. On
+    # retente le même cliché, Chromium désormais lancé ; échec s'il rate encore.
+    echo "render: chauffe ratée, seconde tentative"
+    code=$(podman exec ecobuilding-render_render_1 sh -c \
+      'curl -s -m 120 -o /dev/null -w "%{http_code}" "http://127.0.0.1:8040/shot?lon=2.3488&lat=48.8534&zoom=18&pitch=60&bearing=-30"' || true)
+    [ "$code" = "200" ] && { echo "render: chauffé à la seconde tentative"; exit 0; }
+    echo "render: le cliché de chauffe a ÉCHOUÉ (seconde tentative : $code)"
+    podman logs --since 5m ecobuilding-render_render_1 | tail -20; exit 1
   fi
   sleep 5
 done
