@@ -239,3 +239,5 @@ h4.sub { margin: 10px 0 2px; font-size: 13px; color: #2b7a4b; }
     padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px));
   }
 }
+/* Bascule Plan / Photo (#258) : un mot plutôt qu'une icône, plus parlant. */
+.maplibregl-ctrl button.aerial-toggle { width: auto; padding: 0 8px; font: 600 12px system-ui, sans-serif; }

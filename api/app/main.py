@@ -4759,6 +4759,8 @@ EVENEMENTS_CONNUS = frozenset((
     # Page « DPE perdu » (#412) : sans ces deux-là, on ne saurait jamais si
     # elle sert à quelqu'un (#414).
     "dpe_page_view", "dpe_page_lookup",
+    # Bascules de la carte : zones inondables (#377) et photo aérienne (#258).
+    "ppri_on", "ppri_off", "aerial_on", "aerial_off",
 ))
 # A few values, so the label stays cheap: whose document was asked for
 # (building/dwelling), or what the DPE page found (found/lapsed/none).
