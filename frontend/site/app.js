@@ -428,7 +428,7 @@ class FloodToggle {
     this._btn = document.createElement("button");
     this._btn.className = "maplibregl-ctrl-icon";
     this._btn.textContent = "🌊";
-    this._btn.title = "Afficher / masquer les zones inondables (PPRI)";
+    this._btn.title = "Afficher / masquer les zones inondables (périmètres PPRI, crue centennale)";
     this._btn.onclick = () => {
       if (!m.getLayer("ppri-zones")) return;
       const on = m.getLayoutProperty("ppri-zones", "visibility") === "visible";
@@ -519,7 +519,9 @@ map.on("load", () => {
   map.addSource("ppri", {
     type: "raster",
     tiles: ["https://www.georisques.gouv.fr/services?SERVICE=WMS&VERSION=1.1.1"
-      + "&REQUEST=GetMap&LAYERS=PPRN_ZONE_INOND&SRS=EPSG:3857"
+      // #510 : le zonage PPRN_ZONE_INOND a été retiré par Géorisques. La
+      // surface inondable centennale (TRI), puis le périmètre des PPRI.
+      + "&REQUEST=GetMap&LAYERS=ALEA_SYNT_01_02MOY_FXX,SUP_INOND&SRS=EPSG:3857"
       + "&BBOX={bbox-epsg-3857}&WIDTH=256&HEIGHT=256&FORMAT=image/png"
       + "&TRANSPARENT=TRUE&STYLES="],
     tileSize: 256,
@@ -1245,12 +1247,14 @@ function sectionUrbanisme(data) {
       : ppri.couleur === "rouge" ? "ppri-rouge" : "ppri-autre";
     const label = ppri.couleur === "bleue" ? "Zone BLEUE — risque modéré"
       : ppri.couleur === "rouge" ? "Zone ROUGE — risque fort"
+      : ppri.perimetre ? `Dans le périmètre d'un PPRI${ppri.etat ? " " + ppri.etat.toLowerCase() : ""}`
       : `Zone réglementée ${ppri.code}`;
     const lien = ppri.url_reglement
       ? ` <a href="${ppri.url_reglement}" target="_blank" rel="noopener">règlement →</a>` : "";
     html += `<div class="risk-block"><span class="k">PPRI inondation</span>
       <div><span class="chip ${cls}">${label}</span>
-      <span class="hint">${ppri.nom_ppr || ""}${lien}</span></div></div>`;
+      <span class="hint">${ppri.nom_ppr || ""}${ppri.date_approbation ? `, approuvé le ${ppri.date_approbation}` : ""}${lien}${ppri.perimetre
+        ? ". La couleur de la zone (bleue ou rouge) se lit dans le règlement du PPRI de la commune ; la carte 🌊 montre la surface inondable centennale là où elle est cartographiée." : ""}</span></div></div>`;
   } else if (floodPresent) {
     html += `<div class="risk-block"><span class="k">PPRI inondation</span>
       <div><span class="hint">Parcelle en zone inondable (Géorisques). Couleur
