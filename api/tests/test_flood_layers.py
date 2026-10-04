@@ -51,3 +51,37 @@ def test_une_exception_wms_compte_comme_une_panne(monkeypatch):
             await c.get("https://www.georisques.gouv.fr/services")
     asyncio.run(go())
     assert comptes == ["error"]
+
+
+def test_une_lenteur_de_georisques_a_droit_a_une_seconde_chance(monkeypatch):
+    appels = []
+
+    async def get(url, params, ttl=0):
+        appels.append(1)
+        if len(appels) == 1:
+            raise httpx.ReadTimeout("")
+        return {"features": [{"properties": PPRI}]}
+    monkeypatch.setattr(main, "_cached_get_json", get)
+    assert asyncio.run(main._ppri_zone(3.8925, 43.606))["nom_ppr"] == "PPRI_Lez_Mosson"
+    assert len(appels) == 2
+
+
+def test_un_echec_est_inscrit_et_raccourcit_le_cache(monkeypatch):
+    async def panne(url, params, ttl=0):
+        raise httpx.ReadTimeout("")
+    monkeypatch.setattr(main, "_cached_get_json", panne)
+
+    async def go():
+        echecs = main._suivre_echecs()
+        z = await main._ppri_zone(3.8925, 43.606)
+        main._cacher_agregat("building:t:1:2:fr", {"ppri": z}, echecs)
+        return z, echecs
+    z, echecs = asyncio.run(go())
+    assert z is None and echecs == {"ppri"}
+    age = main.time.monotonic() - main._CACHE["building:t:1:2:fr"][0]
+    assert age >= main.BUILDING_CACHE_TTL - 300 - 1      # expire dans ~5 min
+
+
+def test_sans_echec_le_cache_garde_sa_duree():
+    main._cacher_agregat("building:t:3:4:fr", {"ppri": None}, set())
+    assert main.time.monotonic() - main._CACHE["building:t:3:4:fr"][0] < 5

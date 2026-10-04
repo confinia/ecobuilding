@@ -1327,6 +1327,38 @@ async def suggest(
     }
 
 
+# Blocs en ÉCHEC pendant la requête (#510) : un bloc qui rate (délai, panne)
+# rend None, comme un bloc qui n'a rien à dire — et l'agrégat était mis en
+# cache 6 h ainsi, la fiche PDF 24 h : la zone inondable d'un bâtiment de
+# Montpellier a disparu de sa fiche pour une seule réponse lente de
+# Géorisques. Les blocs critiques s'inscrivent ici ; un agrégat incomplet ne
+# se garde que 5 minutes, une fiche PDF incomplète pas du tout.
+_ECHECS: ContextVar = ContextVar("blocs_en_echec", default=None)
+
+
+def _echec(bloc):
+    s = _ECHECS.get()
+    if s is not None:
+        s.add(bloc)
+
+
+def _suivre_echecs():
+    """L'ensemble des échecs de la requête en cours (créé au besoin)."""
+    s = _ECHECS.get()
+    if s is None:
+        s = set()
+        _ECHECS.set(s)
+    return s
+
+
+def _cacher_agregat(cache_key, result, echecs):
+    ts = time.monotonic()
+    if echecs:
+        ts -= max(BUILDING_CACHE_TTL - 300, 0)     # expire dans 5 minutes
+    _CACHE[cache_key] = (ts, _copy.deepcopy(result))
+    _CACHE.move_to_end(cache_key)
+
+
 async def _area_risks(lon, lat):
     if lon is None or lat is None:
         return None
@@ -1347,7 +1379,8 @@ async def _area_risks(lon, lat):
             ],
         }
     except httpx.HTTPError as e:
-        log.warning("Géorisques unavailable: %s", e)
+        log.warning("Géorisques unavailable: %r", e)
+        _echec("area_risks")
         return None
 
 
@@ -1420,14 +1453,20 @@ async def _ppri_zone(lon, lat):
         lon = round(lon, 5)
         lat = round(lat, 5)
         d = 0.0004
-        gj = await _cached_get_json(GEORISQUES_WMS, {
+        params = {
             "SERVICE": "WMS", "VERSION": "1.3.0", "REQUEST": "GetFeatureInfo",
             "CRS": "EPSG:4326", "LAYERS": "SUP_INOND",
             "QUERY_LAYERS": "SUP_INOND", "INFO_FORMAT": "application/json",
             "FEATURE_COUNT": "10",
             "WIDTH": "51", "HEIGHT": "51", "I": "25", "J": "25",
             # WMS 1.3.0 EPSG:4326 axis order is lat,lon.
-            "BBOX": f"{lat - d},{lon - d},{lat + d},{lon + d}"}, ttl=86400)
+            "BBOX": f"{lat - d},{lon - d},{lat + d},{lon + d}"}
+        # Une seconde chance : la réponse prend 0,5 s d'ordinaire, mais une
+        # seule lenteur de Géorisques faisait perdre l'information (#510).
+        try:
+            gj = await _cached_get_json(GEORISQUES_WMS, params, ttl=86400)
+        except (httpx.TimeoutException, httpx.TransportError):
+            gj = await _cached_get_json(GEORISQUES_WMS, params, ttl=86400)
         feats = [f.get("properties") or {} for f in (gj or {}).get("features") or []]
         inond = [p for p in feats
                  if "INOND" in str(p.get("codesAlea") or "").upper()
@@ -1451,7 +1490,8 @@ async def _ppri_zone(lon, lat):
         # Corps vide : rien de cartographié au point (cas courant).
         return None
     except Exception as e:
-        log.warning("Géorisques SUP_INOND unavailable for %s,%s: %s", lon, lat, e)
+        log.warning("Géorisques SUP_INOND unavailable for %s,%s: %r", lon, lat, e)
+        _echec("ppri")
         return None
 
 
@@ -2402,11 +2442,11 @@ async def building(
         raise HTTPException(404, "Unknown building id")
     row = rows[0]
     M_LOOKUPS.add(1, {"status": "by_id"})
+    echecs = _suivre_echecs()
     vals = dict(zip(_BLOCK_NAMES, await asyncio.gather(
         *_building_block_coros(bdnb_id, lon, lat, row))))
     result = _assemble_building(bdnb_id, lon, lat, row, vals)
-    _CACHE[cache_key] = (time.monotonic(), _copy.deepcopy(result))
-    _CACHE.move_to_end(cache_key)
+    _cacher_agregat(cache_key, result, echecs)
     while len(_CACHE) > _CACHE_MAX:
         _CACHE.popitem(last=False)
     return result
@@ -2600,6 +2640,7 @@ async def _building_events(bdnb_id, lon, lat, query_extra=None, extra_rows=()):
                                    "lon": lon, "lat": lat}),
                       "buildings": [_normalize_building(row)] + list(extra_rows)}) + "\n"
 
+    echecs = _suivre_echecs()
     vals = {}
     coros = _building_block_coros(bdnb_id, lon, lat, row)
     for fut in asyncio.as_completed(
@@ -2610,8 +2651,7 @@ async def _building_events(bdnb_id, lon, lat, query_extra=None, extra_rows=()):
             yield json.dumps({"type": "block", "name": name, "value": value}) + "\n"
 
     result = _assemble_building(bdnb_id, lon, lat, row, vals)
-    _CACHE[cache_key] = (time.monotonic(), _copy.deepcopy(result))
-    _CACHE.move_to_end(cache_key)
+    _cacher_agregat(cache_key, result, echecs)
     while len(_CACHE) > _CACHE_MAX:
         _CACHE.popitem(last=False)
     # `done` porte ce qui ne se calcule qu'à la fin : le titre arbitré
@@ -4345,6 +4385,8 @@ async def report(
             or _nom_de_fiche(None, bdnb_id)
         return Response(cached, media_type="application/pdf",
                         headers={"Content-Disposition": _disposition(nom)})
+    echecs = _suivre_echecs()
+
     async def _photos_sures(plon, plat):
         """Les photos, sans jamais faire tomber la fiche."""
         try:
@@ -4419,7 +4461,10 @@ async def report(
                                aerial_outline=aerial.get("outline"),
                                quartier_img=quartier, ppri_img=ppri_map, lang=lang)
     with _chrono("cache_write"):
-        _tile_write(pdf_path, pdf)      # même écriture atomique que les tuiles
+        # Une fiche à laquelle manque un bloc critique (#510) n'est pas
+        # gardée : la suivante retentera la source.
+        if not echecs:
+            _tile_write(pdf_path, pdf)      # même écriture atomique que les tuiles
     nom = _nom_de_fiche(q.get("address") or (data["buildings"][0] or {}).get("address"),
                         bdnb_id)
     if dpe:
