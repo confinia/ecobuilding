@@ -350,7 +350,7 @@ setInterval(() => { if (document.visibilityState === "visible") track("heartbeat
 const SHOWCASE = {
   bdnb_id: "bdnb-bg-LT4B-YEAJ-XXF1",
   lon: 2.325414, lat: 48.86646,
-  zoom: 18.15, bearing: -36.8, pitch: 38,
+  zoom: 18.15, bearing: 0, pitch: 38,
 };
 // Captured BEFORE map init: maplibre rewrites the hash continuously.
 const hadHash = !!location.hash;
@@ -379,6 +379,12 @@ function createMap() {
       bearing: SHOWCASE.bearing,
       hash: true,   // position in URL (#zoom/lat/lng/bearing/pitch), shareable & restored on load
       attributionControl: { compact: true },
+      // Nord en haut, toujours (#505) : faire tourner la carte autour de son
+      // axe vertical perdait l'utilisateur, qui ne reconnaissait plus sa rue.
+      // Le crochet s'applique à TOUT changement de caméra — geste, lien
+      // partagé avec un cap dans le #hash, flyTo — ; inclinaison et zoom
+      // restent libres.
+      transformCameraUpdate: () => ({ bearing: 0 }),
     });
   } catch (e) {
     mapDead = e;
@@ -394,8 +400,18 @@ function setUrlBuilding(id) {
   const qs = id ? `?b=${encodeURIComponent(id)}` : location.pathname;
   history.replaceState(null, "", (id ? qs : location.pathname) + location.hash);
 }
-// --- Controls: zoom + compass/pitch, GPS, 3D toggle -----------------------------
-map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "bottom-right");
+// --- Controls: zoom, GPS, 3D toggle -------------------------------------------
+// Pas de boussole (#505) : le cap est verrouillé au nord, elle ne servirait
+// qu'à le suggérer. Les gestes de rotation sont coupés aussi, pour que le
+// pincement et les flèches du clavier ne fassent que zoomer et déplacer.
+map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "bottom-right");
+if (!mapDead) {
+  map.touchZoomRotate.disableRotation();
+  map.keyboard.disableRotation();
+  // Un lien partagé peut porter un cap dans son #hash : la restauration se
+  // fait par un saut de caméra, qu'on remet au nord une fois la carte prête.
+  map.on("load", () => { if (map.getBearing() !== 0) map.jumpTo({ bearing: 0 }); });
+}
 
 const geolocate = new maplibregl.GeolocateControl({
   positionOptions: { enableHighAccuracy: true },
@@ -793,7 +809,7 @@ async function select(s) {
   }
 
   // Full address: fly to the building and open its record.
-  safeMap(() => map.flyTo({ center: [s.lon, s.lat], zoom: 17.5, pitch: 55, bearing: -18, duration: 2500 }));
+  safeMap(() => map.flyTo({ center: [s.lon, s.lat], zoom: 17.5, pitch: 55, duration: 2500 }));
   safeMap(() => placeMarker(s.lon, s.lat));
   window.ecoStartLoadingFx?.(null, s.lon, s.lat);
   showLoadingPanel('Chargement des données du bâtiment…');
@@ -869,8 +885,7 @@ async function openSearchFromUrl(q = urlQuery, ban = urlBan) {
     const data = await consumeBuildingStream(r);
     const { lon, lat } = data.query || {};
     if (lon != null && lat != null) {
-      safeMap(() => map.flyTo({ center: [lon, lat], zoom: 17.5, pitch: 55,
-                               bearing: -18, duration: 2500 }));
+      safeMap(() => map.flyTo({ center: [lon, lat], zoom: 17.5, pitch: 55, duration: 2500 }));
       safeMap(() => placeMarker(lon, lat));
       safeMap(() => anchorMarkerToBuilding(data.buildings?.[0]?.bdnb_id, [lon, lat]));
     }

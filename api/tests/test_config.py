@@ -745,6 +745,21 @@ def test_map_constructor_guarded_since_maplibre_6_7():
 
 
 @needs_repo
+def test_map_bearing_locked_north_up():
+    """#505: rotating the map around its vertical axis lost the end user.
+    Every camera change is forced north-up, the compass is gone, rotation
+    gestures are off, and a shared link's bearing is reset once loaded."""
+    app = (ROOT / "frontend/site/app.js").read_text()
+    guard = app[app.index("function createMap()"):app.index("const map = createMap();")]
+    assert "transformCameraUpdate: () => ({ bearing: 0 })" in guard
+    assert "NavigationControl({ showCompass: false })" in app
+    assert "map.touchZoomRotate.disableRotation();" in app
+    assert "map.keyboard.disableRotation();" in app
+    assert 'map.jumpTo({ bearing: 0 })' in app
+    assert "bearing: -18" not in app        # no fly-to turns the map any more
+
+
+@needs_repo
 def test_auth_buttons_never_depend_on_a_cdn():
     """#215: the sign-up path is the product's front door — it must survive a
     blocked CDN, a failed adapter import and an IdP hiccup."""
