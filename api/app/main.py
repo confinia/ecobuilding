@@ -554,6 +554,40 @@ async def _dvf_around(lon, lat, commune):
         return None
 
 
+DVF_ESTIMATION_URL = os.environ.get(
+    "DVF_ESTIMATION_URL", DVF_RPC_URL.replace("prices_for_building", "estimation"))
+
+
+async def _estimation(bdnb_id, lon, lat, row):
+    """Fourchette de prix OBSERVÉE (#429) : les ventes comparables (même type,
+    surface ±30 %, trois ans, rayon croissant jusqu'à 8 ventes) et leurs
+    quartiles de €/m², appliqués à la surface du logement représentatif du DPE.
+    Jamais présentée comme une estimation de valeur : chaque chiffre renvoie
+    à des ventes DGFiP, listées. Maison si le bâtiment n'a qu'un logement."""
+    if not DVF_ESTIMATION_URL:
+        return None
+    nb_log = row.get("nb_log")
+    type_local = "Maison" if nb_log == 1 else "Appartement" if (nb_log or 0) > 1 else None
+    if not type_local:
+        return None
+    try:
+        dpe = await _official_dpe(bdnb_id)
+        surface = (dpe or {}).get("surface_habitable_m2")
+        if not surface:
+            return None
+        if lon is None or lat is None:
+            pt = await _building_point(bdnb_id)
+            if not pt:
+                return None
+            lon, lat = pt
+        return await _cached_get_json(DVF_ESTIMATION_URL, {
+            "lon": round(lon, 5), "lat": round(lat, 5),
+            "type_local": type_local, "surface": surface}, ttl=86400)
+    except Exception as e:
+        log.warning("DVF estimation failed for %s: %r", bdnb_id, e)
+        return None
+
+
 async def _prix_complets(bdnb_id, lon, lat, commune):
     """Le bloc `prices` : ventes de la parcelle et médiane communale (#89),
     plus `around` (ventes dans le rayon, médiane du quartier) et `trend`
@@ -2510,7 +2544,7 @@ async def building(
 _BLOCK_NAMES = ("prices", "area_risks", "groundwater", "solar_pv", "click_addr",
                 "water_network", "official_dpe", "local_taxes", "schools", "rnb",
                 "dpe_spread", "urbanisme", "ppri", "construction",
-                "address_buildings")
+                "address_buildings", "estimation")
 
 
 def _building_block_coros(bdnb_id, lon, lat, row):
@@ -2524,7 +2558,8 @@ def _building_block_coros(bdnb_id, lon, lat, row):
             _dpe_spread(bdnb_id, lon, lat, row.get("nb_log")),
             _plu_zone(lon, lat), _ppri_zone(lon, lat),
             _construction_years(bdnb_id),
-            _buildings_at_address(bdnb_id, lon, lat))
+            _buildings_at_address(bdnb_id, lon, lat),
+            _estimation(bdnb_id, lon, lat, row))
 
 
 
@@ -2593,6 +2628,7 @@ def _assemble_building(bdnb_id, lon, lat, row, v):
         "ppri": ppri,
         "construction": construction,
         "address_buildings": address_buildings,
+        "estimation": v.get("estimation"),
         "sources": sources,
     }
     return result

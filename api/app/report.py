@@ -191,7 +191,43 @@ def _autour_html(p: dict) -> str:
     return out
 
 
-def _prices_html(p: dict | None, fiche_logement: bool = False) -> str:
+def _fourchette_html(e: dict | None, classe: str | None = None) -> str:
+    """Fourchette de prix OBSERVÉE (#429) : ventes comparables, jamais une
+    estimation. Le total pour une maison seulement (la surface d'un
+    appartement est celle du logement représentatif du DPE)."""
+    if not e or not (e.get("eur_m2") or {}).get("p50"):
+        return ""
+    q, pr = e["eur_m2"], e.get("price") or {}
+    maison = e.get("type_local") == "Maison"
+    rayon = e.get("radius_m") or 0
+    rayon_txt = f"{rayon / 1000:g} km".replace(".", ",") if rayon >= 1000 else f"{rayon} m"
+    if maison:
+        tete = T("Maison de {s} m² : <strong>{lo} € – {hi} €</strong> (médiane {mid} €)").format(
+            s=round(e.get("surface_m2") or 0), lo=_eur(pr.get("low")), hi=_eur(pr.get("high")),
+            mid=_eur(pr.get("mid")))
+    else:
+        tete = T("Appartements : <strong>{lo} – {hi} €/m²</strong> (médiane {mid} €/m²)").format(
+            lo=_eur(q.get("p25")), hi=_eur(q.get("p75")), mid=_eur(q.get("p50")))
+    rows = "".join(
+        f'<tr><td>{(c.get("date") or "")[:10]}</td><td>{round(c["surface_m2"]) if c.get("surface_m2") else "—"} m²</td>'
+        f'<td>{_eur(c.get("valeur_fonciere") or 0)} €</td><td>{_eur(c["eur_m2"]) if c.get("eur_m2") else "—"} €/m²</td>'
+        f'<td>{c.get("distance_m", "—")} m</td></tr>' for c in (e.get("comparables") or [])[:8])
+    return ('<h3>' + T("Fourchette de prix observée") + '</h3><p>' + tete + '</p>'
+            + '<p class="meta">' + T(
+                "D'après {n} ventes comparables (même type, surface ±30 %) à moins de {r}, "
+                "depuis {d} : quartiles {p25} – {p75} €/m². Ventes observées (DVF), pas une "
+                "estimation de valeur : l'état du bien et sa classe énergétique{c} ne sont pas "
+                "pris en compte.").format(
+                n=e.get("n"), r=rayon_txt, d=(e.get("from") or "")[:7],
+                p25=_eur(q.get("p25")), p75=_eur(q.get("p75")),
+                c=f" ({classe})" if classe else "") + '</p>'
+            + (f'<table class="sales"><tr><td class="k">{T("Date")}</td><td class="k">{T("Surface")}</td>'
+               f'<td class="k">{T("Montant")}</td><td class="k">€/m²</td><td class="k">{T("Distance")}</td></tr>'
+               f'{rows}</table>' if rows else ""))
+
+
+def _prices_html(p: dict | None, fiche_logement: bool = False,
+                 estimation: dict | None = None, classe: str | None = None) -> str:
     """DVF home-price section (recent parcelle sales + commune median €/m²).
     Honest about the DVF coverage gap (Alsace-Moselle, Mayotte)."""
     if not p:
@@ -237,6 +273,7 @@ def _prices_html(p: dict | None, fiche_logement: bool = False) -> str:
     return ('<h2>' + T("Prix de vente (DVF)")
             + (T(" — parcelle") if fiche_logement else "") + '</h2>'
             + note_logement
+            + _fourchette_html(estimation, classe)
             + '<p>' + (T("Prix médian dans l'arrondissement : <strong>{med}</strong>")
                        if _est_arrondissement(p.get("commune_code"))
                        else T("Prix médian dans la commune : <strong>{med}</strong>")).format(med=med_txt)
@@ -1305,7 +1342,7 @@ def _report_html(data: dict, photos: list | None = None, map_img: str | None = N
 </table>
 {f'<p class="meta">{pv["assumptions"]}</p>' if pv.get("assumptions") else ""}
 
-{_prices_html(data.get("prices"), fiche_logement=bool(cible))}
+{_prices_html(data.get("prices"), fiche_logement=bool(cible), estimation=None if cible else data.get("estimation"), classe=((data.get("buildings") or [{}])[0].get("energy") or {}).get("dpe_class"))}
 {_local_taxes_html(data.get("local_taxes") or {})}
 {_schools_html(data.get("schools") or {})}
 {quartier_html}
@@ -1456,6 +1493,13 @@ _EN = {
     "Ventes enregistrées sur la PARCELLE — pas nécessairement celles du logement de cette fiche.":
         "Sales recorded on the PARCEL — not necessarily those of the dwelling covered by this report.",
     " — parcelle": " — parcel",
+    "Fourchette de prix observée": "Observed price range",
+    "Maison de {s} m² : <strong>{lo} € – {hi} €</strong> (médiane {mid} €)":
+        "House of {s} m²: <strong>€{lo} – €{hi}</strong> (median €{mid})",
+    "Appartements : <strong>{lo} – {hi} €/m²</strong> (médiane {mid} €/m²)":
+        "Flats: <strong>€{lo} – €{hi}/m²</strong> (median €{mid}/m²)",
+    "D'après {n} ventes comparables (même type, surface ±30 %) à moins de {r}, depuis {d} : quartiles {p25} – {p75} €/m². Ventes observées (DVF), pas une estimation de valeur : l'état du bien et sa classe énergétique{c} ne sont pas pris en compte.":
+        "From {n} comparable sales (same type, surface ±30%) within {r}, since {d}: quartiles €{p25} – €{p75}/m². Observed sales (DVF), not a valuation: the property's condition and energy class{c} are not taken into account.",
     "Risques recensés dans la commune (registre GASPAR, pas forcément à cette adresse)":
         "Risks recorded in the municipality (GASPAR register, not necessarily at this address)",
     "Prix médian dans l'arrondissement : <strong>{med}</strong>":
