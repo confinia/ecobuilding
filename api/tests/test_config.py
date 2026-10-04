@@ -763,6 +763,20 @@ def test_map_bearing_locked_north_up():
 
 
 @needs_repo
+def test_web_map_offers_the_ign_aerial_photo():
+    """#258: a Plan / Photo switch on the web map, IGN orthophoto under the
+    labels and the DPE volumes, volumes faded (not hidden) in photo mode."""
+    app = (ROOT / "frontend/site/app.js").read_text()
+    assert "LAYER=ORTHOIMAGERY.ORTHOPHOTOS" in app and "data.geopf.fr/wmts" in app
+    assert 'map.addLayer({ id: "ign-ortho", type: "raster"' in app
+    assert 'layers.find((l) => l.type === "symbol")?.id' in app       # under the labels
+    assert '"fill-extrusion-opacity", on ? 0.9 : 0.45' in app
+    assert "map.addControl(new AerialToggle()" in app
+    main = (ROOT / "api/app/main.py").read_text()
+    assert '"aerial_on", "aerial_off"' in main
+
+
+@needs_repo
 def test_auth_buttons_never_depend_on_a_cdn():
     """#215: the sign-up path is the product's front door — it must survive a
     blocked CDN, a failed adapter import and an IdP hiccup."""

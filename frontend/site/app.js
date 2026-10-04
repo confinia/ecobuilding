@@ -461,6 +461,37 @@ class FloodToggle {
 }
 map.addControl(new FloodToggle(), "bottom-right");
 
+// Photo aérienne de l'IGN (#258) : « Des cubes, on s'en fout » — un acheteur
+// veut VOIR le bien : la maison, le terrain, les arbres, la piscine. Bascule
+// Plan / Photo ; les volumes DPE restent dessus, estompés, pour que les toits
+// se voient sous leur couleur énergétique. Rien n'est mémorisé sur l'appareil.
+const ORTHO_IGN = "https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0"
+  + "&LAYER=ORTHOIMAGERY.ORTHOPHOTOS&STYLE=normal&TILEMATRIXSET=PM"
+  + "&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&FORMAT=image/jpeg";
+class AerialToggle {
+  onAdd(m) {
+    this._btn = document.createElement("button");
+    this._btn.className = "maplibregl-ctrl-icon aerial-toggle";
+    this._btn.textContent = "Photo";
+    this._btn.title = "Basculer entre le plan et la photo aérienne (IGN)";
+    this._btn.onclick = () => {
+      if (!m.getLayer("ign-ortho")) return;
+      const on = m.getLayoutProperty("ign-ortho", "visibility") === "visible";
+      m.setLayoutProperty("ign-ortho", "visibility", on ? "none" : "visible");
+      if (m.getLayer("bdnb-dpe-3d")) m.setPaintProperty("bdnb-dpe-3d", "fill-extrusion-opacity", on ? 0.9 : 0.45);
+      this._btn.textContent = on ? "Photo" : "Plan";
+      this._btn.style.background = on ? "" : "#dceafd";
+      track(on ? "aerial_off" : "aerial_on");
+    };
+    this._el = document.createElement("div");
+    this._el.className = "maplibregl-ctrl maplibregl-ctrl-group";
+    this._el.appendChild(this._btn);
+    return this._el;
+  }
+  onRemove() { this._el.remove(); }
+}
+map.addControl(new AerialToggle(), "bottom-right");
+
 // --- 3D buildings colored by DPE class (BDNB open data, CSTB) -------------------
 const DPE_COLORS = ["match", ["get", "classe_bilan_dpe"],
   "A", "#009036", "B", "#52b153", "C", "#a5cc74", "D", "#f4e70f",
@@ -486,6 +517,16 @@ map.on("load", () => {
       map.removeLayer(layer.id);
     }
   }
+
+  // Sous les libellés du fond et sous les volumes : la photo remplace le plan,
+  // les noms de rues et les bâtiments DPE restent lisibles par-dessus (#258).
+  map.addSource("ign-ortho", {
+    type: "raster", tiles: [ORTHO_IGN], tileSize: 256, maxzoom: 19,
+    attribution: "Photo aérienne : IGN (BD ORTHO)",
+  });
+  map.addLayer({ id: "ign-ortho", type: "raster", source: "ign-ortho",
+    layout: { visibility: "none" } },
+    map.getStyle().layers.find((l) => l.type === "symbol")?.id);
 
   map.addSource("bdnb", {
     type: "vector",
