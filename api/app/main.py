@@ -413,8 +413,12 @@ class _TransportCompte(httpx.AsyncBaseTransport):
             M_UPSTREAM.add(1, {"source": source, "outcome": "failure"})
             raise
         code = resp.status_code
+        # Un service WMS répond 200 avec un rapport d'exception quand une
+        # couche disparaît (#510) : c'est une panne, pas un succès.
+        exception_wms = code < 400 and "se_xml" in resp.headers.get("content-type", "")
         M_UPSTREAM.add(1, {"source": source,
-                           "outcome": "ok" if code < 400 else
+                           "outcome": "error" if exception_wms else
+                                      "ok" if code < 400 else
                                       "not_found" if code == 404 else "error"})
         return resp
 
@@ -582,6 +586,21 @@ def _uri_image(octets):
     return f"data:{mime};base64," + base64.b64encode(octets).decode()
 
 
+# Un même rendu demandé deux fois ne part qu'une fois (#507) : le pré-rendu
+# lancé à l'ouverture de la fiche et la fiche PDF demandée pendant qu'il
+# tourne attendent le MÊME cliché, comme les tuiles mutualisent leur appel.
+_RENDUS_EN_VOL: dict = {}
+
+
+async def _rendu_mutualise(chemin, faire):
+    vol = _RENDUS_EN_VOL.get(chemin)
+    if vol is None:
+        vol = asyncio.ensure_future(faire())
+        _RENDUS_EN_VOL[chemin] = vol
+        vol.add_done_callback(lambda _f: _RENDUS_EN_VOL.pop(chemin, None))
+    return await asyncio.shield(vol)
+
+
 async def _building_map_png(lon, lat, bdnb_id, bearing: float = -30.0):
     """Rendered DPE-3D map (PNG data URI) centered on the building, via the
     headless render service (#88). None when not wired or on error, so the
@@ -602,7 +621,7 @@ async def _building_map_png(lon, lat, bdnb_id, bearing: float = -30.0):
     if en_cache:
         M_CACHE.add(1, {"result": "hit_render"})
         return _uri_image(en_cache)
-    try:
+    async def faire():
         r = await _client.get(RENDER_URL, params={
             "lon": lon, "lat": lat, "zoom": 18, "pitch": 60,
             "bearing": bearing, "bdnb_id": bdnb_id,
@@ -615,7 +634,9 @@ async def _building_map_png(lon, lat, bdnb_id, bearing: float = -30.0):
         # resterait trente jours. Un PNG plausible fait au moins quelques Ko.
         if len(r.content) > 10_000:
             _tile_write(chemin, r.content)
-        return _uri_image(r.content)
+        return r.content
+    try:
+        return _uri_image(await _rendu_mutualise(chemin, faire))
     except Exception as e:
         log.warning("building map render failed for %s: %s", bdnb_id, e)
         return None
@@ -644,7 +665,7 @@ async def _quartier_map_png(lon, lat, bdnb_id, schools):
     if en_cache:
         M_CACHE.add(1, {"result": "hit_render"})
         return _uri_image(en_cache)
-    try:
+    async def faire():
         r = await _client.get(RENDER_URL, params={
             "lon": lon, "lat": lat, "zoom": 15.1, "pitch": 0, "bearing": 0,
             "bdnb_id": bdnb_id, "points": points,
@@ -653,7 +674,9 @@ async def _quartier_map_png(lon, lat, bdnb_id, schools):
         r.raise_for_status()
         if len(r.content) > 10_000:
             _tile_write(chemin, r.content)
-        return _uri_image(r.content)
+        return r.content
+    try:
+        return _uri_image(await _rendu_mutualise(chemin, faire))
     except Exception as e:
         log.warning("quartier map render failed for %s: %s", bdnb_id, e)
         return None
@@ -726,7 +749,10 @@ async def _ppri_overlay(base_bytes: bytes, bounds_json: str | None) -> bytes:
         wms = await _client.get(
             "https://www.georisques.gouv.fr/services",
             params={"SERVICE": "WMS", "VERSION": "1.1.1", "REQUEST": "GetMap",
-                    "LAYERS": "PPRN_ZONE_INOND", "SRS": "EPSG:3857",
+                    # #510 : le zonage PPRN_ZONE_INOND a été retiré. La surface
+                    # inondable centennale (territoires TRI) sous le périmètre
+                    # des PPRI approuvés.
+                    "LAYERS": "ALEA_SYNT_01_02MOY_FXX,SUP_INOND", "SRS": "EPSG:3857",
                     "BBOX": f"{minx},{miny},{maxx},{maxy}",
                     "WIDTH": W, "HEIGHT": H, "FORMAT": "image/png",
                     "TRANSPARENT": "TRUE", "STYLES": ""}, timeout=30.0)
@@ -1378,10 +1404,16 @@ def _couleur_ppri(code):
 
 
 async def _ppri_zone(lon, lat):
-    """Zone réglementaire du PPRI inondation pour le point (#377), via la couche
-    nationale PPRN_ZONE_INOND de Géorisques (WMS GetFeatureInfo). Renvoie la
-    zone (code, couleur bleue/rouge, PPRI, état, lien règlement) ou None si
-    aucun PPRI approuvé n'est cartographié à ce point. Fail-soft."""
+    """PPRI inondation au point (#377, #510).
+
+    Géorisques a retiré la couche nationale du ZONAGE réglementaire
+    (PPRN_ZONE_INOND, « LayerNotDefined » depuis octobre 2026) : la couleur
+    bleue/rouge de la zone ne se lit plus. Reste SUP_INOND, le PÉRIMÈTRE des
+    PPR approuvés — on dit donc si la parcelle est DANS un PPRI, lequel, son
+    état et sa date, sans jamais inventer de couleur. La couche porte aussi
+    d'autres PPR (sécheresse à Colomiers, aléa MVT) : seuls les PPR
+    inondation comptent ici. `code` reste rempli pour les applications
+    publiées, qui l'affichent tel quel faute de couleur."""
     if lon is None or lat is None:
         return None
     try:
@@ -1390,32 +1422,36 @@ async def _ppri_zone(lon, lat):
         d = 0.0004
         gj = await _cached_get_json(GEORISQUES_WMS, {
             "SERVICE": "WMS", "VERSION": "1.3.0", "REQUEST": "GetFeatureInfo",
-            "CRS": "EPSG:4326", "LAYERS": "PPRN_ZONE_INOND",
-            "QUERY_LAYERS": "PPRN_ZONE_INOND", "INFO_FORMAT": "application/json",
+            "CRS": "EPSG:4326", "LAYERS": "SUP_INOND",
+            "QUERY_LAYERS": "SUP_INOND", "INFO_FORMAT": "application/json",
+            "FEATURE_COUNT": "10",
             "WIDTH": "51", "HEIGHT": "51", "I": "25", "J": "25",
             # WMS 1.3.0 EPSG:4326 axis order is lat,lon.
             "BBOX": f"{lat - d},{lon - d},{lat + d},{lon + d}"}, ttl=86400)
-        feats = (gj or {}).get("features") or []
-        if not feats:
+        feats = [f.get("properties") or {} for f in (gj or {}).get("features") or []]
+        inond = [p for p in feats
+                 if "INOND" in str(p.get("codesAlea") or "").upper()
+                 or str(p.get("modelesProcedures") or "").upper().startswith("PPRN-I")]
+        if not inond:
             return None
-        p = feats[0].get("properties") or {}
-        code = p.get("code_zone_reglement") or p.get("libelle_zone")
+        # Un PPR approuvé passe avant un PPR seulement prescrit.
+        p = sorted(inond, key=lambda q: "approuv" not in str(q.get("libelle_sous_etat") or "").lower())[0]
         return {
-            "code": code,
-            "couleur": _couleur_ppri(code),
-            "libelle_zone": p.get("libelle_zone"),
-            "nom_ppr": p.get("nom_ppr"),
-            "etat": p.get("etat"),
-            "date_approbation": p.get("date_approbation"),
-            "url_reglement": p.get("url_reglement_zone"),
+            "perimetre": True,
+            "code": "Périmètre PPRI",
+            "couleur": None,
+            "libelle_zone": None,
+            "nom_ppr": (p.get("lib_ppr") or "").strip() or None,
+            "etat": p.get("libelle_sous_etat"),
+            "date_approbation": p.get("dat_approbation") or None,
+            "id_gaspar": p.get("id_gaspar"),
+            "url_reglement": None,
         }
     except json.JSONDecodeError:
-        # Géorisques renvoie un corps VIDE quand aucun PPRI n'est cartographié
-        # au point — c'est le cas courant (la France n'est pas toute en PPRI),
-        # pas une panne : on n'en fait pas un avertissement.
+        # Corps vide : rien de cartographié au point (cas courant).
         return None
     except Exception as e:
-        log.warning("Géorisques PPRN_ZONE_INOND unavailable for %s,%s: %s", lon, lat, e)
+        log.warning("Géorisques SUP_INOND unavailable for %s,%s: %s", lon, lat, e)
         return None
 
 
@@ -2817,6 +2853,26 @@ M_REPORT_STAGE = _meter.create_histogram(
     description="PDF report generation, per stage", unit="s")
 
 
+# Progression d'une fiche (#506) : la page d'attente passe un jeton aléatoire
+# (?progress=), chaque étape terminée s'inscrit dessous, et la page le relit
+# chaque seconde. En mémoire, quelques minutes, rien d'autre qu'une liste
+# d'étapes : ni adresse, ni personne.
+_SUIVI: ContextVar = ContextVar("suivi_fiche", default=None)
+_PROGRESSION: OrderedDict = OrderedDict()
+_PROGRESSION_TTL = 600
+
+
+def _progression_note(etape):
+    jeton = _SUIVI.get()
+    if not jeton:
+        return
+    entree = _PROGRESSION.setdefault(jeton, {"t": time.monotonic(), "faites": []})
+    if etape not in entree["faites"]:
+        entree["faites"].append(etape)
+    while len(_PROGRESSION) > 2000:
+        _PROGRESSION.popitem(last=False)
+
+
 class _chrono:
     """Chronomètre d'étape : mesure même quand l'étape échoue — un échec lent
     est précisément ce qu'on veut voir."""
@@ -2830,6 +2886,7 @@ class _chrono:
     def __exit__(self, *exc):
         M_REPORT_STAGE.record(time.monotonic() - self.debut,
                               {"stage": self.etape})
+        _progression_note(self.etape)
 
 
 async def _chronometre(etape, coro):
@@ -4174,6 +4231,51 @@ async def pro_webhook(request: Request):
     return {"received": True, "type": etype}
 
 
+@app.get("/v1/report/progress/{jeton}", tags=["reports"])
+async def progression_fiche(jeton: str):
+    """Étapes terminées d'une fiche en cours (#506), pour la page d'attente."""
+    entree = _PROGRESSION.get(jeton)
+    if not entree or time.monotonic() - entree["t"] > _PROGRESSION_TTL:
+        return {"done": []}
+    return {"done": list(entree["faites"])}
+
+
+# Pré-rendu (#507) : les deux vues de la fiche PDF — 3D et quartier — font
+# ~85 % de son attente, et seule la PREMIÈRE fiche d'un bâtiment les paie
+# (cache de rendu, #300). On les rend pendant que la fiche se lit. Une seule
+# préparation à la fois, navigateurs seulement, et uniquement pour une fiche
+# qui vient d'être chargée à CE point (agrégat en cache) : impossible de
+# faire tourner le moteur de rendu sur des bâtiments que personne ne regarde.
+_PREPARATION_EN_COURS = {"actif": False}
+
+
+@app.post("/v1/report/{bdnb_id}/prepare", tags=["reports"], status_code=202)
+async def preparer_fiche(request: Request, bdnb_id: str,
+                         lon: float = Query(...), lat: float = Query(...)):
+    """Prepare the PDF's two map views in the background (#507)."""
+    if not RENDER_URL or _est_un_outil(request.headers.get("user-agent") or ""):
+        return {"started": False, "reason": "not a browser"}
+    hit = _CACHE.get(f"building:{bdnb_id}:{round(lon, 4)}:{round(lat, 4)}:{_LANG.get()}")
+    if not hit or time.monotonic() - hit[0] >= BUILDING_CACHE_TTL:
+        return {"started": False, "reason": "fiche not loaded"}
+    if _PREPARATION_EN_COURS["actif"]:
+        return {"started": False, "reason": "busy"}
+    _PREPARATION_EN_COURS["actif"] = True
+    ecoles = (hit[1] or {}).get("schools")
+
+    async def _preparer():
+        try:
+            await _building_map_png(lon, lat, bdnb_id)
+            await _quartier_map_png(lon, lat, bdnb_id, ecoles)
+            M_CACHE.add(1, {"result": "prepared"})
+        except Exception as e:                  # jamais au prix d'une erreur
+            log.warning("pré-rendu %s: %s", bdnb_id, e)
+        finally:
+            _PREPARATION_EN_COURS["actif"] = False
+    asyncio.ensure_future(_preparer())
+    return {"started": True}
+
+
 @app.get("/v1/report/{bdnb_id}.pdf", tags=["reports"])
 async def report(
     request: Request,
@@ -4192,6 +4294,9 @@ async def report(
     lang: str = Query("fr", pattern="^(fr|en)$", description=(
         "Language of the document (#370): 'fr' (default) or 'en'. The mobile "
         "apps send their active UI language so the fiche matches the screen.")),
+    progress: str | None = Query(None, max_length=24, pattern="^[A-Za-z0-9-]+$", description=(
+        "Random token chosen by the waiting page (#506): the finished stages "
+        "are readable at /v1/report/progress/{token} while the PDF is built.")),
 ):
     """Normalized one-page PDF fiche of a building (free during beta).
 
@@ -4208,6 +4313,9 @@ async def report(
     # gratuites celles de tous les autres (#311).
     sujet = f"{bdnb_id}#{dpe}" if dpe else bdnb_id
     _quota_gate(request, "report", subject=sujet)
+    if progress:
+        _SUIVI.set(progress)
+        _PROGRESSION[progress] = {"t": time.monotonic(), "faites": []}
     # Le document servi est enregistré pour CETTE adresse, quel que soit le
     # plan — sans quoi la seconde requête n'en profite pas.
     #
@@ -4228,6 +4336,7 @@ async def report(
     pdf_path = os.path.join(PDF_CACHE_DIR, pdf_key + ".pdf")
     cached = _tile_read(pdf_path, PDF_CACHE_TTL)
     if cached:
+        _progression_note("done")
         M_CACHE.add(1, {"result": "hit_pdf"})
         # Le nom voyage dans un fichier voisin : sur un cache chaud, l'adresse
         # n'a pas encore été chargée, et re-générer la fiche pour la connaître
@@ -4321,6 +4430,7 @@ async def report(
             f" — logement {c['surface_m2']} m² (DPE {dpe}).pdf"
             if c.get("surface_m2") else f" — logement DPE {dpe}.pdf")
     _tile_write(pdf_path + ".nom", nom.encode())
+    _progression_note("done")
     M_REPORTS.add(1, {"has_dpe": str(bool((data["buildings"][0].get("energy") or {}).get("dpe_class"))).lower()})
     return Response(
         pdf,

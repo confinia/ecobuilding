@@ -421,17 +421,20 @@ def test_frontend_deep_links_to_a_search():
 
 @needs_repo
 def test_frontend_loading_feedback_is_wired():
-    """#150: every loading path shows a spinner, and the PDF button walks the
-    staged labels in order (honest staging — no fake percent for a single
-    server-side render)."""
+    """#150: every loading path shows a spinner. #506: the PDF wait shows the
+    server's REAL stages, ticked as the server finishes them (progress token,
+    polled), in order; the bar only creeps inside the current stage."""
     app = (ROOT / "frontend/site/app.js").read_text()
     css = (ROOT / "frontend/site/style.css").read_text()
     # All loading paths use the narrated panel (rotating source labels).
     assert app.count("showLoadingPanel(") >= 3     # geolocate + search + click + def
     assert "LOADING_SOURCES" in app and "DGFiP" in app
     order = [app.index(s) for s in
-             ("Collecte des données", "Rendu de la carte 3D", "Mise en page du PDF")]
+             ('["data", "Données du bâtiment"', '["render_3d", "Carte 3D"',
+              '["quartier", "Plan du quartier"', '["compose", "Mise en page"')]
     assert order == sorted(order)
+    assert '"progress=" + jeton' in app and "/report/progress/${jeton}" in app
+    assert "Math.min((maintenant - debutEtapeMs) / (enCours[1] * 1000), 0.9)" in app
     assert "downloadReport" in app and 'id="report-btn"' in app
     assert "window.open" in app                     # popup-safe: opened in-gesture
     assert ".hint.loading::before" in css and "@keyframes spin" in css
@@ -742,6 +745,21 @@ def test_map_constructor_guarded_since_maplibre_6_7():
     render = (ROOT / "render_stack/render.html").read_text()
     assert "map = new maplibregl.Map({" in render
     assert "window.__error = String(e);" in render
+
+
+@needs_repo
+def test_map_bearing_locked_north_up():
+    """#505: rotating the map around its vertical axis lost the end user.
+    Every camera change is forced north-up, the compass is gone, rotation
+    gestures are off, and a shared link's bearing is reset once loaded."""
+    app = (ROOT / "frontend/site/app.js").read_text()
+    guard = app[app.index("function createMap()"):app.index("const map = createMap();")]
+    assert "transformCameraUpdate: () => ({ bearing: 0 })" in guard
+    assert "NavigationControl({ showCompass: false })" in app
+    assert "map.touchZoomRotate.disableRotation();" in app
+    assert "map.keyboard.disableRotation();" in app
+    assert 'map.jumpTo({ bearing: 0 })' in app
+    assert "bearing: -18" not in app        # no fly-to turns the map any more
 
 
 @needs_repo
