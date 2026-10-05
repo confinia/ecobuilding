@@ -85,6 +85,13 @@ KC_CONTAINER=ecobuilding-sandbox_sandbox-keycloak_1 \
   ADMIN_USER="${E2E_ADMIN_USER:-ci-admin}" \
   ./deploy/kc-master.sh || echo "   WARN: sandbox admin realm lockout unchanged"
 
+# 4e. Passkey option on the login page (#372), as in production.
+REALM=sandbox-ecobuilding \
+  KC_CONTAINER=ecobuilding-sandbox_sandbox-keycloak_1 \
+  SECRETS="$PWD/sandbox_stack/secrets.env" \
+  ADMIN_USER="${E2E_ADMIN_USER:-ci-admin}" \
+  ./deploy/kc-passkeys.sh || echo "   WARN: sandbox passkeys unchanged"
+
 # 5. health
 sleep 3
 echo "== sandbox health =="

@@ -87,6 +87,8 @@ kc_step kc-client.sh "client URIs"
 kc_step kc-theme.sh "login theme"
 # Admin realm: lockout against password guessing, replayed every deploy.
 kc_step kc-master.sh "admin realm lockout"
+# Passkey option on the login page, password unchanged (#372).
+kc_step kc-passkeys.sh "passkeys"
 
 # Shared monitoring (promote-proof): prometheus + grafana + podman-exporter.
 # CREATE-ONLY from the pipeline: host-network containers (re)created under the

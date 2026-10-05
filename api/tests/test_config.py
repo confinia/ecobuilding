@@ -319,6 +319,31 @@ def test_admin_realm_stays_off_public_hosts():
 
 
 @needs_repo
+def test_passkey_option_on_the_login_page():
+    """Clé d'accès proposée sur la page de connexion (#372) : un réglage de
+    royaume, apparu dans Keycloak 26.4, rejoué à chaque déploiement. Le parcours
+    de connexion partagé avec les utilisateurs de l'app n'est pas touché et
+    personne n'est forcé d'enregistrer une clé. Le bac à sable tourne sur la
+    MÊME version que la production, pour montrer ce qu'elle montrera."""
+    import re as _re
+
+    versions = set()
+    for f in ("auth_stack/docker-compose.yml", "sandbox_stack/docker-compose.yml"):
+        m = _re.search(r"image: quay\.io/keycloak/keycloak:(\d+)\.(\d+)", (ROOT / f).read_text())
+        assert m, f
+        versions.add((int(m.group(1)), int(m.group(2))))
+    assert len(versions) == 1
+    assert versions.pop() >= (26, 4)
+
+    kc = (ROOT / "deploy/kc-passkeys.sh").read_text()
+    assert "webAuthnPolicyPasswordlessPasskeysEnabled=true" in kc
+    assert "defaultAction=false" in kc
+    assert "authentication/flows" not in kc
+    assert "kc_step kc-passkeys.sh" in (ROOT / "deploy/stack-up.sh").read_text()
+    assert "./deploy/kc-passkeys.sh" in (ROOT / "deploy/sandbox.sh").read_text()
+
+
+@needs_repo
 def test_frontend_lists_other_buildings_readably():
     """#462: la nature d'abord, une ligne pleine largeur, et une ANNEXE qui ne
     mène nulle part — une fiche et un rapport par adresse, l'annexe dedans."""

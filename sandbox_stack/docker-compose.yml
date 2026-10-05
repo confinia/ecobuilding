@@ -35,7 +35,7 @@ services:
     restart: unless-stopped
 
   sandbox-keycloak:
-    image: quay.io/keycloak/keycloak:26.1
+    image: quay.io/keycloak/keycloak:26.8
     command: ["start", "--import-realm", "--cache=local"]
     environment:
       KC_DB: postgres

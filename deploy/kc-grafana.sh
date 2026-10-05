@@ -2,19 +2,17 @@
 # EcoBuilding #372 — passwordless Grafana via Keycloak.
 #
 # Reconciles, on the LIVE realm, everything Grafana needs to delegate its login
-# to Keycloak, and enables the PASSKEY (WebAuthn passwordless) option WITHOUT
-# touching how end users sign in.
+# to Keycloak, WITHOUT touching how end users sign in.
 #
 # Two things, both idempotent (kcadm `update`/`create` re-runnable):
 #   1. an OIDC client `grafana` (confidential, standard flow) with the redirect
 #      URI Grafana's generic_oauth expects;
-#   2. a realm required-action `webauthn-register-passwordless` set ENABLED but
-#      NOT default — end users keep their password flow untouched; the operator
-#      opts in by registering a passkey once in the account console.
+#   2. the grafana-admin realm role and the mapper that puts realm roles in
+#      the ID token. Passkeys themselves are deploy/kc-passkeys.sh (#372).
 #
 # The confinia realm is SHARED with the SaaS end users: this script must never
-# change the realm's browser authentication flow. It only ADDS an optional
-# capability + one client. Run ON the VM (safe standalone; sandbox via env).
+# change the realm's browser authentication flow. It only ADDS one client and
+# one role. Run ON the VM (safe standalone; sandbox via env).
 set -eu
 cd "$(dirname "$0")/.."
 REALM="${REALM:-confinia}"
@@ -100,20 +98,9 @@ else
   echo "kc-grafana: realm-roles mapper already present"
 fi
 
-# --- 2. passkey as an OPTIONAL required action (non-breaking) -------------------
-# ENABLED so the account console offers "add passkey"; defaultAction=false so no
-# end user is forced into it. The operator registers a passkey once; afterwards
-# the login page's "Sign in with a passkey" button is a one-tap login.
-RA_ID=webauthn-register-passwordless
-CURRENT=$($KCADM get "authentication/required-actions/$RA_ID" -r "$REALM" \
-            --fields enabled --format csv --noquotes 2>/dev/null || echo "")
-if [ -n "$CURRENT" ]; then
-  $KCADM update "authentication/required-actions/$RA_ID" -r "$REALM" \
-    -s enabled=true -s defaultAction=false
-  echo "kc-grafana: passkey required-action enabled (optional, end users untouched)"
-else
-  echo "kc-grafana: WARN webauthn-register-passwordless action not found on this realm"
-fi
+# --- 2. passkeys -----------------------------------------------------------------
+# The passkey option on the login page and the optional "register a passkey"
+# action are replayed on every deploy by deploy/kc-passkeys.sh (#372).
 
 echo "kc-grafana: done. Register your passkey at $KC_ACCOUNT_URL, then log into"
 echo "            $BASE and pick 'Sign in with a passkey'."
