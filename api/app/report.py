@@ -226,6 +226,34 @@ def _fourchette_html(e: dict | None, classe: str | None = None) -> str:
                f'{rows}</table>' if rows else ""))
 
 
+def _loyers_html(r: dict | None, e: dict | None = None) -> str:
+    """Loyers d'annonce de la commune (#518), modèle « Carte des loyers »."""
+    if not r:
+        return ""
+    noms = (("app", T("Appartement")), ("app12", T("Appartement 1-2 pièces")),
+            ("app3", T("Appartement 3 pièces et plus")), ("mai", T("Maison")))
+    lignes = "".join(
+        f'<tr><td class="k">{lib}</td><td>{str(r[k]["eur_m2"]).replace(".", ",")} €/m² '
+        f'({str(r[k]["low"]).replace(".", ",")} – {str(r[k]["high"]).replace(".", ",")})'
+        f'{" *" if r[k].get("level") == "maille" else ""}</td></tr>'
+        for k, lib in noms if r.get(k))
+    rdt = ""
+    if e and e.get("type_local") == "Maison" and r.get("mai") and (e.get("price") or {}).get("mid"):
+        pct = r["mai"]["eur_m2"] * e["surface_m2"] * 12 * 100 / e["price"]["mid"]
+        rdt = ('<p>' + T("Rendement brut indicatif (maison) : {p} %").format(
+            p=f"{pct:.1f}".replace(".", ",")) + '</p>')
+    maille = any((r.get(k) or {}).get("level") == "maille" for k, _ in noms)
+    return ('<h3>' + T("Loyers d'annonce (commune)") + '</h3>'
+            + f'<table class="sales">{lignes}</table>' + rdt
+            + '<p class="meta">' + T(
+                "Loyers d'annonce charges comprises, modélisés pour la commune, avec "
+                "l'intervalle à 95 % (Carte des loyers {y}, ministère du Logement).").format(y=r.get("year"))
+            + (" " + T("* Peu d'annonces dans la commune : estimation appuyée sur des communes voisines.")
+               if maille else "")
+            + (" " + T("Rendement brut = loyer annuel / prix médian observé, avant charges, taxes et vacance.")
+               if rdt else "") + '</p>')
+
+
 def _prices_html(p: dict | None, fiche_logement: bool = False,
                  estimation: dict | None = None, classe: str | None = None) -> str:
     """DVF home-price section (recent parcelle sales + commune median €/m²).
@@ -1343,6 +1371,7 @@ def _report_html(data: dict, photos: list | None = None, map_img: str | None = N
 {f'<p class="meta">{pv["assumptions"]}</p>' if pv.get("assumptions") else ""}
 
 {_prices_html(data.get("prices"), fiche_logement=bool(cible), estimation=None if cible else data.get("estimation"), classe=((data.get("buildings") or [{}])[0].get("energy") or {}).get("dpe_class"))}
+{_loyers_html(data.get("rent"), None if cible else data.get("estimation"))}
 {_local_taxes_html(data.get("local_taxes") or {})}
 {_schools_html(data.get("schools") or {})}
 {quartier_html}
@@ -1493,6 +1522,16 @@ _EN = {
     "Ventes enregistrées sur la PARCELLE — pas nécessairement celles du logement de cette fiche.":
         "Sales recorded on the PARCEL — not necessarily those of the dwelling covered by this report.",
     " — parcelle": " — parcel",
+    "Loyers d'annonce (commune)": "Asking rents (municipality)",
+    "Appartement 1-2 pièces": "Flat, 1-2 rooms",
+    "Appartement 3 pièces et plus": "Flat, 3 rooms or more",
+    "Rendement brut indicatif (maison) : {p} %": "Indicative gross yield (house): {p} %",
+    "Loyers d'annonce charges comprises, modélisés pour la commune, avec l'intervalle à 95 % (Carte des loyers {y}, ministère du Logement).":
+        "Asking rents including service charges, modelled for the municipality, with the 95% interval (Carte des loyers {y}, French Ministry of Housing).",
+    "* Peu d'annonces dans la commune : estimation appuyée sur des communes voisines.":
+        "* Few listings in the municipality: estimate based on neighbouring municipalities.",
+    "Rendement brut = loyer annuel / prix médian observé, avant charges, taxes et vacance.":
+        "Gross yield = annual rent / observed median price, before charges, taxes and vacancy.",
     "Fourchette de prix observée": "Observed price range",
     "Maison de {s} m² : <strong>{lo} € – {hi} €</strong> (médiane {mid} €)":
         "House of {s} m²: <strong>€{lo} – €{hi}</strong> (median €{mid})",
