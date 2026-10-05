@@ -247,7 +247,8 @@ def _loyers_html(r: dict | None, e: dict | None = None) -> str:
             + f'<table class="sales">{lignes}</table>' + rdt
             + '<p class="meta">' + T(
                 "Loyers d'annonce charges comprises, modélisés pour la commune, avec "
-                "l'intervalle à 95 % (Carte des loyers {y}, ministère du Logement).").format(y=r.get("year"))
+                "l'intervalle à 95 % (Carte des loyers {y} : {s}).").format(
+                    y=r.get("year"), s=r.get("source") or T("ministère du Logement"))
             + (" " + T("* Peu d'annonces dans la commune : estimation appuyée sur des communes voisines.")
                if maille else "")
             + (" " + T("Rendement brut = loyer annuel / prix médian observé, avant charges, taxes et vacance.")
@@ -1526,8 +1527,9 @@ _EN = {
     "Appartement 1-2 pièces": "Flat, 1-2 rooms",
     "Appartement 3 pièces et plus": "Flat, 3 rooms or more",
     "Rendement brut indicatif (maison) : {p} %": "Indicative gross yield (house): {p} %",
-    "Loyers d'annonce charges comprises, modélisés pour la commune, avec l'intervalle à 95 % (Carte des loyers {y}, ministère du Logement).":
-        "Asking rents including service charges, modelled for the municipality, with the 95% interval (Carte des loyers {y}, French Ministry of Housing).",
+    "Loyers d'annonce charges comprises, modélisés pour la commune, avec l'intervalle à 95 % (Carte des loyers {y} : {s}).":
+        "Asking rents including service charges, modelled for the municipality, with the 95% interval (Carte des loyers {y}: {s}).",
+    "ministère du Logement": "French Ministry of Housing",
     "* Peu d'annonces dans la commune : estimation appuyée sur des communes voisines.":
         "* Few listings in the municipality: estimate based on neighbouring municipalities.",
     "Rendement brut = loyer annuel / prix médian observé, avant charges, taxes et vacance.":

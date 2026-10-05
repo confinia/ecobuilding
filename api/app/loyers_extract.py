@@ -27,6 +27,10 @@ import os
 import httpx
 
 ANNEE = 2025
+# D'où viennent les chiffres (note méthodologique de l'édition 2025) : les
+# annonces publiées sur leboncoin et le Groupe SeLoger du 01/01/2019 au
+# 30/09/2025, modélisées par l'ANIL pour le ministère du Logement.
+SOURCE = "annonces leboncoin et SeLoger 2019-2025, modèle ANIL / ministère du Logement"
 BASE = ("https://static.data.gouv.fr/resources/"
         "carte-des-loyers-indicateurs-de-loyers-dannonce-par-commune-en-2025/")
 FICHIERS = {
@@ -65,7 +69,8 @@ def main():
         for insee, v in parse(httpx.get(url, timeout=120, follow_redirects=True).content).items():
             communes.setdefault(insee, {})[cle] = v
     with gzip.open(OUT, "wt", encoding="utf-8") as f:
-        json.dump({"year": ANNEE, "communes": communes}, f, separators=(",", ":"))
+        json.dump({"year": ANNEE, "source": SOURCE, "communes": communes}, f,
+                  separators=(",", ":"))
     print(f"{len(communes)} communes → {OUT} ({os.path.getsize(OUT) // 1024} Ko)")
 
 

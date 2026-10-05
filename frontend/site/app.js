@@ -1303,7 +1303,7 @@ function sectionLoyers(data) {
     ${kv("Maison", v(r.mai))}
     ${kv("Rendement brut indicatif (maison)", rdt)}
     <p class="hint">Loyers d'annonce charges comprises, modélisés pour la commune, avec l'intervalle à 95 %
-    (Carte des loyers ${r.year}, ministère du Logement).${maille ? " * Peu d'annonces dans la commune : estimation appuyée sur des communes voisines." : ""}
+    (Carte des loyers ${r.year} : ${r.source || "ministère du Logement"}).${maille ? " * Peu d'annonces dans la commune : estimation appuyée sur des communes voisines." : ""}
     ${rdt ? " Rendement brut = loyer annuel de la maison / prix médian observé, avant charges, taxes et vacance." : ""}</p>`;
 }
 

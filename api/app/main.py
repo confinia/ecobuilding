@@ -1977,7 +1977,7 @@ async def _loyers(insee):
     c = _LOYERS["communes"].get(str(insee or ""))
     if not c:
         return None
-    return {"year": _LOYERS["year"], **{
+    return {"year": _LOYERS["year"], "source": _LOYERS.get("source"), **{
         k: {"eur_m2": v[0], "low": v[1], "high": v[2], "level": v[3], "listings": v[4]}
         for k, v in c.items() if k in _LOYERS_TYPES}}
 
@@ -2624,7 +2624,7 @@ def _assemble_building(bdnb_id, lon, lat, row, v):
         sources.append("Sitadel (SDES) — permis de construire — Licence Ouverte")
     market_dia = _dia_market(lon, lat, row.get("code_commune_insee"))
     if v.get("rent"):
-        sources.append(f"Carte des loyers {v['rent']['year']} (DHUP / ANIL) — Licence Ouverte")
+        sources.append(f"Carte des loyers {v['rent']['year']} ({v['rent'].get('source') or 'ANIL / ministère du Logement'}) — Licence Ouverte")
     if rnb:
         sources.append("Référentiel National des Bâtiments (RNB) — Licence Ouverte")
     if market_dia:
