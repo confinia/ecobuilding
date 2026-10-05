@@ -13,6 +13,16 @@
 -- new DVF import, DROP TABLE dvf.vente_logement and run bdnb-stack at night.
 -- Applied by deploy/bdnb-local-api.sh (bdnb-stack workflow), never by hand.
 
+-- MÉMOIRE (2026-10-05) : le conteneur bdnb-db est plafonné à 2 Go et
+-- shared_buffers occupe déjà ces 2 Go. Construite avec des travailleurs
+-- parallèles et 64 Mo de work_mem par tri, la table a fait tuer un processus
+-- par le noyau (signal 9) et redémarrer la base. Une seule tâche, des tris
+-- qui débordent sur disque : plus lent, sans risque.
+SET max_parallel_workers_per_gather = 0;
+SET max_parallel_maintenance_workers = 0;
+SET work_mem = '16MB';
+SET maintenance_work_mem = '64MB';
+
 CREATE TABLE IF NOT EXISTS dvf.vente_logement AS
 WITH m AS (
   SELECT date_mutation, code_commune, type_local, valeur_fonciere,
