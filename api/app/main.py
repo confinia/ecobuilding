@@ -4360,6 +4360,65 @@ async def pro_webhook(request: Request):
     return {"received": True, "type": etype}
 
 
+# --- Prix sur la carte (#319) ------------------------------------------------
+# Les ventes DVF par tuile de carte : chaque adresse vendue (tuile z14) et une
+# grille de cellules d'environ 300 m avec leur médiane et leur tendance (tuile
+# z12, calculée une fois pour la France). Cache disque 7 jours — les données
+# DVF changent deux fois par an —, appels en vol partagés, trois calculs au
+# plus en même temps. Pas de quota : parcourir la carte est libre. Sous /api/,
+# donc hors indexation (robots.txt), comme l'exigent les conditions DVF.
+DVF_PRIX_POINTS_URL = os.environ.get(
+    "DVF_PRIX_POINTS_URL", DVF_RPC_URL.replace("prices_for_building", "prix_points"))
+DVF_PRIX_CELLULES_URL = os.environ.get(
+    "DVF_PRIX_CELLULES_URL", DVF_RPC_URL.replace("prices_for_building", "prix_cellules"))
+PRIX_CARTE_TTL = float(os.environ.get("PRIX_CARTE_TTL", str(7 * 86400)))
+_PRIX_SEM = asyncio.Semaphore(3)
+
+
+def _tuile_bbox(z, x, y):
+    n = 2 ** z
+    lat = lambda t: math.degrees(math.atan(math.sinh(math.pi * (1 - 2 * t / n))))
+    return x / n * 360 - 180, lat(y + 1), (x + 1) / n * 360 - 180, lat(y)
+
+
+async def _prix_tuile(genre, z, x, y, url):
+    from fastapi.responses import Response
+    if not url or not (0 <= x < 2 ** z and 0 <= y < 2 ** z):
+        raise HTTPException(404)
+    chemin = os.path.join(TILES_DIR, "prix", genre, f"{x}_{y}.json")
+    contenu = _tile_read(chemin, PRIX_CARTE_TTL)
+    if contenu is None:
+        async def faire():
+            async with _PRIX_SEM:
+                w, s_, e, n = _tuile_bbox(z, x, y)
+                r = await _client.get(url, params={"minlon": w, "minlat": s_, "maxlon": e,
+                                                   "maxlat": n}, timeout=60.0)
+                r.raise_for_status()
+                _tile_write(chemin, r.content)
+                return r.content
+        try:
+            contenu = await _rendu_mutualise(chemin, faire)
+        except Exception as exc:
+            log.warning("prix %s %s/%s indisponible: %r", genre, x, y, exc)
+            raise HTTPException(503, headers={"Retry-After": "600"})
+    return Response(contenu, media_type="application/json",
+                    headers={"Cache-Control": "public, max-age=86400"})
+
+
+@app.get("/v1/prices/points/{x}/{y}.json", tags=["prices"])
+async def prix_points(x: int, y: int):
+    """Sold addresses of one z14 tile (#319): [lon, lat, sales, median €/m²,
+    last sale year, last sale €/m², "M" house | "A" flat]."""
+    return await _prix_tuile("points", 14, x, y, DVF_PRIX_POINTS_URL)
+
+
+@app.get("/v1/prices/cells/{x}/{y}.json", tags=["prices"])
+async def prix_cellules(x: int, y: int):
+    """~300 m cells of one z12 tile (#319): [lon, lat, sales, median €/m² of the
+    majority type, trend % 2021-22 → 2024-25 or null, "M" | "A"]."""
+    return await _prix_tuile("cells", 12, x, y, DVF_PRIX_CELLULES_URL)
+
+
 @app.get("/v1/report/progress/{jeton}", tags=["reports"])
 async def progression_fiche(jeton: str):
     """Étapes terminées d'une fiche en cours (#506), pour la page d'attente."""
@@ -4849,7 +4908,7 @@ EVENEMENTS_CONNUS = frozenset((
     # elle sert à quelqu'un (#414).
     "dpe_page_view", "dpe_page_lookup",
     # Bascules de la carte : zones inondables (#377) et photo aérienne (#258).
-    "ppri_on", "ppri_off", "aerial_on", "aerial_off",
+    "ppri_on", "ppri_off", "aerial_on", "aerial_off", "prices_on", "prices_off",
 ))
 # A few values, so the label stays cheap: whose document was asked for
 # (building/dwelling), or what the DPE page found (found/lapsed/none).
