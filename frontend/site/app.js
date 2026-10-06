@@ -498,10 +498,13 @@ map.addControl(new AerialToggle(), "bottom-right");
 // chaque période compte au moins 10 ventes ; de près, chaque adresse vendue
 // avec son prix au m². La couleur est RELATIVE à ce qui est chargé (du moins
 // cher au plus cher du secteur), la légende dit l'échelle.
+// Affichés D'EMBLÉE : c'est la première chose qu'un agent cherche sur une
+// carte. Le bouton « Prix » les masque pour la visite ; rien n'est retenu sur
+// l'appareil (la politique de confidentialité le promet).
 const PRIX_ETAPES = ["#2c7bb6", "#ffffbf", "#d7191c"];
 const PRIX_COULEUR = ["interpolate", ["linear"], ["get", "med"], 2000, PRIX_ETAPES[0],
   3000, PRIX_ETAPES[1], 4500, PRIX_ETAPES[2]];
-const PRIX = { actif: false, points: new Map(), cellules: new Map(), enVol: new Set() };
+const PRIX = { actif: true, points: new Map(), cellules: new Map(), enVol: new Set() };
 const eurFr = (v) => Math.round(v).toLocaleString("fr-FR");
 
 function tuilesVisibles(z) {
@@ -586,13 +589,18 @@ class PriceToggle {
     this._btn = document.createElement("button");
     this._btn.className = "maplibregl-ctrl-icon aerial-toggle";
     this._btn.textContent = "Prix";
-    this._btn.title = "Afficher les prix de vente au m² et leur tendance (DVF)";
+    const etat = () => {
+      this._btn.style.background = PRIX.actif ? "#dceafd" : "";
+      this._btn.title = PRIX.actif ? "Masquer les prix de vente au m²"
+        : "Afficher les prix de vente au m² et leur tendance (DVF)";
+    };
+    etat();
     this._btn.onclick = () => {
       if (!m.getLayer("prix-cellules")) return;
       PRIX.actif = !PRIX.actif;
       for (const id of ["prix-cellules", "prix-cellules-texte", "prix-points", "prix-points-texte"])
         m.setLayoutProperty(id, "visibility", PRIX.actif ? "visible" : "none");
-      this._btn.style.background = PRIX.actif ? "#dceafd" : "";
+      etat();
       track(PRIX.actif ? "prices_on" : "prices_off");
       if (PRIX.actif) chargerPrix(); else legendePrix("");
     };
@@ -686,29 +694,31 @@ map.on("load", () => {
   // défaut, activée par le bouton 🌊. La couleur bleue/rouge est celle,
   // officielle, du zonage réglementaire — c'est Géorisques qui la dessine.
   // WMS 1.1.1 (SRS, pas d'ambiguïté d'axe) alimenté par la bbox des tuiles.
-  // Prix au m² sur la carte (#319), masqués tant que le bouton « Prix » n'est
-  // pas activé. Les cellules teintent le SOL, sous les volumes ; points et
+  // Prix au m² sur la carte (#319), affichés d'emblée ; le bouton « Prix »
+  // les masque. Les cellules teintent le SOL, sous les volumes ; points et
   // libellés passent au-dessus pour rester lisibles.
   const vide = { type: "FeatureCollection", features: [] };
+  const visPrix = PRIX.actif ? "visible" : "none";
   map.addSource("prix-cellules", { type: "geojson", data: vide });
   map.addSource("prix-points", { type: "geojson", data: vide });
   map.addLayer({ id: "prix-cellules", type: "fill", source: "prix-cellules",
-    minzoom: 12.5, maxzoom: 16.5, layout: { visibility: "none" },
+    minzoom: 12.5, maxzoom: 16.5, layout: { visibility: visPrix },
     paint: { "fill-color": PRIX_COULEUR, "fill-opacity": 0.35, "fill-outline-color": "rgba(255,255,255,0.6)" } },
     "bdnb-dpe-3d");
   map.addLayer({ id: "prix-cellules-texte", type: "symbol", source: "prix-cellules",
-    minzoom: 13.5, maxzoom: 16, layout: { visibility: "none", "text-field": ["get", "label"],
+    minzoom: 13.5, maxzoom: 16, layout: { visibility: visPrix, "text-field": ["get", "label"],
       "text-font": ["Noto Sans Bold"], "text-size": 11, "text-allow-overlap": false },
     paint: { "text-color": "#1a1a1a", "text-halo-color": "#ffffff", "text-halo-width": 1.6 } });
   map.addLayer({ id: "prix-points", type: "circle", source: "prix-points", minzoom: 15.5,
-    layout: { visibility: "none" },
+    layout: { visibility: visPrix },
     paint: { "circle-radius": 5, "circle-color": PRIX_COULEUR,
              "circle-stroke-color": "#ffffff", "circle-stroke-width": 1.2 } });
   map.addLayer({ id: "prix-points-texte", type: "symbol", source: "prix-points", minzoom: 16,
-    layout: { visibility: "none", "text-field": ["get", "label"], "text-font": ["Noto Sans Bold"],
+    layout: { visibility: visPrix, "text-field": ["get", "label"], "text-font": ["Noto Sans Bold"],
       "text-size": 11, "text-anchor": "bottom", "text-offset": [0, -0.7], "text-allow-overlap": false },
     paint: { "text-color": "#1a1a1a", "text-halo-color": "#ffffff", "text-halo-width": 1.6 } });
   map.on("moveend", chargerPrix);
+  chargerPrix();
 
   map.addSource("ppri", {
     type: "raster",
