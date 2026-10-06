@@ -492,6 +492,119 @@ class AerialToggle {
 }
 map.addControl(new AerialToggle(), "bottom-right");
 
+// --- Prix au m² sur la carte (#319) ---------------------------------------------
+// Les ventes DVF réelles, sans compte : de loin, des cellules d'environ 300 m
+// teintées par leur prix médian, avec la tendance 2021-22 → 2024-25 quand
+// chaque période compte au moins 10 ventes ; de près, chaque adresse vendue
+// avec son prix au m². La couleur est RELATIVE à ce qui est chargé (du moins
+// cher au plus cher du secteur), la légende dit l'échelle.
+const PRIX_ETAPES = ["#2c7bb6", "#ffffbf", "#d7191c"];
+const PRIX_COULEUR = ["interpolate", ["linear"], ["get", "med"], 2000, PRIX_ETAPES[0],
+  3000, PRIX_ETAPES[1], 4500, PRIX_ETAPES[2]];
+const PRIX = { actif: false, points: new Map(), cellules: new Map(), enVol: new Set() };
+const eurFr = (v) => Math.round(v).toLocaleString("fr-FR");
+
+function tuilesVisibles(z) {
+  const b = map.getBounds(), n = 2 ** z;
+  const xOf = (lon) => Math.floor((lon + 180) / 360 * n);
+  const yOf = (lat) => Math.floor((1 - Math.asinh(Math.tan(lat * Math.PI / 180)) / Math.PI) / 2 * n);
+  const out = [];
+  for (let x = xOf(b.getWest()); x <= xOf(b.getEast()); x++)
+    for (let y = yOf(b.getNorth()); y <= yOf(b.getSouth()); y++) out.push([x, y]);
+  return out.length > 36 ? [] : out;            // garde-fou : jamais une rafale de requêtes
+}
+
+async function chargerPrix() {
+  if (!PRIX.actif || mapDead) return;
+  const z = map.getZoom(), demandes = [];
+  if (z >= 12.5 && z < 16.5) for (const t of tuilesVisibles(12)) demandes.push(["cellules", "cells", ...t]);
+  if (z >= 15.5) for (const t of tuilesVisibles(14)) demandes.push(["points", "points", ...t]);
+  await Promise.all(demandes.map(async ([genre, chemin, x, y]) => {
+    const cle = `${x}/${y}`, cache = PRIX[genre];
+    if (cache.has(cle) || PRIX.enVol.has(genre + cle)) return;
+    PRIX.enVol.add(genre + cle);
+    try {
+      const r = await fetch(`${API}/prices/${chemin}/${x}/${y}.json`);
+      if (r.ok) cache.set(cle, await r.json());
+      while (cache.size > 80) cache.delete(cache.keys().next().value);
+    } catch { /* tuile indisponible : réessayée au prochain déplacement */ }
+    finally { PRIX.enVol.delete(genre + cle); }
+  }));
+  majPrix();
+}
+
+function majPrix() {
+  if (!map.getSource("prix-cellules")) return;
+  const cellules = [], points = [], valeurs = [];
+  for (const t of PRIX.cellules.values()) for (const [lon, lat, n, med, tend, type] of t) {
+    const evol = tend == null ? "" : ` ${tend > 1 ? "↗" : tend < -1 ? "↘" : "→"} ${tend > 0 ? "+" : ""}${tend} %`;
+    cellules.push({ type: "Feature", properties: { med, n,
+      label: `${eurFr(med)} €/m²\n${type === "M" ? "maisons" : "appart."}${evol}` },
+      geometry: { type: "Polygon", coordinates: [[[lon - 0.002, lat - 0.0015], [lon + 0.002, lat - 0.0015],
+        [lon + 0.002, lat + 0.0015], [lon - 0.002, lat + 0.0015], [lon - 0.002, lat - 0.0015]]] } });
+    valeurs.push(med);
+  }
+  const vus = new Set();
+  for (const t of PRIX.points.values()) for (const [lon, lat, n, med, an, dernier, type] of t) {
+    if (vus.has(lon + "," + lat)) continue;
+    vus.add(lon + "," + lat);
+    points.push({ type: "Feature", properties: { med, n,
+      label: n > 1 ? `${eurFr(med)} €/m²\n${n} ventes` : `${eurFr(dernier)} €/m²\n${an}` },
+      geometry: { type: "Point", coordinates: [lon, lat] } });
+    valeurs.push(med);
+  }
+  map.getSource("prix-cellules").setData({ type: "FeatureCollection", features: cellules });
+  map.getSource("prix-points").setData({ type: "FeatureCollection", features: points });
+  // Échelle de couleur RELATIVE au secteur chargé : 10e, 50e et 90e centiles.
+  if (valeurs.length >= 5) {
+    valeurs.sort((a, b) => a - b);
+    const q = (p) => valeurs[Math.floor(p * (valeurs.length - 1))];
+    const a = q(0.1), m = Math.max(q(0.5), a + 1), c = Math.max(q(0.9), m + 1);
+    const expr = ["interpolate", ["linear"], ["get", "med"], a, PRIX_ETAPES[0], m, PRIX_ETAPES[1], c, PRIX_ETAPES[2]];
+    map.setPaintProperty("prix-cellules", "fill-color", expr);
+    map.setPaintProperty("prix-points", "circle-color", expr);
+    legendePrix(`${eurFr(a)} → ${eurFr(c)} €/m²`);
+  } else {
+    legendePrix(map.getZoom() < 12.5 ? "zoomez pour voir les prix" : "peu de ventes ici");
+  }
+}
+
+let legendePrixEl = null;
+function legendePrix(texte) {
+  if (!PRIX.actif) { if (legendePrixEl) legendePrixEl.hidden = true; return; }
+  if (!legendePrixEl) {
+    legendePrixEl = document.createElement("div");
+    legendePrixEl.className = "prix-legende";
+    document.body.appendChild(legendePrixEl);
+  }
+  legendePrixEl.hidden = false;
+  legendePrixEl.innerHTML = `<span class="prix-degrade"></span> Prix de vente au m² (DVF 2021-2025) : ${texte}`;
+}
+
+class PriceToggle {
+  onAdd(m) {
+    this._btn = document.createElement("button");
+    this._btn.className = "maplibregl-ctrl-icon aerial-toggle";
+    this._btn.textContent = "Prix";
+    this._btn.title = "Afficher les prix de vente au m² et leur tendance (DVF)";
+    this._btn.onclick = () => {
+      if (!m.getLayer("prix-cellules")) return;
+      PRIX.actif = !PRIX.actif;
+      for (const id of ["prix-cellules", "prix-cellules-texte", "prix-points", "prix-points-texte"])
+        m.setLayoutProperty(id, "visibility", PRIX.actif ? "visible" : "none");
+      this._btn.style.background = PRIX.actif ? "#dceafd" : "";
+      track(PRIX.actif ? "prices_on" : "prices_off");
+      if (PRIX.actif) chargerPrix(); else legendePrix("");
+    };
+    this._el = document.createElement("div");
+    this._el.className = "maplibregl-ctrl maplibregl-ctrl-group";
+    this._el.appendChild(this._btn);
+    return this._el;
+  }
+  onRemove() { this._el.remove(); }
+}
+map.addControl(new PriceToggle(), "bottom-right");
+
 // --- 3D buildings colored by DPE class (BDNB open data, CSTB) -------------------
 const DPE_COLORS = ["match", ["get", "classe_bilan_dpe"],
   "A", "#009036", "B", "#52b153", "C", "#a5cc74", "D", "#f4e70f",
@@ -573,6 +686,30 @@ map.on("load", () => {
   // défaut, activée par le bouton 🌊. La couleur bleue/rouge est celle,
   // officielle, du zonage réglementaire — c'est Géorisques qui la dessine.
   // WMS 1.1.1 (SRS, pas d'ambiguïté d'axe) alimenté par la bbox des tuiles.
+  // Prix au m² sur la carte (#319), masqués tant que le bouton « Prix » n'est
+  // pas activé. Les cellules teintent le SOL, sous les volumes ; points et
+  // libellés passent au-dessus pour rester lisibles.
+  const vide = { type: "FeatureCollection", features: [] };
+  map.addSource("prix-cellules", { type: "geojson", data: vide });
+  map.addSource("prix-points", { type: "geojson", data: vide });
+  map.addLayer({ id: "prix-cellules", type: "fill", source: "prix-cellules",
+    minzoom: 12.5, maxzoom: 16.5, layout: { visibility: "none" },
+    paint: { "fill-color": PRIX_COULEUR, "fill-opacity": 0.35, "fill-outline-color": "rgba(255,255,255,0.6)" } },
+    "bdnb-dpe-3d");
+  map.addLayer({ id: "prix-cellules-texte", type: "symbol", source: "prix-cellules",
+    minzoom: 13.5, maxzoom: 16, layout: { visibility: "none", "text-field": ["get", "label"],
+      "text-font": ["Noto Sans Bold"], "text-size": 11, "text-allow-overlap": false },
+    paint: { "text-color": "#1a1a1a", "text-halo-color": "#ffffff", "text-halo-width": 1.6 } });
+  map.addLayer({ id: "prix-points", type: "circle", source: "prix-points", minzoom: 15.5,
+    layout: { visibility: "none" },
+    paint: { "circle-radius": 5, "circle-color": PRIX_COULEUR,
+             "circle-stroke-color": "#ffffff", "circle-stroke-width": 1.2 } });
+  map.addLayer({ id: "prix-points-texte", type: "symbol", source: "prix-points", minzoom: 16,
+    layout: { visibility: "none", "text-field": ["get", "label"], "text-font": ["Noto Sans Bold"],
+      "text-size": 11, "text-anchor": "bottom", "text-offset": [0, -0.7], "text-allow-overlap": false },
+    paint: { "text-color": "#1a1a1a", "text-halo-color": "#ffffff", "text-halo-width": 1.6 } });
+  map.on("moveend", chargerPrix);
+
   map.addSource("ppri", {
     type: "raster",
     tiles: ["https://www.georisques.gouv.fr/services?SERVICE=WMS&VERSION=1.1.1"

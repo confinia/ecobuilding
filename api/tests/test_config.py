@@ -777,6 +777,22 @@ def test_web_map_offers_the_ign_aerial_photo():
 
 
 @needs_repo
+def test_web_map_shows_prices_on_demand():
+    """#319: a Prix button shows DVF cells (tint under the 3D volumes, label
+    with the trend) and sold addresses (dot + label above), relative colour
+    scale with a legend, fonts the base style actually serves."""
+    app = (ROOT / "frontend/site/app.js").read_text()
+    assert "map.addControl(new PriceToggle()" in app
+    assert '"bdnb-dpe-3d");' in app[app.index('id: "prix-cellules", type: "fill"'):][:600]
+    assert app.count('"text-font": ["Noto Sans Bold"]') >= 2
+    assert "/prices/${chemin}/${x}/${y}.json" in app and "out.length > 36" in app
+    main = (ROOT / "api/app/main.py").read_text()
+    assert '"prices_on", "prices_off"' in main
+    sh = (ROOT / "deploy/bdnb-local-api.sh").read_text()
+    assert "deploy/dvf-prix-carte.sql" in sh
+
+
+@needs_repo
 def test_auth_buttons_never_depend_on_a_cdn():
     """#215: the sign-up path is the product's front door — it must survive a
     blocked CDN, a failed adapter import and an IdP hiccup."""
