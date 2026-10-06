@@ -976,6 +976,7 @@ const STREAM_PENDING = {
   official_dpe: "DPE officiel (ADEME)", local_taxes: "Fiscalité locale (DGFiP)",
   schools: "Écoles (annuaire)", prices: "Prix de vente (DVF)", rnb: "ID-RNB",
   dpe_spread: "DPE des logements (ADEME)", estimation: "Fourchette de prix (DVF)",
+  rent: "Loyers (Carte des loyers)",
 };
 async function consumeBuildingStream(response, searched) {
   const reader = response.body.getReader();
@@ -1282,6 +1283,30 @@ function blocFourchette(data) {
   </div>`;
 }
 
+// Loyers d'annonce de la commune (#518) : un MODÈLE d'annonces, charges
+// comprises, avec son intervalle. Rendement brut seulement à côté d'une
+// fourchette de prix de MAISON (la surface d'un appartement n'est pas sûre).
+function sectionLoyers(data) {
+  const r = data.rent;
+  if (!r) return "";
+  const v = (x) => x ? `${x.eur_m2.toLocaleString("fr-FR")} €/m² (${x.low.toLocaleString("fr-FR")} – ${x.high.toLocaleString("fr-FR")})${x.level === "maille" ? " *" : ""}` : null;
+  const e = data.estimation;
+  let rdt = null;
+  if (e?.type_local === "Maison" && r.mai && e.price?.mid) {
+    rdt = (r.mai.eur_m2 * e.surface_m2 * 12 * 100 / e.price.mid).toFixed(1).replace(".", ",") + " %";
+  }
+  const maille = ["app", "app12", "app3", "mai"].some((k) => r[k]?.level === "maille");
+  return `<h3>Loyers d'annonce (commune)</h3>
+    ${kv("Appartement", v(r.app))}
+    ${kv("Appartement 1-2 pièces", v(r.app12))}
+    ${kv("Appartement 3 pièces et plus", v(r.app3))}
+    ${kv("Maison", v(r.mai))}
+    ${kv("Rendement brut indicatif (maison)", rdt)}
+    <p class="hint">Loyers d'annonce charges comprises, modélisés pour la commune, avec l'intervalle à 95 %
+    (Carte des loyers ${r.year} : ${r.source || "ministère du Logement"}).${maille ? " * Peu d'annonces dans la commune : estimation appuyée sur des communes voisines." : ""}
+    ${rdt ? " Rendement brut = loyer annuel de la maison / prix médian observé, avant charges, taxes et vacance." : ""}</p>`;
+}
+
 function sectionPrix(data) {
   const p = data.prices;
   if (!p?.available) return "";
@@ -1464,6 +1489,7 @@ function renderPanel(s, data, opts) {
       ${sectionEcoles(data)}
       ${sectionEau(data)}
       ${sectionPrix(data)}
+    ${sectionLoyers(data)}
       <div id="streetview"></div>
     `, opts);
     loadStreetview(data.query?.lon, data.query?.lat);
@@ -1560,6 +1586,7 @@ function renderPanel(s, data, opts) {
     ${kv("Potentiel annuel", b.solar?.thermal_potential_kwh_y ? b.solar.thermal_potential_kwh_y + " kWh/an" : null)}
     ${kv("Productible photovoltaïque", data.solar_pv?.yield_kwh_per_kwc_y ? Math.round(data.solar_pv.yield_kwh_per_kwc_y) + " kWh/an par kWc (PVGIS)" : null)}
     ${sectionPrix(data)}
+    ${sectionLoyers(data)}
     <p><button id="report-btn" class="report-link" data-url="${API}/report/${encodeURIComponent(b.bdnb_id)}.pdf${reportParams.length ? "?" + reportParams.join("&") : ""}">📄 Fiche EcoBuilding (PDF) — pas le DPE</button></p>
     <p class="hint notdpe">${window.ecoDpe.NOT_THE_DPE}${data.official_dpe?.dpe_number
       ? ` <a href="${window.ecoDpe.ademeUrl(data.official_dpe.dpe_number)}" target="_blank" rel="noopener">Consulter le DPE officiel (ADEME)</a>.` : ""}</p>

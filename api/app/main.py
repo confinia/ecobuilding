@@ -1961,6 +1961,27 @@ with gzip.open(os.path.join(os.path.dirname(__file__), "rei.json.gz"), "rt",
     _REI = json.load(_rf)
 
 
+# Loyers d'annonce par commune (#518) : « Carte des loyers » du ministère,
+# extraite une fois par millésime par app/loyers_extract.py. Un MODÈLE
+# d'annonces, charges comprises — jamais le loyer signé de ce logement.
+with gzip.open(os.path.join(os.path.dirname(__file__), "loyers.json.gz"), "rt",
+               encoding="utf-8") as _lf:
+    _LOYERS = json.load(_lf)
+_LOYERS_TYPES = ("app", "app12", "app3", "mai")
+
+
+async def _loyers(insee):
+    """Loyer d'annonce prédit au m² (appartements, 1-2 p., 3 p. et plus,
+    maisons) avec l'intervalle à 95 %, le niveau du modèle (commune ou
+    regroupement de communes) et le nombre d'annonces. None hors couverture."""
+    c = _LOYERS["communes"].get(str(insee or ""))
+    if not c:
+        return None
+    return {"year": _LOYERS["year"], "source": _LOYERS.get("source"), **{
+        k: {"eur_m2": v[0], "low": v[1], "high": v[2], "level": v[3], "listings": v[4]}
+        for k, v in c.items() if k in _LOYERS_TYPES}}
+
+
 def _rei_commune(insee):
     """Paris, Lyon et Marseille n'ont qu'une ligne REI : l'arrondissement que
     donne la BDNB (75101, 69381, 13201) se rattache à la commune."""
@@ -2544,7 +2565,7 @@ async def building(
 _BLOCK_NAMES = ("prices", "area_risks", "groundwater", "solar_pv", "click_addr",
                 "water_network", "official_dpe", "local_taxes", "schools", "rnb",
                 "dpe_spread", "urbanisme", "ppri", "construction",
-                "address_buildings", "estimation")
+                "address_buildings", "estimation", "rent")
 
 
 def _building_block_coros(bdnb_id, lon, lat, row):
@@ -2559,7 +2580,8 @@ def _building_block_coros(bdnb_id, lon, lat, row):
             _plu_zone(lon, lat), _ppri_zone(lon, lat),
             _construction_years(bdnb_id),
             _buildings_at_address(bdnb_id, lon, lat),
-            _estimation(bdnb_id, lon, lat, row))
+            _estimation(bdnb_id, lon, lat, row),
+            _loyers(commune))
 
 
 
@@ -2601,6 +2623,8 @@ def _assemble_building(bdnb_id, lon, lat, row, v):
     if construction and construction.get("permit"):
         sources.append("Sitadel (SDES) — permis de construire — Licence Ouverte")
     market_dia = _dia_market(lon, lat, row.get("code_commune_insee"))
+    if v.get("rent"):
+        sources.append(f"Carte des loyers {v['rent']['year']} ({v['rent'].get('source') or 'ANIL / ministère du Logement'}) — Licence Ouverte")
     if rnb:
         sources.append("Référentiel National des Bâtiments (RNB) — Licence Ouverte")
     if market_dia:
@@ -2629,6 +2653,7 @@ def _assemble_building(bdnb_id, lon, lat, row, v):
         "construction": construction,
         "address_buildings": address_buildings,
         "estimation": v.get("estimation"),
+        "rent": v.get("rent"),
         "sources": sources,
     }
     return result
