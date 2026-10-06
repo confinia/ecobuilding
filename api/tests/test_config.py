@@ -818,6 +818,12 @@ def test_web_map_shows_prices_by_default():
     assert '"prices_on", "prices_off"' in main
     sh = (ROOT / "deploy/bdnb-local-api.sh").read_text()
     assert "deploy/dvf-prix-carte.sql" in sh
+    # #530: a ~1.2 km grid for zoom 9.5-12.5, same shape as the small cells.
+    sql = (ROOT / "deploy/dvf-prix-carte.sql").read_text()
+    assert "MATERIALIZED VIEW IF NOT EXISTS dvf.prix_cellule_large" in sql
+    assert "/ 0.016) AS cx" in sql and "/ 0.012) AS cy" in sql
+    assert "FUNCTION dvf.prix_cellules_large(" in sql
+    assert "GRANT EXECUTE ON FUNCTION dvf.prix_cellules_large(" in sql
 
 
 @needs_repo
