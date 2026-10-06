@@ -420,6 +420,27 @@ def test_frontend_deep_links_to_a_search():
 
 
 @needs_repo
+def test_dvf_sales_leave_out_deeds_priced_for_more_than_one_home():
+    """#528: a deed that also sells a shop or a whole building repeats its
+    total price on the home's row (45 745 €/m² in Auterive). Such deeds and
+    sales beyond 3x the commune median (with >= 10 sales) are left out; the
+    rule is versioned so the table is rebuilt beside the live one and swapped,
+    and the cached price tiles are purged after a rebuild."""
+    sql = (ROOT / "deploy/dvf-around.sql").read_text()
+    assert "type_local = 'Local industriel. commercial ou assimilé'" in sql
+    assert "NOT EXISTS (SELECT 1 FROM mixte" in sql
+    assert "BETWEEN d.med / 3 AND d.med * 3" in sql and "d.n < 10" in sql
+    assert "obj_description(to_regclass('dvf.vente_logement')" in sql
+    construit = sql.index("CREATE TABLE dvf.vente_logement_neuve AS")
+    echange = sql.index("ALTER TABLE dvf.vente_logement_neuve RENAME TO vente_logement")
+    assert construit < sql.index("DROP TABLE IF EXISTS dvf.vente_logement CASCADE") < echange
+    assert sql.index("GRANT SELECT ON dvf.vente_logement TO bdnb_anon") > echange
+    sh = (ROOT / "deploy/bdnb-local-api.sh").read_text()
+    assert "rm -rf data/tiles/prix sandbox_stack/data/tiles/prix" in sh
+    assert sh.index("deploy/dvf-around.sql") < sh.index("deploy/dvf-prix-carte.sql")
+
+
+@needs_repo
 def test_frontend_loading_feedback_is_wired():
     """#150: every loading path shows a spinner. #506: the PDF wait shows the
     server's REAL stages, ticked as the server finishes them (progress token,
