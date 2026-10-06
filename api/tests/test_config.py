@@ -807,13 +807,21 @@ def test_web_map_shows_prices_by_default():
     assert "map.addControl(new PriceToggle()" in app
     assert "const PRIX = { actif: true," in app
     couches = app[app.index('map.addSource("prix-cellules"'):app.index('map.on("moveend", chargerPrix);')]
-    assert couches.count("visibility: visPrix") == 4 and 'visibility: "none"' not in couches
+    assert couches.count("visibility: visPrix") == 6 and 'visibility: "none"' not in couches
     assert 'map.on("moveend", chargerPrix);\n  chargerPrix();' in app
     bouton = app[app.index("class PriceToggle"):app.index("map.addControl(new PriceToggle()")]
     assert "localStorage" not in bouton
     assert '"bdnb-dpe-3d");' in app[app.index('id: "prix-cellules", type: "fill"'):][:600]
     assert app.count('"text-font": ["Noto Sans Bold"]') >= 2
     assert "/prices/${chemin}/${x}/${y}.json" in app and "out.length > 36" in app
+    # #530: ~1.2 km cells from zoom 9.5, z9 tiles, their own layer under the
+    # small cells; the colour scale only counts the layers visible at the zoom.
+    assert 'demandes.push(["larges", "large", ...t])' in app and "tuilesVisibles(9)" in app
+    assert 'id: "prix-larges", type: "fill"' in app and "minzoom: 9.5, maxzoom: 12.5" in app
+    assert "if (z < 12.5) valeurs.push(med)" in app
+    assert 'z < 9.5 ? "zoomez pour voir les prix"' in app
+    main = (ROOT / "api/app/main.py").read_text()
+    assert '"/v1/prices/large/{x}/{y}.json"' in main and '_prix_tuile("large", 9' in main
     main = (ROOT / "api/app/main.py").read_text()
     assert '"prices_on", "prices_off"' in main
     sh = (ROOT / "deploy/bdnb-local-api.sh").read_text()
