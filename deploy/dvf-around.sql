@@ -9,8 +9,9 @@
 -- same pages, a GiST index for the radius and a covering index for the yearly
 -- commune medians.
 --
--- Built ONCE per DVF import (IF NOT EXISTS: a re-run costs nothing); after a
--- new DVF import, DROP TABLE dvf.vente_logement and run bdnb-stack at night.
+-- Built ONCE per rule (see « WHICH SALES COUNT » below: a re-run costs
+-- nothing); after a new DVF import, DROP TABLE dvf.vente_logement CASCADE and
+-- run bdnb-stack at night.
 -- Applied by deploy/bdnb-local-api.sh (bdnb-stack workflow), never by hand.
 
 -- MÉMOIRE (2026-10-05) : le conteneur bdnb-db est plafonné à 2 Go et
@@ -23,29 +24,70 @@ SET max_parallel_maintenance_workers = 0;
 SET work_mem = '16MB';
 SET maintenance_work_mem = '64MB';
 
-CREATE TABLE IF NOT EXISTS dvf.vente_logement AS
-WITH m AS (
-  SELECT date_mutation, code_commune, type_local, valeur_fonciere,
-         surface_reelle_bati, nombre_pieces_principales, longitude, latitude,
-         count(*) OVER (PARTITION BY id_mutation) AS n_in_mutation
-  FROM dvf.mutation
-  WHERE type_local IN ('Appartement', 'Maison')
-    AND surface_reelle_bati > 5
-    AND valeur_fonciere >= 10000
-    AND valeur_fonciere / surface_reelle_bati BETWEEN 200 AND 200000
-)
-SELECT date_mutation, code_commune, type_local,
-       valeur_fonciere, surface_reelle_bati, nombre_pieces_principales,
-       round(valeur_fonciere / surface_reelle_bati)::int AS eur_m2,
-       ST_SetSRID(ST_MakePoint(longitude, latitude), 4326)::geography AS geog
-FROM m
-WHERE n_in_mutation = 1 AND longitude IS NOT NULL AND latitude IS NOT NULL
-ORDER BY ST_GeoHash(ST_SetSRID(ST_MakePoint(longitude, latitude), 4326), 7);
+-- WHICH SALES COUNT (#528). A deed can sell a home together with a shop, a
+-- warehouse or a whole building: DVF repeats the deed's TOTAL price on each
+-- row. Counting only the housing rows kept such deeds as single-home sales —
+-- 45 745 €/m² for a 47 m² house sold with a supermarket in Auterive. So:
+--   1. a deed that includes a « Local industriel. commercial ou assimilé » is
+--      left out (the price is not the home's);
+--   2. a sale more than 3× above or below the commune median for its type is
+--      left out, where the commune has at least 10 such sales (a whole
+--      building described as one flat: 2.8 M€ for 38 m² in Toulouse).
+-- The rule is VERSIONED by the table comment: a table built under an older
+-- rule is rebuilt BESIDE the live one and swapped in at the end, so the
+-- functions that read it never meet a missing table. dvf.prix_cellule goes
+-- with the old table (CASCADE) and dvf-prix-carte.sql rebuilds it next.
+DO $$
+DECLARE
+  regle CONSTANT text := 'vente_logement: deeds without commercial premises, within 3x the commune median (#528)';
+BEGIN
+  IF coalesce(obj_description(to_regclass('dvf.vente_logement'), 'pg_class'), '') = regle THEN
+    RETURN;
+  END IF;
+  DROP TABLE IF EXISTS dvf.vente_logement_neuve;
+  CREATE TABLE dvf.vente_logement_neuve AS
+  WITH mixte AS (
+    SELECT DISTINCT id_mutation FROM dvf.mutation
+    WHERE type_local = 'Local industriel. commercial ou assimilé'
+  ), m AS (
+    SELECT id_mutation, date_mutation, code_commune, type_local, valeur_fonciere,
+           surface_reelle_bati, nombre_pieces_principales, longitude, latitude,
+           count(*) OVER (PARTITION BY id_mutation) AS n_in_mutation
+    FROM dvf.mutation
+    WHERE type_local IN ('Appartement', 'Maison')
+      AND surface_reelle_bati > 5
+      AND valeur_fonciere >= 10000
+      AND valeur_fonciere / surface_reelle_bati BETWEEN 200 AND 200000
+  ), seule AS (
+    SELECT * FROM m
+    WHERE n_in_mutation = 1 AND longitude IS NOT NULL AND latitude IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM mixte x WHERE x.id_mutation = m.id_mutation)
+  ), mediane AS (
+    SELECT code_commune, type_local, count(*) AS n,
+           percentile_cont(0.5) WITHIN GROUP (ORDER BY valeur_fonciere / surface_reelle_bati) AS med
+    FROM seule GROUP BY 1, 2
+  )
+  SELECT s.date_mutation, s.code_commune, s.type_local,
+         s.valeur_fonciere, s.surface_reelle_bati, s.nombre_pieces_principales,
+         round(s.valeur_fonciere / s.surface_reelle_bati)::int AS eur_m2,
+         ST_SetSRID(ST_MakePoint(s.longitude, s.latitude), 4326)::geography AS geog
+  FROM seule s JOIN mediane d USING (code_commune, type_local)
+  WHERE d.n < 10
+     OR s.valeur_fonciere / s.surface_reelle_bati BETWEEN d.med / 3 AND d.med * 3
+  ORDER BY ST_GeoHash(ST_SetSRID(ST_MakePoint(s.longitude, s.latitude), 4326), 7);
 
-CREATE INDEX IF NOT EXISTS vente_logement_geog_idx
-  ON dvf.vente_logement USING gist (geog);
-CREATE INDEX IF NOT EXISTS vente_logement_commune_idx
-  ON dvf.vente_logement (code_commune, type_local, date_mutation) INCLUDE (eur_m2);
+  CREATE INDEX vente_logement_neuve_geog_idx
+    ON dvf.vente_logement_neuve USING gist (geog);
+  CREATE INDEX vente_logement_neuve_commune_idx
+    ON dvf.vente_logement_neuve (code_commune, type_local, date_mutation) INCLUDE (eur_m2);
+
+  DROP TABLE IF EXISTS dvf.vente_logement CASCADE;
+  ALTER TABLE dvf.vente_logement_neuve RENAME TO vente_logement;
+  ALTER INDEX dvf.vente_logement_neuve_geog_idx RENAME TO vente_logement_geog_idx;
+  ALTER INDEX dvf.vente_logement_neuve_commune_idx RENAME TO vente_logement_commune_idx;
+  EXECUTE format('COMMENT ON TABLE dvf.vente_logement IS %L', regle);
+END $$;
+
 -- Index-only scans need a fresh visibility map.
 VACUUM ANALYZE dvf.vente_logement;
 GRANT SELECT ON dvf.vente_logement TO bdnb_anon;
