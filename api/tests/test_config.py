@@ -420,6 +420,20 @@ def test_frontend_deep_links_to_a_search():
 
 
 @needs_repo
+def test_web_map_selects_nothing_on_arrival_and_never_on_a_drag():
+    """#525: no building is opened by default; the first camera stays, a fiche
+    opens only from ?b=, a search link, a click or a search. #526: a click
+    that ends after the camera moved (pan, zoom, tilt) selects nothing."""
+    app = (ROOT / "frontend/site/app.js").read_text()
+    assert "bdnb_id" not in app[app.index("const SHOWCASE = {"):][:200]
+    assert "showcase_default" not in app
+    assert "openBuildingById(urlBuilding, c.lng, c.lat)" in app
+    clic = app[app.index('map.on("click", "bdnb-dpe-3d"'):][:120]
+    assert "if (carteBougee()) return;" in clic
+    assert 'addEventListener("pointerdown"' in app
+
+
+@needs_repo
 def test_frontend_loading_feedback_is_wired():
     """#150: every loading path shows a spinner. #506: the PDF wait shows the
     server's REAL stages, ticked as the server finishes them (progress token,
