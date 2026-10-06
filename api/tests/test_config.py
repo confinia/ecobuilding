@@ -420,6 +420,32 @@ def test_frontend_deep_links_to_a_search():
 
 
 @needs_repo
+def test_bdnb_freshness_compares_to_the_latest_published_millesime():
+    """#401: Grafana says whether a newer BDNB millésime is PUBLISHED (daily
+    data.gouv.fr check into meta.upstream), not the age of ours. Dashboards
+    read addresses through meta.adresse_batiment, re-pointed on the current
+    millésime: a schema name in a panel breaks at the next restore."""
+    import re as _re
+
+    for f in (ROOT / "monitoring/grafana/dashboards").glob("*.json"):
+        assert not _re.search(r"bdnb_\d{4}_\d{2}_", f.read_text()), f.name
+    sql = (ROOT / "deploy/data-updates-view.sql").read_text()
+    assert "CREATE TABLE IF NOT EXISTS meta.upstream" in sql
+    assert "CREATE OR REPLACE VIEW meta.adresse_batiment" in sql and "%I.batiment_groupe_adresse" in sql
+    assert "GRANT SELECT ON meta.adresse_batiment TO grafana_ro" in sql
+    assert "AS retard" in sql
+    sh = (ROOT / "deploy/data-upstream-check.sh").read_text()
+    assert "data.gouv.fr/api/1/datasets/base-de-donnees-nationale-des-batiments" in sh
+    assert "deploy/data-updates-view.sql" in sh and "meta.upstream" in sh
+    assert "deploy/data-updates-view.sql" in (ROOT / "deploy/bdnb-local-api.sh").read_text()
+    wf = (ROOT / ".github/workflows/data-upstream-check.yml").read_text()
+    assert "schedule:" in wf and "ci-record.sh" in wf
+    assert "rsync" not in wf                  # never syncs main into the deployed tree
+    data = (ROOT / "monitoring/grafana/dashboards/data-updates.json").read_text()
+    assert "SELECT retard AS value FROM meta.data_updates" in data
+
+
+@needs_repo
 def test_frontend_loading_feedback_is_wired():
     """#150: every loading path shows a spinner. #506: the PDF wait shows the
     server's REAL stages, ticked as the server finishes them (progress token,

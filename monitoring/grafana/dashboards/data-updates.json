@@ -26,12 +26,12 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "### Données — mises à jour\nFraîcheur des données **stockées** (snapshots) servies par EcoBuilding. Les sources **live** (Géorisques, PLU/GPU, adresses BAN, coûts DPE ADEME, Hub'Eau, PVGIS…) sont interrogées en temps réel et ne figurent pas ici. La date d'import DVF n'est pas encore suivie ([#401])."
+        "content": "### Données — mises à jour\nFraîcheur des données **stockées** (snapshots) servies par EcoBuilding. La dernière version **publiée** du millésime BDNB est relevée chaque jour sur data.gouv.fr ([#401]) : c'est l'écart avec elle qui compte, pas l'âge du millésime. Les sources **live** (Géorisques, PLU/GPU, adresses BAN, coûts DPE ADEME, Hub'Eau, PVGIS…) sont interrogées en temps réel et ne figurent pas ici. La date d'import DVF n'est pas encore suivie ([#401])."
       }
     },
     {
       "type": "stat",
-      "title": "Bâtiments (BDNB) — âge du millésime (jours)",
+      "title": "Bâtiments (BDNB) — face à la dernière version publiée",
       "datasource": {
         "type": "postgres",
         "uid": "vues"
@@ -57,15 +57,39 @@
                 "value": null
               },
               {
-                "color": "yellow",
-                "value": 180
-              },
-              {
                 "color": "red",
-                "value": 270
+                "value": 1
               }
             ]
-          }
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "à jour",
+                  "color": "green",
+                  "index": 0
+                },
+                "1": {
+                  "text": "nouvelle version publiée",
+                  "color": "red",
+                  "index": 1
+                }
+              }
+            },
+            {
+              "type": "special",
+              "options": {
+                "match": "null",
+                "result": {
+                  "text": "non vérifié",
+                  "color": "orange",
+                  "index": 2
+                }
+              }
+            }
+          ]
         },
         "overrides": []
       },
@@ -79,7 +103,7 @@
         },
         "colorMode": "background",
         "graphMode": "none",
-        "textMode": "value_and_name",
+        "textMode": "value",
         "justifyMode": "center"
       },
       "targets": [
@@ -87,13 +111,14 @@
           "refId": "A",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT age_jours AS value FROM meta.data_updates WHERE source = 'Bâtiments (BDNB)'",
+          "rawSql": "SELECT retard AS value FROM meta.data_updates WHERE source = 'Bâtiments (BDNB)'",
           "datasource": {
             "type": "postgres",
             "uid": "vues"
           }
         }
-      ]
+      ],
+      "description": "Notre millésime comparé au dernier publié sur data.gouv.fr, relevé chaque jour par le workflow data-upstream-check. Rouge : un nouveau millésime attend sa restauration (bdnb-import.yml, de nuit, ~200 Go)."
     },
     {
       "type": "stat",
@@ -230,7 +255,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "Âge (jours)"
+              "options": "Retard"
             },
             "properties": [
               {
@@ -238,6 +263,37 @@
                 "value": {
                   "type": "color-background"
                 }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": "à jour",
+                        "color": "green",
+                        "index": 0
+                      },
+                      "1": {
+                        "text": "nouvelle version publiée",
+                        "color": "red",
+                        "index": 1
+                      }
+                    }
+                  },
+                  {
+                    "type": "special",
+                    "options": {
+                      "match": "null",
+                      "result": {
+                        "text": "non vérifié",
+                        "color": "orange",
+                        "index": 2
+                      }
+                    }
+                  }
+                ]
               },
               {
                 "id": "thresholds",
@@ -249,12 +305,8 @@
                       "value": null
                     },
                     {
-                      "color": "yellow",
-                      "value": 180
-                    },
-                    {
                       "color": "red",
-                      "value": 270
+                      "value": 1
                     }
                   ]
                 }
@@ -275,7 +327,7 @@
           "refId": "A",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT source AS \"Source\", version AS \"Version / couverture\", lignes AS \"Lignes\", as_of AS \"À jour au\", age_jours AS \"Âge (jours)\" FROM meta.data_updates ORDER BY ord",
+          "rawSql": "SELECT source AS \"Source\", version AS \"Version / couverture\", publiee AS \"Dernière publiée\", retard AS \"Retard\", lignes AS \"Lignes\", as_of AS \"À jour au\", age_jours AS \"Âge (jours)\", verifie_le AS \"Vérifié le\" FROM meta.data_updates ORDER BY ord",
           "datasource": {
             "type": "postgres",
             "uid": "vues"

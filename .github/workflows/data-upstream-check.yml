@@ -1,0 +1,33 @@
+# #401: daily check of the latest PUBLISHED BDNB millésime (data.gouv.fr API),
+# written to meta.upstream so Grafana shows whether we are behind it. Reads one
+# small JSON document and replays an idempotent view file: safe at any hour.
+# Never loads data — the BDNB restore stays the operator's bdnb-import run.
+name: data-upstream-check
+on:
+  schedule:
+    - cron: "17 5 * * *"      # 05:17 UTC, once a day
+  workflow_dispatch:
+
+concurrency:
+  group: vm-deploy            # never while a restore or a deploy runs
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: [self-hosted, vm, ecobuilding]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      # Runs from the checkout, not from ~/projects/ecobuilding: a scheduled
+      # check must not sync main into the deployed tree.
+      # ssh localhost: see #144 — helpers must run in a logind session.
+      - name: Record the latest published BDNB millésime
+        run: ssh -o BatchMode=yes localhost "cd '${{ github.workspace }}' && ./deploy/data-upstream-check.sh"
+
+      - name: Record the run for Grafana
+        if: always()
+        run: ssh -o BatchMode=yes localhost "cd '${{ github.workspace }}' && ./deploy/ci-record.sh 'data-upstream-check' '${{ github.ref_name }}' '${{ github.run_id }}' '${{ job.status }}' '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'"

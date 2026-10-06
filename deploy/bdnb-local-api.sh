@@ -189,6 +189,12 @@ else
   echo "   dvf.mutation absent (run deploy/dvf-import.sh first) — skipped"
 fi
 
+echo "== 2c. freshness view and the dashboards' address view (#403, #401)"
+# Re-pointed on the current millésime here too, so a fresh restore shows
+# addresses in Grafana at once, not at the next daily upstream check.
+podman exec -i ecobuilding-bdnb_bdnb-db_1 psql -U bdnb -d bdnb -q -v ON_ERROR_STOP=1 \
+  < deploy/data-updates-view.sql
+
 echo "== 3. statistics (autovacuum is off on this mirror)"
 for T in batiment_groupe batiment_groupe_adresse batiment_groupe_risques \
          batiment_groupe_ffo_bat batiment_groupe_bdtopo_bat \
