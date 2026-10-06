@@ -777,12 +777,19 @@ def test_web_map_offers_the_ign_aerial_photo():
 
 
 @needs_repo
-def test_web_map_shows_prices_on_demand():
-    """#319: a Prix button shows DVF cells (tint under the 3D volumes, label
-    with the trend) and sold addresses (dot + label above), relative colour
-    scale with a legend, fonts the base style actually serves."""
+def test_web_map_shows_prices_by_default():
+    """#319: DVF cells (tint under the 3D volumes, label with the trend) and
+    sold addresses (dot + label above) show from the first load; the Prix
+    button hides them for the visit, nothing stored on the device. Relative
+    colour scale with a legend, fonts the base style actually serves."""
     app = (ROOT / "frontend/site/app.js").read_text()
     assert "map.addControl(new PriceToggle()" in app
+    assert "const PRIX = { actif: true," in app
+    couches = app[app.index('map.addSource("prix-cellules"'):app.index('map.on("moveend", chargerPrix);')]
+    assert couches.count("visibility: visPrix") == 4 and 'visibility: "none"' not in couches
+    assert 'map.on("moveend", chargerPrix);\n  chargerPrix();' in app
+    bouton = app[app.index("class PriceToggle"):app.index("map.addControl(new PriceToggle()")]
+    assert "localStorage" not in bouton
     assert '"bdnb-dpe-3d");' in app[app.index('id: "prix-cellules", type: "fill"'):][:600]
     assert app.count('"text-font": ["Noto Sans Bold"]') >= 2
     assert "/prices/${chemin}/${x}/${y}.json" in app and "out.length > 36" in app
