@@ -92,6 +92,45 @@ def test_suggest_ranks_an_exact_address_above_weak_local_matches(monkeypatch):
     assert len(labels) == 6
 
 
+def test_prices_carry_the_market_by_rooms(monkeypatch):
+    """#286: the commune's medians by number of rooms ride on `prices.rooms`
+    (plus `rooms_since`); an empty map is kept as `{}` (no size reached 10
+    sales: the fiche says so), and a DVF function from before #286 leaves the
+    key out. The PDF renders the table for the building's type only, and the
+    "not enough sales" line on an empty map."""
+    import app.report as report
+    lignes = {"Appartement": [{"rooms": 1, "n": 1923, "surface_m2": 23, "price": 89400, "eur_m2": 3821},
+                              {"rooms": 5, "n": 371, "surface_m2": 103, "price": 290000, "eur_m2": 2631}],
+              "Maison": [{"rooms": 4, "n": 349, "surface_m2": 85, "price": 335000, "eur_m2": 3923}]}
+    reponses = {}
+
+    async def fake_prices(bdnb_id):
+        return {"available": True, "sales": [], "commune_eur_m2": {}}
+
+    async def fake_around(lon, lat, commune):
+        return reponses[commune]
+    monkeypatch.setattr(main, "_dvf_prices", fake_prices)
+    monkeypatch.setattr(main, "_dvf_around", fake_around)
+
+    reponses["34172"] = {"radius_m": 250, "n": 12, "sales": [], "area_eur_m2": {}, "trend": {},
+                         "rooms": lignes, "rooms_since": "2023-10-07"}
+    out = asyncio.run(main._prix_complets("bdnb-bg-X", 3.87, 43.61, "34172"))
+    assert out["rooms"] == lignes and out["rooms_since"] == "2023-10-07"
+
+    reponses["31316"] = {"radius_m": 1000, "n": 10, "sales": [], "area_eur_m2": {}, "trend": {}, "rooms": {}}
+    assert asyncio.run(main._prix_complets("bdnb-bg-X", 0.94, 43.07, "31316"))["rooms"] == {}
+
+    reponses["57463"] = {"radius_m": 250, "n": 10, "sales": [], "area_eur_m2": {}, "trend": {}}
+    assert "rooms" not in asyncio.run(main._prix_complets("bdnb-bg-X", 6.17, 49.11, "57463"))
+
+    html = report._marche_html({"commune_code": "34172", "rooms": lignes}, "Appartement")
+    assert html.count("<table") == 1 and "appartements vendus dans la commune" in html
+    assert "5 pièces et plus" in html and "89 400" in html and "2 631" in html
+    assert report._marche_html({"commune_code": "34172", "rooms": lignes}, None).count("<table") == 2
+    assert "moins de 10 ventes par taille" in report._marche_html({"commune_code": "31316", "rooms": {}}, "Maison")
+    assert report._marche_html({"commune_code": "57463"}, "Maison") == ""
+
+
 def test_events_beacon():
     r = client.post("/v1/events", json={"event": "ci_test"})
     assert r.status_code == 204

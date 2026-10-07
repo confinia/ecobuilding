@@ -191,6 +191,32 @@ def _autour_html(p: dict) -> str:
     return out
 
 
+def _marche_html(p: dict, type_local: str | None = None) -> str:
+    """Le marché ici (#286) : médianes par nombre de pièces dans la commune
+    sur trois ans, pour le type du bien (les deux types si inconnu). Le
+    serveur ne sert pas une ligne de moins de 10 ventes ; la fiche le dit."""
+    if "rooms" not in p:
+        return ""
+    marche = p.get("rooms") or {}
+    types = [type_local] if type_local and marche.get(type_local) else [t for t in ("Maison", "Appartement") if marche.get(t)]
+    lib_commune = T("l'arrondissement") if _est_arrondissement(p.get("commune_code")) else T("la commune")
+    if not types:
+        return ('<p class="meta">' + T("Le marché ici par nombre de pièces : moins de 10 ventes par taille dans {commune} sur trois ans — pas de médiane publiée sur si peu.").format(commune=lib_commune) + '</p>')
+    out = ""
+    for t in types:
+        rows = "".join(
+            f'<tr><td>{T("5 pièces et plus") if l["rooms"] >= 5 else str(l["rooms"]) + " " + T("p.")}</td>'
+            f'<td>{l["surface_m2"]} m²</td><td>{_eur(l["price"])} €</td><td>{_eur(l["eur_m2"])} €/m²</td><td>{l["n"]}</td></tr>'
+            for l in marche[t])
+        titre = T("Le marché ici : {type} vendus dans {commune} sur trois ans").format(
+            type=T("maisons") if t == "Maison" else T("appartements"), commune=lib_commune)
+        out += (f'<p class="meta">{titre}</p><table class="sales"><tr><td class="k">{T("Pièces")}</td>'
+                f'<td class="k">{T("Surface médiane")}</td><td class="k">{T("Prix médian")}</td>'
+                f'<td class="k">€/m² {T("médian")}</td><td class="k">{T("Ventes")}</td></tr>{rows}</table>')
+    out += ('<p class="meta">' + T("Médianes par nombre de pièces (DVF) ; une ligne de moins de 10 ventes n'est pas publiée. Une médiane communale gomme les écarts entre quartiers.") + '</p>')
+    return out
+
+
 def _fourchette_html(e: dict | None, classe: str | None = None) -> str:
     """Fourchette de prix OBSERVÉE (#429) : ventes comparables, jamais une
     estimation. Le total pour une maison seulement (la surface d'un
@@ -306,7 +332,7 @@ def _prices_html(p: dict | None, fiche_logement: bool = False,
             + '<p>' + (T("Prix médian dans l'arrondissement : <strong>{med}</strong>")
                        if _est_arrondissement(p.get("commune_code"))
                        else T("Prix médian dans la commune : <strong>{med}</strong>")).format(med=med_txt)
-            + f'</p>{_autour_html(p)}{sales_tbl}'
+            + f'</p>{_marche_html(p, (estimation or {}).get("type_local"))}{_autour_html(p)}{sales_tbl}'
             + '<p class="meta">'
             + T("€/m² indicatif, calculé sur les ventes d'un seul local. "
                 "Transactions réelles enregistrées par la DGFiP.") + '</p>')
@@ -1558,6 +1584,14 @@ _EN = {
     "Maison": "House",
     "Appartement": "Flat",
     "Ventes les plus récentes autour du bâtiment": "Most recent sales around the building",
+    "Le marché ici : {type} vendus dans {commune} sur trois ans": "The market here: {type} sold in {commune} over three years",
+    "maisons": "houses", "appartements": "flats", "la commune": "the commune", "l'arrondissement": "the arrondissement",
+    "Le marché ici par nombre de pièces : moins de 10 ventes par taille dans {commune} sur trois ans — pas de médiane publiée sur si peu.":
+        "The market here by number of rooms: fewer than 10 sales per size in {commune} over three years — no median published on so few.",
+    "5 pièces et plus": "5 rooms and more", "p.": "rooms", "Pièces": "Rooms", "Surface médiane": "Median area",
+    "Prix médian": "Median price", "médian": "median", "Ventes": "Sales",
+    "Médianes par nombre de pièces (DVF) ; une ligne de moins de 10 ventes n'est pas publiée. Une médiane communale gomme les écarts entre quartiers.":
+        "Medians by number of rooms (DVF); a line with fewer than 10 sales is not published. A commune-wide median hides differences between neighbourhoods.",
     "Distance": "Distance",
     "Prix médian dans la commune : <strong>{med}</strong>":
         "Median price in the municipality: <strong>{med}</strong>",

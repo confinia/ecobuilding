@@ -132,6 +132,22 @@ BEGIN
       FROM dvf.vente_logement
       WHERE commune IS NOT NULL AND code_commune = commune
       GROUP BY 1, 2 HAVING count(*) >= 10
+    ),
+    -- Le marché ici (#286) : par type et nombre de pièces (5 = « 5 et plus »),
+    -- dans la commune, sur trois ans — surface, prix et €/m² médians. Une
+    -- ligne de moins de 10 ventes n'est pas publiée : une médiane sur trois
+    -- ventes n'est pas un marché. Pas d'index dédié : la table est rangée par
+    -- geohash, les 15 500 ventes de Toulouse tiennent en 549 blocs (14 ms).
+    commune_pieces AS (
+      SELECT type_local, LEAST(nombre_pieces_principales, 5) AS pieces, count(*) AS n,
+             round(percentile_cont(0.5) WITHIN GROUP (ORDER BY surface_reelle_bati))::int AS surface,
+             round(percentile_cont(0.5) WITHIN GROUP (ORDER BY valeur_fonciere))::int AS prix,
+             round(percentile_cont(0.5) WITHIN GROUP (ORDER BY eur_m2))::int AS eur_m2
+      FROM dvf.vente_logement
+      WHERE commune IS NOT NULL AND code_commune = commune
+        AND date_mutation >= current_date - interval '3 years'
+        AND nombre_pieces_principales BETWEEN 1 AND 30
+      GROUP BY 1, 2 HAVING count(*) >= 10
     )
     SELECT jsonb_build_object(
       'radius_m', rayon,
@@ -153,6 +169,12 @@ BEGIN
             SELECT type_local, jsonb_agg(jsonb_build_object('year', annee, 'median', median, 'n', n)
                                          ORDER BY annee) AS serie
             FROM commune_annees GROUP BY type_local) t), '{}'::jsonb)),
+      'rooms', COALESCE((SELECT jsonb_object_agg(type_local, lignes) FROM (
+          SELECT type_local, jsonb_agg(jsonb_build_object('rooms', pieces, 'n', n, 'surface_m2', surface,
+                                                          'price', prix, 'eur_m2', eur_m2)
+                                       ORDER BY pieces) AS lignes
+          FROM commune_pieces GROUP BY type_local) t), '{}'::jsonb),
+      'rooms_since', to_char(current_date - interval '3 years', 'YYYY-MM-DD'),
       'source', 'DVF (DGFiP) / Etalab — Licence Ouverte 2.0'
     )
   );

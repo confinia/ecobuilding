@@ -944,3 +944,25 @@ def test_les_deux_annonces_de_droits_disent_le_meme_droit_quotidien():
     pri = c.get("/v1/pricing").json()["free_tiers"]
     assert cfg == pri, f"les deux annonces divergent :\n  config  {cfg}\n  pricing {pri}"
     assert cfg["free_account_reports_day"] == main.FREE_ACCOUNT_DAILY_REPORTS
+
+
+@needs_repo
+def test_the_fiche_shows_the_market_by_number_of_rooms():
+    """#286: prices_around serves `rooms` per type and number of rooms (5 =
+    five and more) over three years in the commune, lines under 10 sales
+    left out; the web fiche draws the table under the DVF block for the
+    building's type, and says "not enough sales" on an empty map."""
+    sql = (ROOT / "deploy/dvf-around.sql").read_text()
+    assert "LEAST(nombre_pieces_principales, 5) AS pieces" in sql
+    assert "date_mutation >= current_date - interval '3 years'" in sql
+    assert "'rooms', COALESCE((SELECT jsonb_object_agg(type_local, lignes)" in sql
+    bloc = sql[sql.index("commune_pieces AS ("):sql.index("'rooms',")]
+    assert "HAVING count(*) >= 10" in bloc
+    app = (ROOT / "frontend/site/app.js").read_text()
+    assert "${tableauMarche(data, zone)}" in app
+    fn = app[app.index("function tableauMarche("):]
+    assert 'data.estimation?.type_local' in fn
+    assert "moins de 10 ventes par taille" in fn
+    assert "5 p. et +" in fn
+    assert "table.marche" in (ROOT / "frontend/site/style.css").read_text()
+

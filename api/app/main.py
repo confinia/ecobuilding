@@ -603,6 +603,14 @@ async def _prix_complets(bdnb_id, lon, lat, commune):
     out = dict(prix or {"available": True, "source": autour.get("source")})
     out["around"] = {k: autour.get(k) for k in ("radius_m", "n", "sales", "area_eur_m2")}
     out["trend"] = autour.get("trend") or {}
+    # Le marché ici (#286) : par type de local, les lignes par nombre de
+    # pièces (surface, prix et €/m² médians, 5 = « 5 et plus ») dans la
+    # commune sur trois ans ; une ligne de moins de 10 ventes n'est pas servie.
+    # `{}` quand aucune taille n'atteint 10 ventes : la fiche dit alors
+    # « pas assez de ventes » ; la clé absente veut dire « non servi ».
+    if "rooms" in autour:
+        out["rooms"] = autour.get("rooms") or {}
+        out["rooms_since"] = autour.get("rooms_since")
     return out
 
 

@@ -1517,9 +1517,39 @@ function sectionPrix(data) {
   return `<h3>Prix de vente (DVF)</h3>
     ${blocFourchette(data)}
     ${lignes.join("")}
+    ${tableauMarche(data, zone)}
     ${parcelle}
     ${listeAutour}
     <p class="hint">Ventes réelles DGFiP (DVF, 2021-2025) : une maison ou un appartement par vente. Le quartier est le plus petit rayon (250, 500 ou 1 000 m) qui compte au moins 10 ventes ; une année de moins de 10 ventes est écartée de la tendance.</p>`;
+}
+
+
+// Le marché ici (#286) : ce que vaut UN BIEN COMME CELUI-CI, pas seulement
+// la médiane communale au m². Par nombre de pièces, pour le type du bien
+// (maison ou appartement, d'après la fourchette ; les deux si on ne sait pas),
+// dans la commune sur trois ans. Le €/m² baisse quand la taille monte — 55 %
+// entre un studio et un cinq-pièces à Montpellier — et c'est ce que le
+// vendeur ignore. Une ligne de moins de 10 ventes n'existe pas : le serveur
+// ne la sert pas, et la fiche le dit plutôt que d'afficher un vide.
+function tableauMarche(data, zone) {
+  const p = data.prices, marche = p?.rooms;
+  if (!marche) return "";
+  const typeBien = data.estimation?.type_local;
+  const types = typeBien && marche[typeBien] ? [typeBien] : Object.keys(marche).filter((t) => marche[t]?.length);
+  const depuis = p.rooms_since ? ` depuis ${moisAn(p.rooms_since)}` : " sur trois ans";
+  if (!types.length) {
+    return `<p class="hint">Le marché ici par nombre de pièces : moins de 10 ventes par taille dans ${zone === "arrondissement" ? "l'arrondissement" : "la commune"}${depuis} — pas de médiane publiée sur si peu.</p>`;
+  }
+  const blocs = types.map((t) => {
+    const lib = t === "Maison" ? "maisons" : "appartements";
+    const lignes = marche[t].map((l) => `<tr><td>${l.rooms >= 5 ? "5 p. et +" : l.rooms + " p."}</td>
+        <td>${l.surface_m2} m²</td><td>${l.price.toLocaleString("fr-FR")} €</td><td>${eurM2(l.eur_m2)}</td><td>${l.n}</td></tr>`).join("");
+    return `<table class="marche"><caption>Le marché ici : ${lib} vendus dans ${zone === "arrondissement" ? "l'arrondissement" : "la commune"}${depuis}</caption>
+      <thead><tr><th>Pièces</th><th>Surface méd.</th><th>Prix médian</th><th>€/m² méd.</th><th>Ventes</th></tr></thead>
+      <tbody>${lignes}</tbody></table>`;
+  });
+  return blocs.join("") + `<p class="hint">Médianes par nombre de pièces (DVF, ventes réelles) ; une ligne de moins de 10 ventes n'est pas publiée.
+    Une médiane ${zone === "arrondissement" ? "d'arrondissement" : "communale"} gomme les écarts entre quartiers.</p>`;
 }
 
 
