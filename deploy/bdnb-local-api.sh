@@ -185,6 +185,10 @@ if podman exec ecobuilding-bdnb_bdnb-db_1 psql -U bdnb -d bdnb -tAc \
     echo "   $F"
     podman exec -i ecobuilding-bdnb_bdnb-db_1 psql -U bdnb -d bdnb -q -v ON_ERROR_STOP=1 < "$F"
   done
+  # Price-map tiles are cached 7 days on disk (#319): after a rebuild of the
+  # sales they would keep showing the old ones (#528). Prod and sandbox share
+  # nothing here; both regenerate on demand (~0.3 s a tile).
+  rm -rf data/tiles/prix sandbox_stack/data/tiles/prix
 else
   echo "   dvf.mutation absent (run deploy/dvf-import.sh first) — skipped"
 fi

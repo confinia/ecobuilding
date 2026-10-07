@@ -434,6 +434,27 @@ def test_web_map_selects_nothing_on_arrival_and_never_on_a_drag():
 
 
 @needs_repo
+def test_dvf_sales_leave_out_deeds_priced_for_more_than_one_home():
+    """#528: a deed that also sells a shop or a whole building repeats its
+    total price on the home's row (45 745 €/m² in Auterive). Such deeds and
+    sales beyond 3x the commune median (with >= 10 sales) are left out; the
+    rule is versioned so the table is rebuilt beside the live one and swapped,
+    and the cached price tiles are purged after a rebuild."""
+    sql = (ROOT / "deploy/dvf-around.sql").read_text()
+    assert "type_local = 'Local industriel. commercial ou assimilé'" in sql
+    assert "NOT EXISTS (SELECT 1 FROM mixte" in sql
+    assert "BETWEEN d.med / 3 AND d.med * 3" in sql and "d.n < 10" in sql
+    assert "obj_description(to_regclass('dvf.vente_logement')" in sql
+    construit = sql.index("CREATE TABLE dvf.vente_logement_neuve AS")
+    echange = sql.index("ALTER TABLE dvf.vente_logement_neuve RENAME TO vente_logement")
+    assert construit < sql.index("DROP TABLE IF EXISTS dvf.vente_logement CASCADE") < echange
+    assert sql.index("GRANT SELECT ON dvf.vente_logement TO bdnb_anon") > echange
+    sh = (ROOT / "deploy/bdnb-local-api.sh").read_text()
+    assert "rm -rf data/tiles/prix sandbox_stack/data/tiles/prix" in sh
+    assert sh.index("deploy/dvf-around.sql") < sh.index("deploy/dvf-prix-carte.sql")
+
+
+@needs_repo
 def test_frontend_loading_feedback_is_wired():
     """#150: every loading path shows a spinner. #506: the PDF wait shows the
     server's REAL stages, ticked as the server finishes them (progress token,
@@ -800,17 +821,31 @@ def test_web_map_shows_prices_by_default():
     assert "map.addControl(new PriceToggle()" in app
     assert "const PRIX = { actif: true," in app
     couches = app[app.index('map.addSource("prix-cellules"'):app.index('map.on("moveend", chargerPrix);')]
-    assert couches.count("visibility: visPrix") == 4 and 'visibility: "none"' not in couches
+    assert couches.count("visibility: visPrix") == 6 and 'visibility: "none"' not in couches
     assert 'map.on("moveend", chargerPrix);\n  chargerPrix();' in app
     bouton = app[app.index("class PriceToggle"):app.index("map.addControl(new PriceToggle()")]
     assert "localStorage" not in bouton
     assert '"bdnb-dpe-3d");' in app[app.index('id: "prix-cellules", type: "fill"'):][:600]
     assert app.count('"text-font": ["Noto Sans Bold"]') >= 2
     assert "/prices/${chemin}/${x}/${y}.json" in app and "out.length > 36" in app
+    # #530: ~1.2 km cells from zoom 9.5, z9 tiles, their own layer under the
+    # small cells; the colour scale only counts the layers visible at the zoom.
+    assert 'demandes.push(["larges", "large", ...t])' in app and "tuilesVisibles(9)" in app
+    assert 'id: "prix-larges", type: "fill"' in app and "minzoom: 9.5, maxzoom: 12.5" in app
+    assert "if (z < 12.5) valeurs.push(med)" in app
+    assert 'z < 9.5 ? "zoomez pour voir les prix"' in app
+    main = (ROOT / "api/app/main.py").read_text()
+    assert '"/v1/prices/large/{x}/{y}.json"' in main and '_prix_tuile("large", 9' in main
     main = (ROOT / "api/app/main.py").read_text()
     assert '"prices_on", "prices_off"' in main
     sh = (ROOT / "deploy/bdnb-local-api.sh").read_text()
     assert "deploy/dvf-prix-carte.sql" in sh
+    # #530: a ~1.2 km grid for zoom 9.5-12.5, same shape as the small cells.
+    sql = (ROOT / "deploy/dvf-prix-carte.sql").read_text()
+    assert "MATERIALIZED VIEW IF NOT EXISTS dvf.prix_cellule_large" in sql
+    assert "/ 0.016) AS cx" in sql and "/ 0.012) AS cy" in sql
+    assert "FUNCTION dvf.prix_cellules_large(" in sql
+    assert "GRANT EXECUTE ON FUNCTION dvf.prix_cellules_large(" in sql
 
 
 @needs_repo
