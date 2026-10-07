@@ -4396,6 +4396,8 @@ DVF_PRIX_POINTS_URL = os.environ.get(
     "DVF_PRIX_POINTS_URL", DVF_RPC_URL.replace("prices_for_building", "prix_points"))
 DVF_PRIX_CELLULES_URL = os.environ.get(
     "DVF_PRIX_CELLULES_URL", DVF_RPC_URL.replace("prices_for_building", "prix_cellules"))
+DVF_PRIX_LARGE_URL = os.environ.get(
+    "DVF_PRIX_LARGE_URL", DVF_RPC_URL.replace("prices_for_building", "prix_cellules_large"))
 PRIX_CARTE_TTL = float(os.environ.get("PRIX_CARTE_TTL", str(7 * 86400)))
 _PRIX_SEM = asyncio.Semaphore(3)
 
@@ -4442,6 +4444,13 @@ async def prix_cellules(x: int, y: int):
     """~300 m cells of one z12 tile (#319): [lon, lat, sales, median €/m² of the
     majority type, trend % 2021-22 → 2024-25 or null, "M" | "A"]."""
     return await _prix_tuile("cells", 12, x, y, DVF_PRIX_CELLULES_URL)
+
+
+@app.get("/v1/prices/large/{x}/{y}.json", tags=["prices"])
+async def prix_cellules_large(x: int, y: int):
+    """~1.2 km cells of one z9 tile (#530), for zoom 9.5-12.5: same shape as
+    the ~300 m cells, so a city or a department reads at a glance."""
+    return await _prix_tuile("large", 9, x, y, DVF_PRIX_LARGE_URL)
 
 
 @app.get("/v1/report/progress/{jeton}", tags=["reports"])

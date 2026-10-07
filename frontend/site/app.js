@@ -497,14 +497,16 @@ map.addControl(new AerialToggle(), "bottom-right");
 // teintées par leur prix médian, avec la tendance 2021-22 → 2024-25 quand
 // chaque période compte au moins 10 ventes ; de près, chaque adresse vendue
 // avec son prix au m². La couleur est RELATIVE à ce qui est chargé (du moins
-// cher au plus cher du secteur), la légende dit l'échelle.
+// cher au plus cher du secteur), la légende dit l'échelle. De plus loin
+// encore (zoom 9,5 à 12,5), des cellules d'environ 1,2 km (#530) : les prix
+// et leur tendance sur toute une ville ou un département.
 // Affichés D'EMBLÉE : c'est la première chose qu'un agent cherche sur une
 // carte. Le bouton « Prix » les masque pour la visite ; rien n'est retenu sur
 // l'appareil (la politique de confidentialité le promet).
 const PRIX_ETAPES = ["#2c7bb6", "#ffffbf", "#d7191c"];
 const PRIX_COULEUR = ["interpolate", ["linear"], ["get", "med"], 2000, PRIX_ETAPES[0],
   3000, PRIX_ETAPES[1], 4500, PRIX_ETAPES[2]];
-const PRIX = { actif: true, points: new Map(), cellules: new Map(), enVol: new Set() };
+const PRIX = { actif: true, points: new Map(), cellules: new Map(), larges: new Map(), enVol: new Set() };
 const eurFr = (v) => Math.round(v).toLocaleString("fr-FR");
 
 function tuilesVisibles(z) {
@@ -520,6 +522,7 @@ function tuilesVisibles(z) {
 async function chargerPrix() {
   if (!PRIX.actif || mapDead) return;
   const z = map.getZoom(), demandes = [];
+  if (z >= 9.5 && z < 12.5) for (const t of tuilesVisibles(9)) demandes.push(["larges", "large", ...t]);
   if (z >= 12.5 && z < 16.5) for (const t of tuilesVisibles(12)) demandes.push(["cellules", "cells", ...t]);
   if (z >= 15.5) for (const t of tuilesVisibles(14)) demandes.push(["points", "points", ...t]);
   await Promise.all(demandes.map(async ([genre, chemin, x, y]) => {
@@ -538,14 +541,25 @@ async function chargerPrix() {
 
 function majPrix() {
   if (!map.getSource("prix-cellules")) return;
-  const cellules = [], points = [], valeurs = [];
-  for (const t of PRIX.cellules.values()) for (const [lon, lat, n, med, tend, type] of t) {
+  // L'échelle de couleur ne compte que les couches VISIBLES à ce zoom : les
+  // grandes cellules d'un coup d'œil sur la région ne doivent pas étirer
+  // l'échelle d'un quartier.
+  const z = map.getZoom(), larges = [], cellules = [], points = [], valeurs = [];
+  const carre = (lon, lat, dx, dy) => ({ type: "Polygon", coordinates: [[[lon - dx, lat - dy], [lon + dx, lat - dy],
+    [lon + dx, lat + dy], [lon - dx, lat + dy], [lon - dx, lat - dy]]] });
+  const etiquette = (med, type, tend) => {
     const evol = tend == null ? "" : ` ${tend > 1 ? "↗" : tend < -1 ? "↘" : "→"} ${tend > 0 ? "+" : ""}${tend} %`;
-    cellules.push({ type: "Feature", properties: { med, n,
-      label: `${eurFr(med)} €/m²\n${type === "M" ? "maisons" : "appart."}${evol}` },
-      geometry: { type: "Polygon", coordinates: [[[lon - 0.002, lat - 0.0015], [lon + 0.002, lat - 0.0015],
-        [lon + 0.002, lat + 0.0015], [lon - 0.002, lat + 0.0015], [lon - 0.002, lat - 0.0015]]] } });
-    valeurs.push(med);
+    return `${eurFr(med)} €/m²\n${type === "M" ? "maisons" : "appart."}${evol}`;
+  };
+  for (const t of PRIX.larges.values()) for (const [lon, lat, n, med, tend, type] of t) {
+    larges.push({ type: "Feature", properties: { med, n, label: etiquette(med, type, tend) },
+      geometry: carre(lon, lat, 0.008, 0.006) });
+    if (z < 12.5) valeurs.push(med);
+  }
+  for (const t of PRIX.cellules.values()) for (const [lon, lat, n, med, tend, type] of t) {
+    cellules.push({ type: "Feature", properties: { med, n, label: etiquette(med, type, tend) },
+      geometry: carre(lon, lat, 0.002, 0.0015) });
+    if (z >= 12.5 && z < 16.5) valeurs.push(med);
   }
   const vus = new Set();
   for (const t of PRIX.points.values()) for (const [lon, lat, n, med, an, dernier, type] of t) {
@@ -554,8 +568,9 @@ function majPrix() {
     points.push({ type: "Feature", properties: { med, n,
       label: n > 1 ? `${eurFr(med)} €/m²\n${n} ventes` : `${eurFr(dernier)} €/m²\n${an}` },
       geometry: { type: "Point", coordinates: [lon, lat] } });
-    valeurs.push(med);
+    if (z >= 15.5) valeurs.push(med);
   }
+  map.getSource("prix-larges").setData({ type: "FeatureCollection", features: larges });
   map.getSource("prix-cellules").setData({ type: "FeatureCollection", features: cellules });
   map.getSource("prix-points").setData({ type: "FeatureCollection", features: points });
   // Échelle de couleur RELATIVE au secteur chargé : 10e, 50e et 90e centiles.
@@ -564,11 +579,12 @@ function majPrix() {
     const q = (p) => valeurs[Math.floor(p * (valeurs.length - 1))];
     const a = q(0.1), m = Math.max(q(0.5), a + 1), c = Math.max(q(0.9), m + 1);
     const expr = ["interpolate", ["linear"], ["get", "med"], a, PRIX_ETAPES[0], m, PRIX_ETAPES[1], c, PRIX_ETAPES[2]];
+    map.setPaintProperty("prix-larges", "fill-color", expr);
     map.setPaintProperty("prix-cellules", "fill-color", expr);
     map.setPaintProperty("prix-points", "circle-color", expr);
     legendePrix(`${eurFr(a)} → ${eurFr(c)} €/m²`);
   } else {
-    legendePrix(map.getZoom() < 12.5 ? "zoomez pour voir les prix" : "peu de ventes ici");
+    legendePrix(z < 9.5 ? "zoomez pour voir les prix" : "peu de ventes ici");
   }
 }
 
@@ -598,7 +614,7 @@ class PriceToggle {
     this._btn.onclick = () => {
       if (!m.getLayer("prix-cellules")) return;
       PRIX.actif = !PRIX.actif;
-      for (const id of ["prix-cellules", "prix-cellules-texte", "prix-points", "prix-points-texte"])
+      for (const id of ["prix-larges", "prix-larges-texte", "prix-cellules", "prix-cellules-texte", "prix-points", "prix-points-texte"])
         m.setLayoutProperty(id, "visibility", PRIX.actif ? "visible" : "none");
       etat();
       track(PRIX.actif ? "prices_on" : "prices_off");
@@ -699,8 +715,19 @@ map.on("load", () => {
   // libellés passent au-dessus pour rester lisibles.
   const vide = { type: "FeatureCollection", features: [] };
   const visPrix = PRIX.actif ? "visible" : "none";
+  map.addSource("prix-larges", { type: "geojson", data: vide });
   map.addSource("prix-cellules", { type: "geojson", data: vide });
   map.addSource("prix-points", { type: "geojson", data: vide });
+  // Grandes cellules (#530) : la région d'un coup d'œil, libellés quand elles
+  // font ~50 px, puis les petites prennent le relais à 12,5.
+  map.addLayer({ id: "prix-larges", type: "fill", source: "prix-larges",
+    minzoom: 9.5, maxzoom: 12.5, layout: { visibility: visPrix },
+    paint: { "fill-color": PRIX_COULEUR, "fill-opacity": 0.35, "fill-outline-color": "rgba(255,255,255,0.6)" } },
+    "bdnb-dpe-3d");
+  map.addLayer({ id: "prix-larges-texte", type: "symbol", source: "prix-larges",
+    minzoom: 11.5, maxzoom: 12.5, layout: { visibility: visPrix, "text-field": ["get", "label"],
+      "text-font": ["Noto Sans Bold"], "text-size": 10, "text-allow-overlap": false },
+    paint: { "text-color": "#1a1a1a", "text-halo-color": "#ffffff", "text-halo-width": 1.6 } });
   map.addLayer({ id: "prix-cellules", type: "fill", source: "prix-cellules",
     minzoom: 12.5, maxzoom: 16.5, layout: { visibility: visPrix },
     paint: { "fill-color": PRIX_COULEUR, "fill-opacity": 0.35, "fill-outline-color": "rgba(255,255,255,0.6)" } },
