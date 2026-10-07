@@ -53,6 +53,45 @@ def test_suggest_normalizes_ban_features(monkeypatch):
     assert s["type"] == "municipality" and s["lon"] == 1.365
 
 
+def test_suggest_ranks_an_exact_address_above_weak_local_matches(monkeypatch):
+    """#276: from Toulouse, "5 avenue de gascogne tournefeuille" must list the
+    exact house number first, not two Toulouse streets that merely share a
+    word (BAN scores 0.42 and 0.41 against 0.97). A local prefix match
+    ("ecole" -> Chemin des Vieilles Ecoles, 0.71) still comes before the
+    nationwide localities called "Ecole" (0.94): proximity is kept for what
+    the user is typing, not for noise."""
+    def feat(label, score, kind, fid):
+        return {"properties": {"label": label, "id": fid, "type": kind, "score": score, "city": "x"},
+                "geometry": {"coordinates": [1.0, 43.0]}}
+    reponses = {
+        "5 avenue de gascogne tournefeuille": (
+            [feat("Rue de Gascogne 31300 Toulouse", 0.424, "street", "l1"),
+             feat("Chemin de Tournefeuille 31300 Toulouse", 0.411, "street", "l2")],
+            [feat("5 Avenue de Gascogne 31170 Tournefeuille", 0.972, "housenumber", "n1")]),
+        "ecole": (
+            [feat("Chemin des Vieilles Ecoles 31200 Toulouse", 0.707, "street", "l3"),
+             feat("Avenue des Ecoles Jules Julien 31400 Toulouse", 0.703, "street", "l4")],
+            [feat(f"Ecole {i} Ailleurs", 0.94, "locality", f"n{i}") for i in range(2, 8)]),
+    }
+
+    async def fake_get(url, params, ttl):
+        if url == main.BAN_REVERSE_URL:
+            return {"features": [{"properties": {"citycode": "31555"}}]}
+        local, national = reponses[params["q"]]
+        return {"features": local if "citycode" in params else national}
+    monkeypatch.setattr(main, "_cached_get_json", fake_get)
+
+    r = client.get("/v1/suggest", params={"q": "5 avenue de gascogne tournefeuille", "lat": 43.6, "lon": 1.44})
+    labels = [s["label"] for s in r.json()["suggestions"]]
+    assert labels[0] == "5 Avenue de Gascogne 31170 Tournefeuille"
+    assert set(labels[1:]) == {"Rue de Gascogne 31300 Toulouse", "Chemin de Tournefeuille 31300 Toulouse"}
+
+    r = client.get("/v1/suggest", params={"q": "ecole", "lat": 43.6, "lon": 1.44})
+    labels = [s["label"] for s in r.json()["suggestions"]]
+    assert labels[:2] == ["Chemin des Vieilles Ecoles 31200 Toulouse", "Avenue des Ecoles Jules Julien 31400 Toulouse"]
+    assert len(labels) == 6
+
+
 def test_events_beacon():
     r = client.post("/v1/events", json={"event": "ci_test"})
     assert r.status_code == 204
