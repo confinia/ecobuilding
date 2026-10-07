@@ -346,14 +346,12 @@ async function ecoPricing() {
 setInterval(() => { if (document.visibilityState === "visible") track("heartbeat"); }, 60000);
 
 // --- Map ----------------------------------------------------------------------
-// Showcase: 244 Rue de Rivoli, Paris (DPE G, rental ban since 2025).
+// Showcase CAMERA: 244 Rue de Rivoli, Paris. Nothing is selected on arrival
+// (#525): a fiche opens only for a building the visitor clicks or searches.
 const SHOWCASE = {
-  bdnb_id: "bdnb-bg-LT4B-YEAJ-XXF1",
   lon: 2.325414, lat: 48.86646,
   zoom: 18.15, bearing: 0, pitch: 38,
 };
-// Captured BEFORE map init: maplibre rewrites the hash continuously.
-const hadHash = !!location.hash;
 const urlBuilding = new URLSearchParams(location.search).get("b");
 // Lien vers une RECHERCHE (#460) : `?q=` en texte libre comme dans la barre,
 // `?ban=` par clé BAN quand le lien doit désigner une adresse sans ambiguïté
@@ -824,19 +822,33 @@ map.on("load", () => {
   // l'adresse qui commande, le bâtiment s'en déduit (#460). Surtout pas de
   // `return` ici : les gestionnaires de clic de la carte se posent plus bas,
   // et un lien de recherche rendrait la carte inerte.
-  const initialB = urlQuery || urlBan
-    ? null
-    : urlBuilding || (!hadHash ? SHOWCASE.bdnb_id : null);
   if (urlQuery || urlBan) {
     openSearchFromUrl();
-  } else if (initialB) {
-    if (!urlBuilding) track("showcase_default");
+  } else if (urlBuilding) {
     const c = map.getCenter();
-    openBuildingById(initialB, c.lng, c.lat);
+    openBuildingById(urlBuilding, c.lng, c.lat);
   }
+
+  // Un GLISSEMENT n'est pas un appui (#526). MapLibre tient pour un clic tout
+  // relâchement à moins de 3 px de l'appui, sans regarder si la carte a bougé
+  // entre-temps : un petit déplacement ouvrait la fiche du bâtiment dessous.
+  // On note la caméra à l'appui ; un clic après qu'elle a bougé ne sélectionne
+  // rien.
+  let cameraAppui = null;
+  map.getCanvasContainer().addEventListener("pointerdown", () => {
+    cameraAppui = { centre: map.getCenter(), zoom: map.getZoom(), pitch: map.getPitch() };
+  }, true);
+  const carteBougee = () => {
+    if (!cameraAppui) return false;
+    const a = map.project(cameraAppui.centre), b = map.project(map.getCenter());
+    return Math.hypot(a.x - b.x, a.y - b.y) > 2
+      || Math.abs(map.getZoom() - cameraAppui.zoom) > 0.01
+      || Math.abs(map.getPitch() - cameraAppui.pitch) > 0.5;
+  };
 
   // Click any building -> full record (BDNB id comes from the tile itself).
   map.on("click", "bdnb-dpe-3d", (e) => {
+    if (carteBougee()) return;
     const f = e.features && e.features[0];
     const id = f && f.properties.batiment_groupe_id;
     if (!id) return;
