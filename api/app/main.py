@@ -1347,9 +1347,24 @@ async def suggest(
             local = near_data.get("features") or []
     data = await _cached_get_json(BAN_URL, {"q": q, "limit": 6}, ttl=3600)
     seen = {f["properties"].get("id") for f in local}
-    feats = local + [f for f in data.get("features", [])
-                     if f["properties"].get("id") not in seen]
-    feats = feats[:6]
+    national = [f for f in data.get("features", []) if f["properties"].get("id") not in seen]
+    # Local d'abord, mais pas n'importe quel local (#276). « Local + national,
+    # coupé à 6 » plaçait deux rues toulousaines à 0,42 devant le numéro exact
+    # « 5 avenue de Gascogne, Tournefeuille » à 0,97, et six rues de la commune
+    # pouvaient évincer l'adresse cherchée deux départements plus loin.
+    # Mesuré sur la BAN (octobre 2026) : un début de rue de la commune
+    # (« gasto », « capit », « alsace », « ecole ») y obtient 0,64-0,71, une
+    # adresse complète 0,97 où qu'elle soit, et le bruit local qui ne partage
+    # qu'un mot avec la demande 0,31-0,42. Rien entre 0,42 et 0,64 : le seuil
+    # 0,6 sépare les deux sans deviner l'intention. Les locaux forts passent
+    # devant (au plus 4, pour que le national garde deux places), puis les
+    # nationaux forts, puis le reste dans le même ordre.
+    fort = lambda f: (f["properties"].get("score") or 0) >= 0.6
+    feats = ([f for f in local if fort(f)][:4]
+             + [f for f in national if fort(f)]
+             + [f for f in local if fort(f)][4:]
+             + [f for f in local if not fort(f)]
+             + [f for f in national if not fort(f)])[:6]
     return {
         "suggestions": [
             {
